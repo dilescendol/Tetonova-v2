@@ -1,0 +1,59 @@
+{
+  "items": [
+    {
+      "id": "ember-harbor",
+      "title": "Ember Harbor",
+      "tagline": "Fallback shelf for the official Oploverz lane",
+      "overview": "A synthetic catalog entry shipped with TetoNova so the Oploverz compatibility lane can browse safely while the live parser is still pending.",
+      "contentType": "ANIME",
+      "yearLabel": "2026",
+      "genres": ["Adventure", "Fantasy"],
+      "releaseHint": "Update Senin 20:15",
+      "episodeCount": 11,
+      "durationMinutes": 24,
+      "qualities": ["480p", "720p", "1080p"],
+      "subtitleLanguages": ["ID", "EN"],
+      "sourceNote": "Fallback preview for the Oploverz compatibility lane. Live parsing will replace this shelf when the adapter is promoted."
+    },
+    {
+      "id": "starlit-circuit",
+      "title": "Starlit Circuit",
+      "tagline": "Starter catalog for search and detail checks",
+      "overview": "A bright tournament anime used to seed home, detail, and continue-watching flows for the Oploverz starter lane.",
+      "contentType": "ANIME",
+      "yearLabel": "2025",
+      "genres": ["Sports", "Drama"],
+      "releaseHint": "Episode baru Jumat 19:00",
+      "episodeCount": 9,
+      "durationMinutes": 23,
+      "qualities": ["480p", "720p"],
+      "subtitleLanguages": ["ID"]
+    }
+  ],
+  "sections": [
+    {
+      "title": "Oploverz Pilot",
+      "subtitle": "Official TetoNova fallback shelf for the Oploverz compatibility lane.",
+      "itemIds": ["ember-harbor", "starlit-circuit"]
+    },
+    {
+      "title": "Weekly Anime Picks",
+      "subtitle": "Lightweight anime picks while the live parser is still cooking.",
+      "itemIds": ["ember-harbor"]
+    }
+  ],
+  "calendar": [
+    {
+      "title": "Ember Harbor",
+      "releaseDayLabel": "Monday",
+      "releaseTimeLabel": "20:15",
+      "contentType": "ANIME"
+    },
+    {
+      "title": "Starlit Circuit",
+      "releaseDayLabel": "Friday",
+      "releaseTimeLabel": "19:00",
+      "contentType": "ANIME"
+    }
+  ]
+}

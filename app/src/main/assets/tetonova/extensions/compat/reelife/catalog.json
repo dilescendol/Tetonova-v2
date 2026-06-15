@@ -1,0 +1,74 @@
+{
+  "items": [
+    {
+      "id": "reelife-pilot",
+      "title": "Reelife Pilot",
+      "tagline": "Fallback shelf for the official Reelife lane",
+      "overview": "A synthetic short-drama entry shipped with TetoNova so the Reelife compatibility lane can browse safely while the live parser is still pending.",
+      "contentType": "SERIES",
+      "yearLabel": "2026",
+      "genres": [
+        "Drama",
+        "Romance"
+      ],
+      "releaseHint": "Episode baru rilis tiap pekan",
+      "episodeCount": 60,
+      "durationMinutes": 2,
+      "qualities": [
+        "480p",
+        "720p"
+      ],
+      "subtitleLanguages": [
+        "ID"
+      ],
+      "sourceNote": "Fallback preview for the Reelife compatibility lane. Live parsing will replace this shelf when the dramabos-shortdrama-v1 adapter is promoted."
+    },
+    {
+      "id": "reelife-starter",
+      "title": "Reelife Starter",
+      "tagline": "Starter catalog for browse and resume checks",
+      "overview": "A second short-drama entry used to seed home, detail, and continue-watching flows for the Reelife starter lane.",
+      "contentType": "SERIES",
+      "yearLabel": "2025",
+      "genres": [
+        "Drama",
+        "Slice of Life"
+      ],
+      "releaseHint": "Episode baru rilis tiap pekan",
+      "episodeCount": 80,
+      "durationMinutes": 2,
+      "qualities": [
+        "480p",
+        "720p"
+      ],
+      "subtitleLanguages": [
+        "ID"
+      ]
+    }
+  ],
+  "sections": [
+    {
+      "title": "Reelife Pilot",
+      "subtitle": "Official TetoNova fallback shelf for the Reelife compatibility lane.",
+      "itemIds": [
+        "reelife-pilot",
+        "reelife-starter"
+      ]
+    },
+    {
+      "title": "Short Drama Pickups",
+      "subtitle": "Lightweight short-drama picks while the live parser is still cooking.",
+      "itemIds": [
+        "reelife-pilot"
+      ]
+    }
+  ],
+  "calendar": [
+    {
+      "title": "Reelife Pilot",
+      "releaseDayLabel": "Friday",
+      "releaseTimeLabel": "20:00",
+      "contentType": "SERIES"
+    }
+  ]
+}

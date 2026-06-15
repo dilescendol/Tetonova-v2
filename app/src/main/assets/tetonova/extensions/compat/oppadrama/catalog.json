@@ -1,0 +1,76 @@
+{
+  "items": [
+    {
+      "id": "seoul-after-midnight",
+      "title": "Seoul After Midnight",
+      "tagline": "Drama fallback tile for the official Oppadrama lane",
+      "overview": "A synthetic late-night K-drama seeded into TetoNova so the Oppadrama lane stays browseable while live parsing hydrates real episode pages and mirror options.",
+      "contentType": "SERIES",
+      "yearLabel": "2026",
+      "genres": ["Drama", "Romance", "Slice of Life"],
+      "releaseHint": "New episode Monday 21:30",
+      "episodeCount": 16,
+      "durationMinutes": 65,
+      "qualities": ["480p", "720p", "1080p"],
+      "subtitleLanguages": ["ID"],
+      "sourceNote": "Fallback shelf for the official Oppadrama lane. Live parsing will replace these items when the source is reachable."
+    },
+    {
+      "id": "hikari-platform",
+      "title": "Hikari Platform",
+      "tagline": "Japanese series fallback tile for Oppadrama",
+      "overview": "A synthetic workplace drama title used by TetoNova to validate search, detail, and continue-watching flows for the Oppadrama lane.",
+      "contentType": "SERIES",
+      "yearLabel": "2025",
+      "genres": ["Drama", "Workplace", "Mystery"],
+      "releaseHint": "New episode Thursday 20:00",
+      "episodeCount": 10,
+      "durationMinutes": 52,
+      "qualities": ["480p", "720p"],
+      "subtitleLanguages": ["ID", "EN"]
+    },
+    {
+      "id": "blue-harbor-cinema",
+      "title": "Blue Harbor Cinema",
+      "tagline": "Movie fallback tile for the Oppadrama film shelf",
+      "overview": "A synthetic film entry included so TetoNova can keep the Oppadrama lane representative even when mirror pages rotate faster than the adapter cache.",
+      "contentType": "MOVIE",
+      "yearLabel": "2024",
+      "genres": ["Movie", "Drama", "Family"],
+      "releaseHint": "Movie page ready",
+      "qualities": ["480p", "720p", "1080p"],
+      "subtitleLanguages": ["ID"]
+    }
+  ],
+  "sections": [
+    {
+      "title": "Oppadrama Pilot",
+      "subtitle": "Official TetoNova fallback shelf for the Oppadrama drama lane.",
+      "itemIds": ["seoul-after-midnight", "hikari-platform", "blue-harbor-cinema"]
+    },
+    {
+      "title": "Drama Shelf",
+      "subtitle": "Starter K-drama and J-drama titles for episodic browsing.",
+      "itemIds": ["seoul-after-midnight", "hikari-platform"]
+    },
+    {
+      "title": "Film Shelf",
+      "subtitle": "Fallback movie tile for the Oppadrama lane.",
+      "itemIds": ["blue-harbor-cinema"]
+    }
+  ],
+  "calendar": [
+    {
+      "title": "Seoul After Midnight",
+      "releaseDayLabel": "Monday",
+      "releaseTimeLabel": "21:30",
+      "contentType": "SERIES"
+    },
+    {
+      "title": "Hikari Platform",
+      "releaseDayLabel": "Thursday",
+      "releaseTimeLabel": "20:00",
+      "contentType": "SERIES"
+    }
+  ]
+}

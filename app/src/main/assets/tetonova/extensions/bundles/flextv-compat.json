@@ -1,0 +1,21 @@
+{
+  "id": "flextv-compat",
+  "name": "FlexTV",
+  "version": "1.0.0",
+  "contentTypes": [
+    "SERIES"
+  ],
+  "capabilities": [
+    "HOME",
+    "SEARCH",
+    "DETAIL",
+    "PLAYBACK",
+    "SUBTITLES"
+  ],
+  "entry": "compat/flextv/catalog.json",
+  "upstreamUrl": "https://drakula.dramabos.my.id/flextv",
+  "apiBaseUrl": "https://drakula.dramabos.my.id/flextv/api/v1",
+  "webBaseUrl": "https://drakula.dramabos.my.id/flextv",
+  "healthProbeUrl": "https://drakula.dramabos.my.id/flextv-api.html",
+  "category": "Dracin/Drakor"
+}

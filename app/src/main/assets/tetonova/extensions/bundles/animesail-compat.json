@@ -1,0 +1,23 @@
+{
+  "id": "animesail-compat",
+  "name": "AnimeSail",
+  "version": "1.0.0",
+  "contentTypes": [
+    "ANIME",
+    "MOVIE"
+  ],
+  "capabilities": [
+    "HOME",
+    "SEARCH",
+    "DETAIL",
+    "PLAYBACK",
+    "SUBTITLES"
+  ],
+  "entry": "compat/animesail/catalog.json",
+  "upstreamUrl": "https://154.26.137.28",
+  "apiBaseUrl": "https://154.26.137.28",
+  "webBaseUrl": "https://154.26.137.28",
+  "healthProbeUrl": "https://154.26.137.28/",
+  "riskFlags": ["turnstile-gate", "ip-domain-shift", "certificate-mismatch"],
+  "category": "Anime/Donghua"
+}

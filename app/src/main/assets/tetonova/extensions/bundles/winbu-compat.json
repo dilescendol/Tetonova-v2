@@ -1,0 +1,20 @@
+{
+  "id": "winbu-compat",
+  "name": "Winbu",
+  "version": "1.0.0",
+  "contentTypes": [
+    "MOVIE",
+    "SERIES",
+    "ANIME"
+  ],
+  "capabilities": [
+    "HOME",
+    "SEARCH",
+    "DETAIL",
+    "PLAYBACK",
+    "SUBTITLES"
+  ],
+  "entry": "compat/winbu/catalog.json",
+  "upstreamUrl": "https://winbu.net",
+  "category": "Movie"
+}

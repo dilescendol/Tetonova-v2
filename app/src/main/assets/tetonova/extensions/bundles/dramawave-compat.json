@@ -1,0 +1,21 @@
+{
+  "id": "dramawave-compat",
+  "name": "DramaWave",
+  "version": "1.0.0",
+  "contentTypes": [
+    "SERIES"
+  ],
+  "capabilities": [
+    "HOME",
+    "SEARCH",
+    "DETAIL",
+    "PLAYBACK",
+    "SUBTITLES"
+  ],
+  "entry": "compat/dramawave/catalog.json",
+  "upstreamUrl": "https://dramawave.dramabos.my.id",
+  "apiBaseUrl": "https://dramawave.dramabos.my.id/api/v1",
+  "webBaseUrl": "https://dramawave.dramabos.my.id",
+  "healthProbeUrl": "https://dramawave.dramabos.my.id/api.html",
+  "category": "Dracin/Drakor"
+}

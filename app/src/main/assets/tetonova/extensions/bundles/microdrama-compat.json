@@ -1,0 +1,21 @@
+{
+  "id": "microdrama-compat",
+  "name": "Micro Drama",
+  "version": "1.0.0",
+  "contentTypes": [
+    "SERIES"
+  ],
+  "capabilities": [
+    "HOME",
+    "SEARCH",
+    "DETAIL",
+    "PLAYBACK",
+    "SUBTITLES"
+  ],
+  "entry": "compat/microdrama/catalog.json",
+  "upstreamUrl": "https://drakula.dramabos.my.id/microdrama",
+  "apiBaseUrl": "https://drakula.dramabos.my.id/microdrama/api/v1",
+  "webBaseUrl": "https://drakula.dramabos.my.id/microdrama",
+  "healthProbeUrl": "https://drakula.dramabos.my.id/microdrama-api.html",
+  "category": "Dracin/Drakor"
+}

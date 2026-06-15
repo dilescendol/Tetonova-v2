@@ -1,0 +1,21 @@
+{
+  "id": "shortmax-compat",
+  "name": "ShortMax",
+  "version": "1.0.0",
+  "contentTypes": [
+    "SERIES"
+  ],
+  "capabilities": [
+    "HOME",
+    "SEARCH",
+    "DETAIL",
+    "PLAYBACK",
+    "SUBTITLES"
+  ],
+  "entry": "compat/shortmax/catalog.json",
+  "upstreamUrl": "https://shortmax.dramabos.my.id",
+  "apiBaseUrl": "https://shortmax.dramabos.my.id/api/v1",
+  "webBaseUrl": "https://shortmax.dramabos.my.id",
+  "healthProbeUrl": "https://shortmax.dramabos.my.id/api.html",
+  "category": "Dracin/Drakor"
+}

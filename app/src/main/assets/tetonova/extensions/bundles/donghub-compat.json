@@ -1,0 +1,19 @@
+{
+  "id": "donghub-compat",
+  "name": "Donghub",
+  "version": "1.0.0",
+  "contentTypes": [
+    "ANIME",
+    "MOVIE"
+  ],
+  "capabilities": [
+    "HOME",
+    "SEARCH",
+    "DETAIL",
+    "PLAYBACK",
+    "SUBTITLES"
+  ],
+  "entry": "compat/donghub/catalog.json",
+  "upstreamUrl": "https://donghub.vip",
+  "category": "Anime/Donghua"
+}

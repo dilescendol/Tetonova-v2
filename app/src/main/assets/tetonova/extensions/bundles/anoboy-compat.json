@@ -1,0 +1,18 @@
+{
+  "id": "anoboy-compat",
+  "name": "Anoboy",
+  "version": "1.0.0",
+  "contentTypes": [
+    "ANIME"
+  ],
+  "capabilities": [
+    "HOME",
+    "SEARCH",
+    "DETAIL",
+    "PLAYBACK",
+    "SUBTITLES"
+  ],
+  "entry": "compat/anoboy/catalog.json",
+  "upstreamUrl": "https://ww1.anoboy.boo",
+  "category": "Anime/Donghua"
+}

@@ -1,0 +1,412 @@
+{
+  "items": [
+    {
+      "id": "https://otakudesu.blog/anime/one-piece-sub-indo/",
+      "title": "One Piece",
+      "tagline": "Anime On-going — episode mingguan",
+      "overview": "Petualangan Monkey D. Luffy dan kru Topi Jerami menuju One Piece. Long-running ongoing utama di shelf Anime On-going Otakudesu.",
+      "contentType": "ANIME",
+      "yearLabel": "2026",
+      "genres": ["Anime", "Adventure", "Action", "Shounen", "Fantasy"],
+      "releaseHint": "Episode mingguan tiap Minggu",
+      "episodeCount": 1163,
+      "durationMinutes": 24,
+      "qualities": ["360p", "480p", "720p"],
+      "subtitleLanguages": ["ID"],
+      "sourceNote": "Seed dari shelf Anime On-going (https://otakudesu.blog/ongoing-anime/)."
+    },
+    {
+      "id": "https://otakudesu.blog/anime/kuroneko-to-majo-no-kyoushitsu-sub-indo/",
+      "title": "Kuroneko to Majo no Kyoushitsu",
+      "tagline": "Anime On-going — fantasy magic school",
+      "overview": "Kucing hitam dan kelas penyihir dengan tema fantasy ringan.",
+      "contentType": "ANIME",
+      "yearLabel": "2026",
+      "genres": ["Anime", "Fantasy", "Magic", "Slice of Life"],
+      "releaseHint": "Episode mingguan tiap Senin",
+      "episodeCount": 7,
+      "durationMinutes": 24,
+      "qualities": ["360p", "480p", "720p"],
+      "subtitleLanguages": ["ID"]
+    },
+    {
+      "id": "https://otakudesu.blog/anime/maid-san-wa-taberu-dake-sub-indo/",
+      "title": "Maid-san wa Taberu Dake",
+      "tagline": "Anime On-going — slice of life",
+      "overview": "Slice of life ringan dengan tema maid yang gemar makan.",
+      "contentType": "ANIME",
+      "yearLabel": "2026",
+      "genres": ["Anime", "Comedy", "Slice of Life"],
+      "releaseHint": "Episode mingguan tiap Minggu",
+      "episodeCount": 9,
+      "durationMinutes": 24,
+      "qualities": ["360p", "480p", "720p"],
+      "subtitleLanguages": ["ID"]
+    },
+    {
+      "id": "https://otakudesu.blog/anime/ghost-concert-missing-songs-sub-indo/",
+      "title": "Ghost Concert: Missing Songs",
+      "tagline": "Anime On-going — mystery musik",
+      "overview": "Series misteri-musik dengan konsep arwah pemusik yang lagunya hilang.",
+      "contentType": "ANIME",
+      "yearLabel": "2026",
+      "genres": ["Anime", "Mystery", "Music", "Supernatural"],
+      "releaseHint": "Episode mingguan",
+      "episodeCount": 8,
+      "durationMinutes": 24,
+      "qualities": ["360p", "480p", "720p"],
+      "subtitleLanguages": ["ID"]
+    },
+    {
+      "id": "https://otakudesu.blog/anime/nippon-sangoku-sub-indo/",
+      "title": "Nippon Sangoku",
+      "tagline": "Anime On-going — versi Jepang dari Tiga Kerajaan",
+      "overview": "Adaptasi historical yang mengangkat kisah Tiga Kerajaan dengan twist Jepang.",
+      "contentType": "ANIME",
+      "yearLabel": "2026",
+      "genres": ["Anime", "Historical", "Action", "Drama"],
+      "releaseHint": "Episode mingguan tiap Minggu",
+      "episodeCount": 8,
+      "durationMinutes": 24,
+      "qualities": ["360p", "480p", "720p"],
+      "subtitleLanguages": ["ID"]
+    },
+    {
+      "id": "https://otakudesu.blog/anime/yozakura-san-chi-no-daisakusen-2nd-season-sub-indo/",
+      "title": "Yozakura-san Chi no Daisakusen 2nd Season",
+      "tagline": "Anime On-going — keluarga mata-mata Yozakura",
+      "overview": "Lanjutan kisah Taiyou Asano yang menikahi Mutsumi dan menjadi bagian dari keluarga mata-mata Yozakura.",
+      "contentType": "ANIME",
+      "yearLabel": "2026",
+      "genres": ["Anime", "Action", "Comedy", "Shounen"],
+      "releaseHint": "Episode mingguan tiap Minggu",
+      "episodeCount": 7,
+      "durationMinutes": 24,
+      "qualities": ["360p", "480p", "720p"],
+      "subtitleLanguages": ["ID"]
+    },
+    {
+      "id": "https://otakudesu.blog/anime/tsue-to-tsurugi-no-wistoria-season-2-sub-indo/",
+      "title": "Tsue to Tsurugi no Wistoria Season 2",
+      "tagline": "Anime On-going — Magia Vander journey",
+      "overview": "Will Serfort melanjutkan perjalanan untuk menjadi Magia Vander di Akademi Sihir Regarden.",
+      "contentType": "ANIME",
+      "yearLabel": "2026",
+      "genres": ["Anime", "Action", "Fantasy", "Magic", "Shounen"],
+      "releaseHint": "Episode mingguan tiap Minggu",
+      "episodeCount": 7,
+      "durationMinutes": 24,
+      "qualities": ["360p", "480p", "720p"],
+      "subtitleLanguages": ["ID"]
+    },
+    {
+      "id": "https://otakudesu.blog/anime/niwatori-fighter-sub-indo/",
+      "title": "Niwatori Fighter",
+      "tagline": "Anime On-going — action komedi",
+      "overview": "Aksi komedi tentang petarung berkostum ayam yang melawan kejahatan.",
+      "contentType": "ANIME",
+      "yearLabel": "2026",
+      "genres": ["Anime", "Action", "Comedy"],
+      "releaseHint": "Episode mingguan tiap Minggu",
+      "episodeCount": 11,
+      "durationMinutes": 24,
+      "qualities": ["360p", "480p", "720p"],
+      "subtitleLanguages": ["ID"]
+    },
+    {
+      "id": "https://otakudesu.blog/anime/digimon-beatbreak-sub-indo/",
+      "title": "Digimon Beatbreak",
+      "tagline": "Anime On-going — generasi baru Digimon",
+      "overview": "Generasi terbaru franchise Digimon dengan tema musik dan beat.",
+      "contentType": "ANIME",
+      "yearLabel": "2025",
+      "genres": ["Anime", "Adventure", "Action", "Shounen"],
+      "releaseHint": "Episode mingguan tiap Minggu",
+      "episodeCount": 32,
+      "durationMinutes": 24,
+      "qualities": ["360p", "480p", "720p"],
+      "subtitleLanguages": ["ID"]
+    },
+    {
+      "id": "https://otakudesu.blog/anime/shunkashuutou-daikousha-haru-no-mai-sub-indo/",
+      "title": "Shunkashuutou Daikousha: Haru no Mai",
+      "tagline": "Anime On-going — bertema empat musim Jepang",
+      "overview": "Drama slice of life bertema empat musim Jepang dengan visual yang lembut.",
+      "contentType": "ANIME",
+      "yearLabel": "2026",
+      "genres": ["Anime", "Drama", "Slice of Life"],
+      "releaseHint": "Episode mingguan tiap Minggu",
+      "episodeCount": 9,
+      "durationMinutes": 24,
+      "qualities": ["360p", "480p", "720p"],
+      "subtitleLanguages": ["ID"]
+    },
+    {
+      "id": "https://otakudesu.blog/anime/yuusha-no-kuzu-sub-indo/",
+      "title": "Yuusha no Kuzu",
+      "tagline": "Anime On-going — fantasy unconventional hero",
+      "overview": "Series fantasy bertema 'pahlawan tak berguna' yang menelaah sisi gelap status pahlawan.",
+      "contentType": "ANIME",
+      "yearLabel": "2026",
+      "genres": ["Anime", "Fantasy", "Adventure", "Comedy"],
+      "releaseHint": "Episode mingguan tiap Sabtu",
+      "episodeCount": 19,
+      "durationMinutes": 24,
+      "qualities": ["360p", "480p", "720p"],
+      "subtitleLanguages": ["ID"]
+    },
+    {
+      "id": "https://otakudesu.blog/anime/kanan-sama-wa-akumade-choroi-sub-indo/",
+      "title": "Kanan-sama wa Akumade Choroi",
+      "tagline": "Anime On-going — comedy supernatural",
+      "overview": "Comedy supernatural tentang dewi yang gampang luluh oleh perhatian manusia.",
+      "contentType": "ANIME",
+      "yearLabel": "2026",
+      "genres": ["Anime", "Comedy", "Supernatural", "Romance"],
+      "releaseHint": "Episode mingguan",
+      "episodeCount": 8,
+      "durationMinutes": 24,
+      "qualities": ["360p", "480p", "720p"],
+      "subtitleLanguages": ["ID"]
+    },
+    {
+      "id": "https://otakudesu.blog/anime/kami-no-niwatsuki-kusunoki-tei-sub-indo/",
+      "title": "Kami no Niwatsuki Kusunoki-tei",
+      "tagline": "Anime On-going — slice of life supernatural",
+      "overview": "Slice of life supernatural di rumah Kusunoki yang berdampingan dengan dewa kecil.",
+      "contentType": "ANIME",
+      "yearLabel": "2026",
+      "genres": ["Anime", "Slice of Life", "Supernatural"],
+      "releaseHint": "Episode mingguan tiap Minggu",
+      "episodeCount": 8,
+      "durationMinutes": 24,
+      "qualities": ["360p", "480p", "720p"],
+      "subtitleLanguages": ["ID"]
+    },
+    {
+      "id": "https://otakudesu.blog/anime/kimetsu-no-yaiba-katanakaji-no-sato-hen-sub-indo/",
+      "title": "Kimetsu no Yaiba: Katanakaji no Sato-hen (Season 3)",
+      "tagline": "Anime Complete — Swordsmith Village arc",
+      "overview": "Tanjirou ditugaskan ke Swordsmith Village untuk perbaikan Nichirin Blade dan langsung berhadapan dengan Upper Moon Four dan Five.",
+      "contentType": "ANIME",
+      "yearLabel": "2023",
+      "genres": ["Anime", "Action", "Shounen", "Supernatural"],
+      "releaseHint": "Selesai tayang",
+      "episodeCount": 11,
+      "durationMinutes": 24,
+      "qualities": ["360p", "480p", "720p"],
+      "subtitleLanguages": ["ID"]
+    },
+    {
+      "id": "https://otakudesu.blog/anime/jujutsu-kaisen-2nd-season-sub-indo/",
+      "title": "Jujutsu Kaisen Season 2",
+      "tagline": "Anime Complete — Hidden Inventory + Shibuya Incident",
+      "overview": "Flashback Gojo & Geto plus arc Shibuya Incident yang memicu konflik utama series.",
+      "contentType": "ANIME",
+      "yearLabel": "2023",
+      "genres": ["Anime", "Action", "Shounen", "Supernatural"],
+      "releaseHint": "Selesai tayang",
+      "episodeCount": 23,
+      "durationMinutes": 24,
+      "qualities": ["360p", "480p", "720p"],
+      "subtitleLanguages": ["ID"]
+    },
+    {
+      "id": "https://otakudesu.blog/anime/frieren-sub-indo/",
+      "title": "Sousou no Frieren",
+      "tagline": "Anime Complete — fantasy slice of life pasca-petualangan",
+      "overview": "Frieren si elf melanjutkan perjalanan bertahun-tahun setelah pesta pahlawan mengalahkan Raja Iblis.",
+      "contentType": "ANIME",
+      "yearLabel": "2024",
+      "genres": ["Anime", "Adventure", "Drama", "Fantasy"],
+      "releaseHint": "Selesai tayang",
+      "episodeCount": 28,
+      "durationMinutes": 24,
+      "qualities": ["360p", "480p", "720p"],
+      "subtitleLanguages": ["ID"]
+    },
+    {
+      "id": "https://otakudesu.blog/anime/dandadan-sub-indo/",
+      "title": "Dandadan",
+      "tagline": "Anime Complete — alien vs yokai",
+      "overview": "Momo dan Okarun saling mengejek tentang alien dan hantu — sampai keduanya terbukti benar dan dunia mereka jadi kacau.",
+      "contentType": "ANIME",
+      "yearLabel": "2024",
+      "genres": ["Anime", "Action", "Comedy", "Supernatural"],
+      "releaseHint": "Selesai tayang",
+      "episodeCount": 12,
+      "durationMinutes": 24,
+      "qualities": ["360p", "480p", "720p"],
+      "subtitleLanguages": ["ID"]
+    },
+    {
+      "id": "https://otakudesu.blog/anime/oshi-no-ko-sub-indo/",
+      "title": "Oshi no Ko",
+      "tagline": "Anime Complete — drama industri hiburan",
+      "overview": "Aqua dan Ruby dilahirkan kembali sebagai anak idol favorit mereka, lalu menapaki gelap-terangnya industri hiburan Jepang.",
+      "contentType": "ANIME",
+      "yearLabel": "2023",
+      "genres": ["Anime", "Drama", "Supernatural", "Mystery"],
+      "releaseHint": "Selesai tayang",
+      "episodeCount": 11,
+      "durationMinutes": 24,
+      "qualities": ["360p", "480p", "720p"],
+      "subtitleLanguages": ["ID"]
+    },
+    {
+      "id": "https://otakudesu.blog/anime/spy-x-family-sub-indo/",
+      "title": "Spy x Family",
+      "tagline": "Anime Complete — keluarga palsu, misi nyata",
+      "overview": "Loid Forger membentuk keluarga palsu dengan Yor (assassin) dan Anya (telepati) untuk misi spionase.",
+      "contentType": "ANIME",
+      "yearLabel": "2022",
+      "genres": ["Anime", "Action", "Comedy", "Shounen"],
+      "releaseHint": "Selesai tayang",
+      "episodeCount": 25,
+      "durationMinutes": 24,
+      "qualities": ["360p", "480p", "720p"],
+      "subtitleLanguages": ["ID"]
+    },
+    {
+      "id": "https://otakudesu.blog/anime/chainsaw-man-sub-indo/",
+      "title": "Chainsaw Man",
+      "tagline": "Anime Complete — devil hunter dengan gergaji",
+      "overview": "Denji terikat kontrak dengan Pochita dan menjadi Chainsaw Man, devil hunter di Public Safety.",
+      "contentType": "ANIME",
+      "yearLabel": "2022",
+      "genres": ["Anime", "Action", "Fantasy", "Gore", "Shounen"],
+      "releaseHint": "Selesai tayang",
+      "episodeCount": 12,
+      "durationMinutes": 24,
+      "qualities": ["360p", "480p", "720p"],
+      "subtitleLanguages": ["ID"]
+    },
+    {
+      "id": "https://otakudesu.blog/anime/cyberpunk-edgerunners-sub-indo/",
+      "title": "Cyberpunk: Edgerunners",
+      "tagline": "Anime Complete — Studio Trigger × CD Projekt",
+      "overview": "David Martinez di Night City, kisah edgerunner yang berakhir tragis. Studio Trigger × CD Projekt RED.",
+      "contentType": "ANIME",
+      "yearLabel": "2022",
+      "genres": ["Anime", "Action", "Sci-Fi", "Cyberpunk"],
+      "releaseHint": "Selesai tayang",
+      "episodeCount": 10,
+      "durationMinutes": 25,
+      "qualities": ["360p", "480p", "720p"],
+      "subtitleLanguages": ["ID"]
+    }
+  ],
+  "sections": [
+    {
+      "title": "Otakudesu Anime On-going",
+      "subtitle": "Mode Semua — Anime On-going (https://otakudesu.blog/ongoing-anime/).",
+      "itemIds": [
+        "https://otakudesu.blog/anime/one-piece-sub-indo/",
+        "https://otakudesu.blog/anime/kuroneko-to-majo-no-kyoushitsu-sub-indo/",
+        "https://otakudesu.blog/anime/maid-san-wa-taberu-dake-sub-indo/",
+        "https://otakudesu.blog/anime/ghost-concert-missing-songs-sub-indo/",
+        "https://otakudesu.blog/anime/nippon-sangoku-sub-indo/",
+        "https://otakudesu.blog/anime/yozakura-san-chi-no-daisakusen-2nd-season-sub-indo/",
+        "https://otakudesu.blog/anime/tsue-to-tsurugi-no-wistoria-season-2-sub-indo/",
+        "https://otakudesu.blog/anime/niwatori-fighter-sub-indo/",
+        "https://otakudesu.blog/anime/digimon-beatbreak-sub-indo/",
+        "https://otakudesu.blog/anime/shunkashuutou-daikousha-haru-no-mai-sub-indo/"
+      ]
+    },
+    {
+      "title": "Anime On-going",
+      "subtitle": "Mode Klik Source — daftar lengkap Anime On-going (https://otakudesu.blog/ongoing-anime/).",
+      "itemIds": [
+        "https://otakudesu.blog/anime/one-piece-sub-indo/",
+        "https://otakudesu.blog/anime/kuroneko-to-majo-no-kyoushitsu-sub-indo/",
+        "https://otakudesu.blog/anime/maid-san-wa-taberu-dake-sub-indo/",
+        "https://otakudesu.blog/anime/ghost-concert-missing-songs-sub-indo/",
+        "https://otakudesu.blog/anime/nippon-sangoku-sub-indo/",
+        "https://otakudesu.blog/anime/yozakura-san-chi-no-daisakusen-2nd-season-sub-indo/",
+        "https://otakudesu.blog/anime/tsue-to-tsurugi-no-wistoria-season-2-sub-indo/",
+        "https://otakudesu.blog/anime/niwatori-fighter-sub-indo/",
+        "https://otakudesu.blog/anime/digimon-beatbreak-sub-indo/",
+        "https://otakudesu.blog/anime/shunkashuutou-daikousha-haru-no-mai-sub-indo/",
+        "https://otakudesu.blog/anime/yuusha-no-kuzu-sub-indo/",
+        "https://otakudesu.blog/anime/kanan-sama-wa-akumade-choroi-sub-indo/",
+        "https://otakudesu.blog/anime/kami-no-niwatsuki-kusunoki-tei-sub-indo/"
+      ]
+    },
+    {
+      "title": "Anime Complete",
+      "subtitle": "Mode Klik Source — koleksi Anime Complete (https://otakudesu.blog/complete-anime/).",
+      "itemIds": [
+        "https://otakudesu.blog/anime/kimetsu-no-yaiba-katanakaji-no-sato-hen-sub-indo/",
+        "https://otakudesu.blog/anime/jujutsu-kaisen-2nd-season-sub-indo/",
+        "https://otakudesu.blog/anime/frieren-sub-indo/",
+        "https://otakudesu.blog/anime/dandadan-sub-indo/",
+        "https://otakudesu.blog/anime/oshi-no-ko-sub-indo/",
+        "https://otakudesu.blog/anime/spy-x-family-sub-indo/",
+        "https://otakudesu.blog/anime/chainsaw-man-sub-indo/",
+        "https://otakudesu.blog/anime/cyberpunk-edgerunners-sub-indo/"
+      ]
+    }
+  ],
+  "calendar": [
+    {
+      "title": "One Piece",
+      "releaseDayLabel": "Sunday",
+      "releaseTimeLabel": "23:30",
+      "contentType": "ANIME"
+    },
+    {
+      "title": "Kuroneko to Majo no Kyoushitsu",
+      "releaseDayLabel": "Monday",
+      "releaseTimeLabel": "21:00",
+      "contentType": "ANIME"
+    },
+    {
+      "title": "Maid-san wa Taberu Dake",
+      "releaseDayLabel": "Sunday",
+      "releaseTimeLabel": "21:57",
+      "contentType": "ANIME"
+    },
+    {
+      "title": "Ghost Concert: Missing Songs",
+      "releaseDayLabel": "Sunday",
+      "releaseTimeLabel": "23:10",
+      "contentType": "ANIME"
+    },
+    {
+      "title": "Nippon Sangoku",
+      "releaseDayLabel": "Sunday",
+      "releaseTimeLabel": "22:03",
+      "contentType": "ANIME"
+    },
+    {
+      "title": "Yozakura-san Chi no Daisakusen 2nd Season",
+      "releaseDayLabel": "Sunday",
+      "releaseTimeLabel": "19:29",
+      "contentType": "ANIME"
+    },
+    {
+      "title": "Tsue to Tsurugi no Wistoria Season 2",
+      "releaseDayLabel": "Sunday",
+      "releaseTimeLabel": "19:29",
+      "contentType": "ANIME"
+    },
+    {
+      "title": "Niwatori Fighter",
+      "releaseDayLabel": "Sunday",
+      "releaseTimeLabel": "19:29",
+      "contentType": "ANIME"
+    },
+    {
+      "title": "Digimon Beatbreak",
+      "releaseDayLabel": "Sunday",
+      "releaseTimeLabel": "19:28",
+      "contentType": "ANIME"
+    },
+    {
+      "title": "Shunkashuutou Daikousha: Haru no Mai",
+      "releaseDayLabel": "Sunday",
+      "releaseTimeLabel": "07:43",
+      "contentType": "ANIME"
+    }
+  ]
+}

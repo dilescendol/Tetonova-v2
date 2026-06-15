@@ -1,0 +1,74 @@
+{
+  "items": [
+    {
+      "id": "freereels-pilot",
+      "title": "FreeReels Pilot",
+      "tagline": "Fallback shelf for the official FreeReels lane",
+      "overview": "A synthetic short-drama entry shipped with TetoNova so the FreeReels compatibility lane can browse safely while the live parser is still pending.",
+      "contentType": "SERIES",
+      "yearLabel": "2026",
+      "genres": [
+        "Drama",
+        "Romance"
+      ],
+      "releaseHint": "Episode baru rilis tiap pekan",
+      "episodeCount": 60,
+      "durationMinutes": 2,
+      "qualities": [
+        "480p",
+        "720p"
+      ],
+      "subtitleLanguages": [
+        "ID"
+      ],
+      "sourceNote": "Fallback preview for the FreeReels compatibility lane. Live parsing will replace this shelf when the dramabos-shortdrama-v1 adapter is promoted."
+    },
+    {
+      "id": "freereels-starter",
+      "title": "FreeReels Starter",
+      "tagline": "Starter catalog for browse and resume checks",
+      "overview": "A second short-drama entry used to seed home, detail, and continue-watching flows for the FreeReels starter lane.",
+      "contentType": "SERIES",
+      "yearLabel": "2025",
+      "genres": [
+        "Drama",
+        "Slice of Life"
+      ],
+      "releaseHint": "Episode baru rilis tiap pekan",
+      "episodeCount": 80,
+      "durationMinutes": 2,
+      "qualities": [
+        "480p",
+        "720p"
+      ],
+      "subtitleLanguages": [
+        "ID"
+      ]
+    }
+  ],
+  "sections": [
+    {
+      "title": "FreeReels Pilot",
+      "subtitle": "Official TetoNova fallback shelf for the FreeReels compatibility lane.",
+      "itemIds": [
+        "freereels-pilot",
+        "freereels-starter"
+      ]
+    },
+    {
+      "title": "Short Drama Pickups",
+      "subtitle": "Lightweight short-drama picks while the live parser is still cooking.",
+      "itemIds": [
+        "freereels-pilot"
+      ]
+    }
+  ],
+  "calendar": [
+    {
+      "title": "FreeReels Pilot",
+      "releaseDayLabel": "Friday",
+      "releaseTimeLabel": "20:00",
+      "contentType": "SERIES"
+    }
+  ]
+}

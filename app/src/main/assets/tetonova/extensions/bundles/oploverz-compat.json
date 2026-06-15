@@ -1,0 +1,18 @@
+{
+  "id": "oploverz-compat",
+  "name": "Oploverz",
+  "version": "1.0.0",
+  "contentTypes": [
+    "ANIME"
+  ],
+  "capabilities": [
+    "HOME",
+    "SEARCH",
+    "DETAIL",
+    "PLAYBACK",
+    "SUBTITLES"
+  ],
+  "entry": "compat/oploverz/catalog.json",
+  "upstreamUrl": "https://anime.oploverz.ac",
+  "category": "Anime/Donghua"
+}

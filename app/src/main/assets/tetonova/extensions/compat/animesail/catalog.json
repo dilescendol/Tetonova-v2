@@ -1,0 +1,269 @@
+{
+  "items": [
+    {
+      "id": "kimetsu-no-yaiba-s3",
+      "title": "Kimetsu no Yaiba Season 3",
+      "tagline": "Swordsmith Village arc — Tanjirou kembali ke desa pandai pedang",
+      "overview": "Setelah pertarungan di Entertainment District, Tanjirou ditugaskan ke Swordsmith Village untuk perbaikan Nichirin Blade dan langsung berhadapan dengan Upper Moon Four dan Five. Snapshot AnimeSail mencatat Episode 11 sebagai rilis terbaru di shelf Anime Terbaru.",
+      "contentType": "ANIME",
+      "yearLabel": "2023",
+      "genres": ["Anime", "Action", "Shounen", "Supernatural"],
+      "releaseHint": "Episode 11 tersedia",
+      "episodeCount": 11,
+      "durationMinutes": 24,
+      "qualities": ["480p", "720p", "1080p"],
+      "subtitleLanguages": ["ID"],
+      "sourceNote": "Diambil dari arsip Wayback animesail.org/2023-07-23 (rilisan-anime). Live hydration menunggu klien melewati Cloudflare Turnstile + IP-pin gate."
+    },
+    {
+      "id": "mashle-magic-and-muscles",
+      "title": "Mashle: Magic and Muscles",
+      "tagline": "Otot vs sihir — komedi shounen yang naik daun",
+      "overview": "Mash Burnedead lahir di dunia sihir tapi tidak bisa pakai sihir sama sekali. Untuk melindungi keluarga, dia menyusup ke Easton Magic Academy dan menghantam masalah pakai otot. Snapshot AnimeSail mencatat Episode 9, 10, dan 11 sudah tayang.",
+      "contentType": "ANIME",
+      "yearLabel": "2023",
+      "genres": ["Anime", "Comedy", "Action", "Fantasy", "Shounen"],
+      "releaseHint": "Episode 9, 10, 11 tersedia",
+      "episodeCount": 12,
+      "durationMinutes": 23,
+      "qualities": ["480p", "720p", "1080p"],
+      "subtitleLanguages": ["ID"],
+      "sourceNote": "Diambil dari arsip Wayback animesail.org/2023-07-23 (rilisan-anime)."
+    },
+    {
+      "id": "classroom-of-the-elite-s2",
+      "title": "Classroom of the Elite Season 2",
+      "tagline": "Mind games di Advanced Nurturing High School",
+      "overview": "Ayanokouji dan kelas D melanjutkan kompetisi antar-kelas dengan ujian yang lebih licik. Snapshot AnimeSail mencatat dua episode awal Season 2 sudah tersedia.",
+      "contentType": "ANIME",
+      "yearLabel": "2022",
+      "genres": ["Anime", "Drama", "Psychological", "School"],
+      "releaseHint": "Episode 1 & 2 tersedia",
+      "episodeCount": 13,
+      "durationMinutes": 24,
+      "qualities": ["480p", "720p", "1080p"],
+      "subtitleLanguages": ["ID"]
+    },
+    {
+      "id": "kuma-kuma-kuma-bear-punch-s2",
+      "title": "Kuma Kuma Kuma Bear Punch! Season 2",
+      "tagline": "Yuna kembali — fantasy isekai dengan kostum beruang",
+      "overview": "Yuna, gamer 15 tahun yang terjebak di dunia fantasi dengan kostum beruang super OP, melanjutkan petualangan menyeimbangkan kehidupan sehari-hari dan misi adventurer. Snapshot AnimeSail mencatat dua episode awal Season 2.",
+      "contentType": "ANIME",
+      "yearLabel": "2023",
+      "genres": ["Anime", "Fantasy", "Adventure", "Slice of Life", "Isekai"],
+      "releaseHint": "Episode 1 & 2 tersedia",
+      "episodeCount": 12,
+      "durationMinutes": 24,
+      "qualities": ["480p", "720p"],
+      "subtitleLanguages": ["ID"]
+    },
+    {
+      "id": "kubo-san-wa-mobu-wo-yurusanai",
+      "title": "Kubo-san wa Mobu wo Yurusanai",
+      "tagline": "Romcom slice-of-life di mana mob character mendapat perhatian",
+      "overview": "Junta Shiraishi adalah cowok yang hampir transparan di kelas, sampai Kubo-san — gadis paling populer — mulai memperhatikan setiap detail kecil tentangnya. Snapshot AnimeSail menyimpan Episode 1 sebagai rilis terbaru.",
+      "contentType": "ANIME",
+      "yearLabel": "2023",
+      "genres": ["Anime", "Romance", "Comedy", "School", "Slice of Life"],
+      "releaseHint": "Episode 1 tersedia",
+      "episodeCount": 12,
+      "durationMinutes": 23,
+      "qualities": ["480p", "720p"],
+      "subtitleLanguages": ["ID"]
+    },
+    {
+      "id": "hunter-x-hunter-s6",
+      "title": "Hunter x Hunter — Arsip Terbaru",
+      "tagline": "Episode terbaru yang ditangkap arsip AnimeSail",
+      "overview": "Snapshot AnimeSail menampilkan entry 'Hunter x Hunter Season 6 Episode 3' di slot rilis terbaru. Detail produksi mengikuti rilis live Hunter x Hunter saat live hydration dilakukan.",
+      "contentType": "ANIME",
+      "yearLabel": "2023",
+      "genres": ["Anime", "Adventure", "Action", "Shounen"],
+      "releaseHint": "Episode 3 tersedia",
+      "episodeCount": 3,
+      "durationMinutes": 24,
+      "qualities": ["480p", "720p"],
+      "subtitleLanguages": ["ID"],
+      "sourceNote": "Penomoran 'Season 6' mengikuti tag arsip animesail.org. Akan diselaraskan saat live parser membaca metadata kanonik upstream."
+    },
+    {
+      "id": "soul-land-douluo-dalu",
+      "title": "Soul Land (Douluo Dalu)",
+      "tagline": "Donghua cultivation populer — long-running series",
+      "overview": "Adaptasi novel Tang Jia San Shao tentang Tang San di Douluo Continent yang menjadi Soul Master legendaris. Salah satu donghua paling lama tayang di shelf Donghua Terbaru AnimeSail.",
+      "contentType": "ANIME",
+      "yearLabel": "2024",
+      "genres": ["Donghua", "Action", "Fantasy", "Cultivation"],
+      "releaseHint": "Episode mingguan",
+      "durationMinutes": 22,
+      "qualities": ["480p", "720p", "1080p"],
+      "subtitleLanguages": ["ID"],
+      "sourceNote": "Seed shelf Donghua Terbaru. Daftar judul lengkap akan dihidrasi saat live parser AnimeSail aktif."
+    },
+    {
+      "id": "throne-of-seal-shen-yin-wang-zuo",
+      "title": "Throne of Seal (Shen Yin Wang Zuo)",
+      "tagline": "Donghua aksi-fantasy dari Yuewen Animation",
+      "overview": "Adaptasi novel Tang Jia San Shao tentang Long Haochen yang berjuang melawan kekuatan demon. Tersedia di shelf Donghua Terbaru AnimeSail.",
+      "contentType": "ANIME",
+      "yearLabel": "2024",
+      "genres": ["Donghua", "Action", "Fantasy", "Adventure"],
+      "releaseHint": "Episode mingguan",
+      "durationMinutes": 22,
+      "qualities": ["480p", "720p", "1080p"],
+      "subtitleLanguages": ["ID"],
+      "sourceNote": "Seed shelf Donghua Terbaru."
+    },
+    {
+      "id": "battle-through-the-heavens",
+      "title": "Battle Through the Heavens (Doupo Cangqiong)",
+      "tagline": "Donghua xianxia long-running",
+      "overview": "Adaptasi novel Tian Can Tu Dou tentang Xiao Yan yang kehilangan kekuatan dan kembali bangkit. Tersedia di shelf Donghua Terbaru AnimeSail.",
+      "contentType": "ANIME",
+      "yearLabel": "2024",
+      "genres": ["Donghua", "Action", "Xianxia", "Cultivation"],
+      "releaseHint": "Episode mingguan",
+      "durationMinutes": 22,
+      "qualities": ["480p", "720p"],
+      "subtitleLanguages": ["ID"],
+      "sourceNote": "Seed shelf Donghua Terbaru."
+    },
+    {
+      "id": "perfect-world",
+      "title": "Perfect World (Wanmei Shijie)",
+      "tagline": "Donghua adaptasi novel Chen Dong",
+      "overview": "Shi Hao mengarungi era kuno yang penuh ras agung untuk menemukan jalannya. Tersedia di shelf Donghua Terbaru AnimeSail.",
+      "contentType": "ANIME",
+      "yearLabel": "2024",
+      "genres": ["Donghua", "Xianxia", "Action", "Adventure"],
+      "releaseHint": "Episode mingguan",
+      "durationMinutes": 22,
+      "qualities": ["480p", "720p"],
+      "subtitleLanguages": ["ID"],
+      "sourceNote": "Seed shelf Donghua Terbaru."
+    },
+    {
+      "id": "suzume-no-tojimari",
+      "title": "Suzume no Tojimari",
+      "tagline": "Movie Makoto Shinkai 2022 — kisah pintu yang harus ditutup",
+      "overview": "Suzume bertemu pemuda yang berburu pintu sihir yang mengeluarkan bencana. Tersedia di shelf Movie Terbaru AnimeSail.",
+      "contentType": "MOVIE",
+      "yearLabel": "2022",
+      "genres": ["Movie", "Drama", "Supernatural", "Adventure"],
+      "releaseHint": "Movie page",
+      "durationMinutes": 122,
+      "qualities": ["480p", "720p", "1080p"],
+      "subtitleLanguages": ["ID"],
+      "sourceNote": "Seed shelf Movie Terbaru. Akan diganti judul live saat parser AnimeSail aktif."
+    },
+    {
+      "id": "demon-slayer-mugen-train-movie",
+      "title": "Kimetsu no Yaiba: Mugen Train",
+      "tagline": "Movie Demon Slayer paling laris",
+      "overview": "Tanjirou dan Hashira Kyojuro Rengoku menghadapi iblis Enmu di kereta Mugen. Tersedia di shelf Movie Terbaru AnimeSail.",
+      "contentType": "MOVIE",
+      "yearLabel": "2020",
+      "genres": ["Movie", "Action", "Supernatural", "Shounen"],
+      "releaseHint": "Movie page",
+      "durationMinutes": 117,
+      "qualities": ["480p", "720p", "1080p"],
+      "subtitleLanguages": ["ID"],
+      "sourceNote": "Seed shelf Movie Terbaru."
+    },
+    {
+      "id": "jujutsu-kaisen-0-movie",
+      "title": "Jujutsu Kaisen 0 Movie",
+      "tagline": "Prequel Yuta Okkotsu",
+      "overview": "Kisah prequel tentang Yuta Okkotsu dan kutukan Rika sebelum series Jujutsu Kaisen utama dimulai. Tersedia di shelf Movie Terbaru AnimeSail.",
+      "contentType": "MOVIE",
+      "yearLabel": "2021",
+      "genres": ["Movie", "Action", "Supernatural", "Shounen"],
+      "releaseHint": "Movie page",
+      "durationMinutes": 105,
+      "qualities": ["480p", "720p", "1080p"],
+      "subtitleLanguages": ["ID"],
+      "sourceNote": "Seed shelf Movie Terbaru."
+    }
+  ],
+  "sections": [
+    {
+      "title": "AnimeSail Anime Terbaru",
+      "subtitle": "Mode Semua — campuran rilisan terbaru AnimeSail (https://154.26.137.28/rilisan-anime/).",
+      "itemIds": [
+        "kimetsu-no-yaiba-s3",
+        "mashle-magic-and-muscles",
+        "kubo-san-wa-mobu-wo-yurusanai",
+        "classroom-of-the-elite-s2",
+        "kuma-kuma-kuma-bear-punch-s2",
+        "hunter-x-hunter-s6",
+        "soul-land-douluo-dalu",
+        "throne-of-seal-shen-yin-wang-zuo",
+        "suzume-no-tojimari"
+      ]
+    },
+    {
+      "title": "Anime Terbaru",
+      "subtitle": "Mode Klik Source — Anime Terbaru (https://154.26.137.28/rilisan-anime/).",
+      "itemIds": [
+        "kimetsu-no-yaiba-s3",
+        "mashle-magic-and-muscles",
+        "classroom-of-the-elite-s2",
+        "kuma-kuma-kuma-bear-punch-s2",
+        "kubo-san-wa-mobu-wo-yurusanai",
+        "hunter-x-hunter-s6"
+      ]
+    },
+    {
+      "title": "Donghua Terbaru",
+      "subtitle": "Mode Klik Source — Donghua Terbaru (https://154.26.137.28/rilisan-donghua/).",
+      "itemIds": [
+        "soul-land-douluo-dalu",
+        "throne-of-seal-shen-yin-wang-zuo",
+        "battle-through-the-heavens",
+        "perfect-world"
+      ]
+    },
+    {
+      "title": "Movie Terbaru",
+      "subtitle": "Mode Klik Source — Movie Terbaru (https://154.26.137.28/movie-terbaru/).",
+      "itemIds": [
+        "suzume-no-tojimari",
+        "demon-slayer-mugen-train-movie",
+        "jujutsu-kaisen-0-movie"
+      ]
+    }
+  ],
+  "calendar": [
+    {
+      "title": "Kimetsu no Yaiba Season 3",
+      "releaseDayLabel": "Sunday",
+      "releaseTimeLabel": "23:15",
+      "contentType": "ANIME"
+    },
+    {
+      "title": "Mashle: Magic and Muscles",
+      "releaseDayLabel": "Saturday",
+      "releaseTimeLabel": "00:00",
+      "contentType": "ANIME"
+    },
+    {
+      "title": "Classroom of the Elite Season 2",
+      "releaseDayLabel": "Monday",
+      "releaseTimeLabel": "21:30",
+      "contentType": "ANIME"
+    },
+    {
+      "title": "Kuma Kuma Kuma Bear Punch! Season 2",
+      "releaseDayLabel": "Tuesday",
+      "releaseTimeLabel": "23:00",
+      "contentType": "ANIME"
+    },
+    {
+      "title": "Kubo-san wa Mobu wo Yurusanai",
+      "releaseDayLabel": "Wednesday",
+      "releaseTimeLabel": "23:00",
+      "contentType": "ANIME"
+    }
+  ]
+}

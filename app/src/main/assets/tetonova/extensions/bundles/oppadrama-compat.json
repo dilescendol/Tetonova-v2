@@ -1,0 +1,19 @@
+{
+  "id": "oppadrama-compat",
+  "name": "Oppadrama",
+  "version": "1.0.0",
+  "contentTypes": [
+    "MOVIE",
+    "SERIES"
+  ],
+  "capabilities": [
+    "HOME",
+    "SEARCH",
+    "DETAIL",
+    "PLAYBACK",
+    "SUBTITLES"
+  ],
+  "entry": "compat/oppadrama/catalog.json",
+  "upstreamUrl": "http://45.11.57.16",
+  "category": "Dracin/Drakor"
+}

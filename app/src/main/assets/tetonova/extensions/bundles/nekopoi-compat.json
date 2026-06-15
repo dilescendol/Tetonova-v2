@@ -1,0 +1,28 @@
+{
+  "id": "nekopoi-compat",
+  "name": "Nekopoi",
+  "version": "1.0.0",
+  "contentTypes": [
+    "ANIME",
+    "MOVIE"
+  ],
+  "capabilities": [
+    "HOME",
+    "SEARCH",
+    "DETAIL",
+    "PLAYBACK"
+  ],
+  "entry": "compat/nekopoi/catalog.json",
+  "upstreamUrl": "https://nekopoi.care",
+  "apiBaseUrl": "https://nekopoi.care",
+  "webBaseUrl": "https://nekopoi.care",
+  "healthProbeUrl": "https://nekopoi.care/",
+  "compatLayer": "nekopoi-v1",
+  "category": "Anime/Donghua",
+  "isMatureContent": true,
+  "maturityRating": "18+",
+  "riskFlags": [
+    "mature-content",
+    "cloudflare-gate"
+  ]
+}

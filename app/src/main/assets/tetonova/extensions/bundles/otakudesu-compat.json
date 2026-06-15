@@ -1,0 +1,18 @@
+{
+  "id": "otakudesu-compat",
+  "name": "Otakudesu",
+  "version": "1.0.0",
+  "contentTypes": [
+    "ANIME"
+  ],
+  "capabilities": [
+    "HOME",
+    "SEARCH",
+    "DETAIL",
+    "PLAYBACK",
+    "SUBTITLES"
+  ],
+  "entry": "compat/otakudesu/catalog.json",
+  "upstreamUrl": "https://otakudesu.blog",
+  "category": "Anime/Donghua"
+}

@@ -1,0 +1,49 @@
+# Built application files
+*.apk
+*.aar
+*.ap_
+*.aab
+
+# Files for the ART/Dalvik VM
+*.dex
+
+# Java/Kotlin class & log files
+*.class
+*.log
+
+# Generated files
+bin/
+gen/
+out/
+release/
+
+# Gradle / build output
+.gradle/
+build/
+**/build/
+captures/
+.externalNativeBuild/
+.cxx/
+local.properties
+
+# Kotlin
+.kotlin/
+
+# Android Studio / IntelliJ
+*.iml
+.idea/
+.navigation/
+*.ipr
+*.iws
+misc.xml
+deploymentTargetDropDown.xml
+render.experimental.xml
+
+# Keystore / signing — never commit secrets
+*.jks
+*.keystore
+keystore.properties
+
+# OS files
+.DS_Store
+Thumbs.db

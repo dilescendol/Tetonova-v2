@@ -1,0 +1,21 @@
+{
+  "id": "netshort-compat",
+  "name": "Netshort",
+  "version": "1.0.0",
+  "contentTypes": [
+    "SERIES"
+  ],
+  "capabilities": [
+    "HOME",
+    "SEARCH",
+    "DETAIL",
+    "PLAYBACK",
+    "SUBTITLES"
+  ],
+  "entry": "compat/netshort/catalog.json",
+  "upstreamUrl": "https://netshort.dramabos.my.id",
+  "apiBaseUrl": "https://netshort.dramabos.my.id/api/v1",
+  "webBaseUrl": "https://netshort.dramabos.my.id",
+  "healthProbeUrl": "https://netshort.dramabos.my.id/api.html",
+  "category": "Dracin/Drakor"
+}

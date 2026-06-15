@@ -1,0 +1,357 @@
+{
+  "items": [
+    {
+      "id": "one-piece-1163",
+      "title": "One Piece Episode 1163",
+      "tagline": "News Update — UP Minggu, 23:20 WIB",
+      "overview": "Petualangan Monkey D. Luffy dan kru Topi Jerami berlanjut. Snapshot Anoboy mencatat Episode 1163 sebagai entry teratas News Update.",
+      "contentType": "ANIME",
+      "yearLabel": "2026",
+      "genres": ["Anime", "Adventure", "Action", "Shounen", "Fantasy"],
+      "releaseHint": "UP Minggu 23:20 WIB",
+      "episodeCount": 1163,
+      "durationMinutes": 24,
+      "qualities": ["480p", "720p", "1080p"],
+      "subtitleLanguages": ["ID"],
+      "sourceNote": "Diambil dari News Update halaman utama ww1.anoboy.boo (UP APR 2026). Live hydration akan menggantikan dengan poster + link episode kanonik saat parser aktif."
+    },
+    {
+      "id": "ghost-concert-missing-songs-8",
+      "title": "Ghost Concert: Missing Songs Episode 8",
+      "tagline": "News Update — UP Minggu, 23:10 WIB",
+      "overview": "Series misteri-musik dengan konsep arwah pemusik. Snapshot Anoboy menempatkan Episode 8 di slot kedua News Update.",
+      "contentType": "ANIME",
+      "yearLabel": "2026",
+      "genres": ["Anime", "Mystery", "Music", "Supernatural"],
+      "releaseHint": "UP Minggu 23:10 WIB",
+      "episodeCount": 8,
+      "durationMinutes": 24,
+      "qualities": ["480p", "720p"],
+      "subtitleLanguages": ["ID"],
+      "sourceNote": "Diambil dari News Update halaman utama ww1.anoboy.boo."
+    },
+    {
+      "id": "kuroneko-to-majo-no-kyoushitsu-7",
+      "title": "Kuroneko to Majo no Kyoushitsu Episode 7",
+      "tagline": "News Update — UP Minggu, 22:50 WIB",
+      "overview": "Cerita kucing hitam dan kelas penyihir. Snapshot Anoboy menempatkan Episode 7 di News Update.",
+      "contentType": "ANIME",
+      "yearLabel": "2026",
+      "genres": ["Anime", "Fantasy", "Magic", "Slice of Life"],
+      "releaseHint": "UP Minggu 22:50 WIB",
+      "episodeCount": 7,
+      "durationMinutes": 24,
+      "qualities": ["480p", "720p"],
+      "subtitleLanguages": ["ID"],
+      "sourceNote": "Diambil dari News Update halaman utama ww1.anoboy.boo."
+    },
+    {
+      "id": "nippon-sangoku-8",
+      "title": "Nippon Sangoku Episode 8",
+      "tagline": "News Update — UP Minggu, 22:03 WIB",
+      "overview": "Versi Jepang dari kisah Tiga Kerajaan. Snapshot Anoboy menempatkan Episode 8 di News Update.",
+      "contentType": "ANIME",
+      "yearLabel": "2026",
+      "genres": ["Anime", "Historical", "Action", "Drama"],
+      "releaseHint": "UP Minggu 22:03 WIB",
+      "episodeCount": 8,
+      "durationMinutes": 24,
+      "qualities": ["480p", "720p", "1080p"],
+      "subtitleLanguages": ["ID"],
+      "sourceNote": "Diambil dari News Update halaman utama ww1.anoboy.boo."
+    },
+    {
+      "id": "maid-san-wa-taberu-dake-9",
+      "title": "Maid-San Wa Taberu Dake Episode 9",
+      "tagline": "News Update — UP Minggu, 21:57 WIB",
+      "overview": "Slice of life ringan dengan tema maid yang gemar makan. Snapshot Anoboy menempatkan Episode 9 di News Update.",
+      "contentType": "ANIME",
+      "yearLabel": "2026",
+      "genres": ["Anime", "Comedy", "Slice of Life"],
+      "releaseHint": "UP Minggu 21:57 WIB",
+      "episodeCount": 9,
+      "durationMinutes": 24,
+      "qualities": ["480p", "720p"],
+      "subtitleLanguages": ["ID"],
+      "sourceNote": "Diambil dari News Update halaman utama ww1.anoboy.boo."
+    },
+    {
+      "id": "yozakura-san-chi-no-daisakusen-s2-7",
+      "title": "Yozakura-San Chi No Daisakusen Season 2 Episode 7",
+      "tagline": "News Update — UP Minggu, 19:29 WIB",
+      "overview": "Lanjutan kisah keluarga mata-mata Yozakura dan Taiyou Asano. Snapshot Anoboy menempatkan Episode 7 di News Update.",
+      "contentType": "ANIME",
+      "yearLabel": "2026",
+      "genres": ["Anime", "Action", "Comedy", "Shounen"],
+      "releaseHint": "UP Minggu 19:29 WIB",
+      "episodeCount": 7,
+      "durationMinutes": 24,
+      "qualities": ["480p", "720p", "1080p"],
+      "subtitleLanguages": ["ID"],
+      "sourceNote": "Diambil dari News Update halaman utama ww1.anoboy.boo."
+    },
+    {
+      "id": "wistoria-wand-and-sword-s2-7",
+      "title": "Tsue To Tsurugi No Wistoria Season 2 Episode 7",
+      "tagline": "News Update — UP Minggu, 19:29 WIB",
+      "overview": "Will Serfort melanjutkan perjalanan menjadi Magia Vander. Snapshot Anoboy menempatkan Episode 7 di News Update.",
+      "contentType": "ANIME",
+      "yearLabel": "2026",
+      "genres": ["Anime", "Action", "Fantasy", "Magic", "Shounen"],
+      "releaseHint": "UP Minggu 19:29 WIB",
+      "episodeCount": 7,
+      "durationMinutes": 24,
+      "qualities": ["480p", "720p", "1080p"],
+      "subtitleLanguages": ["ID"],
+      "sourceNote": "Diambil dari News Update halaman utama ww1.anoboy.boo."
+    },
+    {
+      "id": "niwatori-fighter-11",
+      "title": "Niwatori Fighter Episode 11",
+      "tagline": "News Update — UP Minggu, 19:29 WIB",
+      "overview": "Aksi komedi tentang petarung berkostum ayam. Snapshot Anoboy menempatkan Episode 11 di News Update.",
+      "contentType": "ANIME",
+      "yearLabel": "2026",
+      "genres": ["Anime", "Action", "Comedy"],
+      "releaseHint": "UP Minggu 19:29 WIB",
+      "episodeCount": 11,
+      "durationMinutes": 24,
+      "qualities": ["480p", "720p"],
+      "subtitleLanguages": ["ID"],
+      "sourceNote": "Diambil dari News Update halaman utama ww1.anoboy.boo."
+    },
+    {
+      "id": "kamen-rider-zezztz-36",
+      "title": "Kamen Rider Zezztz Episode 36",
+      "tagline": "News Update — UP Minggu, 19:29 WIB",
+      "overview": "Live action tokusatsu Kamen Rider seri Zezztz. Snapshot Anoboy menempatkan Episode 36 di News Update — kandidat utama shelf Live Action.",
+      "contentType": "SERIES",
+      "yearLabel": "2025",
+      "genres": ["Live Action", "Tokusatsu", "Action"],
+      "releaseHint": "UP Minggu 19:29 WIB",
+      "episodeCount": 36,
+      "durationMinutes": 23,
+      "qualities": ["480p", "720p", "1080p"],
+      "subtitleLanguages": ["ID"],
+      "sourceNote": "Diambil dari News Update halaman utama ww1.anoboy.boo. Cocok untuk shelf https://ww1.anoboy.boo/live-action/."
+    },
+    {
+      "id": "digimon-beatbreak-32",
+      "title": "Digimon Beatbreak Episode 32",
+      "tagline": "News Update — UP Minggu, 19:28 WIB",
+      "overview": "Generasi terbaru franchise Digimon dengan tema musik dan beat. Snapshot Anoboy menempatkan Episode 32 di News Update.",
+      "contentType": "ANIME",
+      "yearLabel": "2025",
+      "genres": ["Anime", "Adventure", "Action", "Shounen"],
+      "releaseHint": "UP Minggu 19:28 WIB",
+      "episodeCount": 32,
+      "durationMinutes": 24,
+      "qualities": ["480p", "720p", "1080p"],
+      "subtitleLanguages": ["ID"],
+      "sourceNote": "Diambil dari News Update halaman utama ww1.anoboy.boo."
+    },
+    {
+      "id": "diamond-no-ace-act-ii-s2-8",
+      "title": "Diamond No Ace: Act II Season 2 Episode 8",
+      "tagline": "News Update — UP Minggu, 19:29 WIB",
+      "overview": "Eijun Sawamura dan tim Seido High School melaju ke turnamen baseball musim panas. Snapshot Anoboy menempatkan Episode 8 di News Update.",
+      "contentType": "ANIME",
+      "yearLabel": "2026",
+      "genres": ["Anime", "Sports", "Shounen", "School"],
+      "releaseHint": "UP Minggu 19:29 WIB",
+      "episodeCount": 8,
+      "durationMinutes": 24,
+      "qualities": ["480p", "720p", "1080p"],
+      "subtitleLanguages": ["ID"],
+      "sourceNote": "Diambil dari News Update halaman utama ww1.anoboy.boo."
+    },
+    {
+      "id": "shunkashuutou-daikousha-haru-no-mai-9",
+      "title": "Shunkashuutou Daikousha: Haru No Mai Episode 9",
+      "tagline": "News Update — UP Minggu, 07:43 WIB",
+      "overview": "Series bertema empat musim Jepang. Snapshot Anoboy menempatkan Episode 9 di News Update.",
+      "contentType": "ANIME",
+      "yearLabel": "2026",
+      "genres": ["Anime", "Drama", "Slice of Life"],
+      "releaseHint": "UP Minggu 07:43 WIB",
+      "episodeCount": 9,
+      "durationMinutes": 24,
+      "qualities": ["480p", "720p"],
+      "subtitleLanguages": ["ID"],
+      "sourceNote": "Diambil dari News Update halaman utama ww1.anoboy.boo."
+    },
+    {
+      "id": "yuusha-no-kuzu-19",
+      "title": "Yuusha No Kuzu Episode 19",
+      "tagline": "News Update — UP Minggu, 06:15 WIB",
+      "overview": "Series fantasy bertema 'pahlawan tak berguna'. Snapshot Anoboy menempatkan Episode 19 di News Update.",
+      "contentType": "ANIME",
+      "yearLabel": "2026",
+      "genres": ["Anime", "Fantasy", "Adventure", "Comedy"],
+      "releaseHint": "UP Minggu 06:15 WIB",
+      "episodeCount": 19,
+      "durationMinutes": 24,
+      "qualities": ["480p", "720p"],
+      "subtitleLanguages": ["ID"],
+      "sourceNote": "Diambil dari News Update halaman utama ww1.anoboy.boo."
+    },
+    {
+      "id": "mao-8",
+      "title": "Mao Episode 8",
+      "tagline": "News Update — UP Minggu, 02:15 WIB",
+      "overview": "Adaptasi manga Mao karya Rumiko Takahashi. Snapshot Anoboy menempatkan Episode 8 di News Update.",
+      "contentType": "ANIME",
+      "yearLabel": "2026",
+      "genres": ["Anime", "Supernatural", "Mystery", "Romance"],
+      "releaseHint": "UP Minggu 02:15 WIB",
+      "episodeCount": 8,
+      "durationMinutes": 24,
+      "qualities": ["480p", "720p", "1080p"],
+      "subtitleLanguages": ["ID"],
+      "sourceNote": "Diambil dari News Update halaman utama ww1.anoboy.boo."
+    },
+    {
+      "id": "kanan-sama-wa-akumade-choroi-8",
+      "title": "Kanan-Sama Wa Akumade Choroi Episode 8",
+      "tagline": "News Update — UP Minggu, 02:15 WIB",
+      "overview": "Comedy supernatural tentang dewi yang gampang luluh. Snapshot Anoboy menempatkan Episode 8 di News Update.",
+      "contentType": "ANIME",
+      "yearLabel": "2026",
+      "genres": ["Anime", "Comedy", "Supernatural", "Romance"],
+      "releaseHint": "UP Minggu 02:15 WIB",
+      "episodeCount": 8,
+      "durationMinutes": 24,
+      "qualities": ["480p", "720p"],
+      "subtitleLanguages": ["ID"],
+      "sourceNote": "Diambil dari News Update halaman utama ww1.anoboy.boo."
+    },
+    {
+      "id": "anime-movie-shelf-seed",
+      "title": "Anoboy Anime Movie — koleksi rilis",
+      "tagline": "Seed shelf Movie — daftar movie akan dihidrasi parser",
+      "overview": "Snapshot menampilkan blok 'Movie' di bawah News Update dengan thumbnail koleksi anime movie Anoboy. Item placeholder ini menjaga shelf Movie tetap browseable sampai live parser membaca daftar lengkap dari https://ww1.anoboy.boo/anime-movie/.",
+      "contentType": "MOVIE",
+      "yearLabel": "2026",
+      "genres": ["Movie", "Anime"],
+      "releaseHint": "Daftar movie pada halaman /anime-movie/",
+      "qualities": ["480p", "720p", "1080p"],
+      "subtitleLanguages": ["ID"],
+      "sourceNote": "Placeholder shelf Movie. Akan diganti judul-judul nyata saat parser AnoboySource aktif."
+    }
+  ],
+  "sections": [
+    {
+      "title": "Anoboy Update Terbaru",
+      "subtitle": "Mode Semua — News Update halaman utama ww1.anoboy.boo (UP APR 2026).",
+      "itemIds": [
+        "one-piece-1163",
+        "ghost-concert-missing-songs-8",
+        "kuroneko-to-majo-no-kyoushitsu-7",
+        "nippon-sangoku-8",
+        "maid-san-wa-taberu-dake-9",
+        "yozakura-san-chi-no-daisakusen-s2-7",
+        "wistoria-wand-and-sword-s2-7",
+        "niwatori-fighter-11",
+        "digimon-beatbreak-32",
+        "diamond-no-ace-act-ii-s2-8"
+      ]
+    },
+    {
+      "title": "Update Terbaru",
+      "subtitle": "Mode Klik Source — News Update penuh (https://ww1.anoboy.boo/).",
+      "itemIds": [
+        "one-piece-1163",
+        "ghost-concert-missing-songs-8",
+        "kuroneko-to-majo-no-kyoushitsu-7",
+        "nippon-sangoku-8",
+        "maid-san-wa-taberu-dake-9",
+        "yozakura-san-chi-no-daisakusen-s2-7",
+        "wistoria-wand-and-sword-s2-7",
+        "niwatori-fighter-11",
+        "kamen-rider-zezztz-36",
+        "digimon-beatbreak-32",
+        "diamond-no-ace-act-ii-s2-8",
+        "shunkashuutou-daikousha-haru-no-mai-9",
+        "yuusha-no-kuzu-19",
+        "mao-8",
+        "kanan-sama-wa-akumade-choroi-8"
+      ]
+    },
+    {
+      "title": "Movie",
+      "subtitle": "Mode Klik Source — Anime Movie (https://ww1.anoboy.boo/anime-movie/).",
+      "itemIds": [
+        "anime-movie-shelf-seed"
+      ]
+    },
+    {
+      "title": "Live Action",
+      "subtitle": "Mode Klik Source — Live Action (https://ww1.anoboy.boo/live-action/).",
+      "itemIds": [
+        "kamen-rider-zezztz-36"
+      ]
+    }
+  ],
+  "calendar": [
+    {
+      "title": "One Piece",
+      "releaseDayLabel": "Sunday",
+      "releaseTimeLabel": "23:20",
+      "contentType": "ANIME"
+    },
+    {
+      "title": "Ghost Concert: Missing Songs",
+      "releaseDayLabel": "Sunday",
+      "releaseTimeLabel": "23:10",
+      "contentType": "ANIME"
+    },
+    {
+      "title": "Kuroneko to Majo no Kyoushitsu",
+      "releaseDayLabel": "Sunday",
+      "releaseTimeLabel": "22:50",
+      "contentType": "ANIME"
+    },
+    {
+      "title": "Nippon Sangoku",
+      "releaseDayLabel": "Sunday",
+      "releaseTimeLabel": "22:03",
+      "contentType": "ANIME"
+    },
+    {
+      "title": "Maid-San Wa Taberu Dake",
+      "releaseDayLabel": "Sunday",
+      "releaseTimeLabel": "21:57",
+      "contentType": "ANIME"
+    },
+    {
+      "title": "Yozakura-San Chi No Daisakusen Season 2",
+      "releaseDayLabel": "Sunday",
+      "releaseTimeLabel": "19:29",
+      "contentType": "ANIME"
+    },
+    {
+      "title": "Tsue To Tsurugi No Wistoria Season 2",
+      "releaseDayLabel": "Sunday",
+      "releaseTimeLabel": "19:29",
+      "contentType": "ANIME"
+    },
+    {
+      "title": "Niwatori Fighter",
+      "releaseDayLabel": "Sunday",
+      "releaseTimeLabel": "19:29",
+      "contentType": "ANIME"
+    },
+    {
+      "title": "Digimon Beatbreak",
+      "releaseDayLabel": "Sunday",
+      "releaseTimeLabel": "19:28",
+      "contentType": "ANIME"
+    },
+    {
+      "title": "Diamond No Ace: Act II Season 2",
+      "releaseDayLabel": "Sunday",
+      "releaseTimeLabel": "19:29",
+      "contentType": "ANIME"
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "id": "samehadaku-compat",
+  "name": "Samehadaku",
+  "version": "1.0.0",
+  "contentTypes": [
+    "ANIME"
+  ],
+  "capabilities": [
+    "HOME",
+    "SEARCH",
+    "DETAIL",
+    "PLAYBACK",
+    "SUBTITLES"
+  ],
+  "entry": "compat/samehadaku/catalog.json",
+  "upstreamUrl": "https://v2.samehadaku.how",
+  "category": "Anime/Donghua"
+}

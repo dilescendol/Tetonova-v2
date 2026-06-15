@@ -1,0 +1,148 @@
+{
+  "items": [
+    {
+      "id": "https://animexin.dev/supreme-god-emperor/",
+      "title": "Supreme God Emperor",
+      "tagline": "Official AnimeXin donghua lane with milestone scraping coverage.",
+      "overview": "TetoNova seeds AnimeXin with Supreme God Emperor because the site exposes a deep milestone ladder. The live adapter is prepared around episode 1, 200, 252, 300, 400, 450, 500, and the latest checked multiple-of-50 releases near episode 550 from the current 593 run.",
+      "contentType": "ANIME",
+      "yearLabel": "2020",
+      "genres": ["Donghua", "Action", "Adventure", "Fantasy"],
+      "releaseHint": "Latest checked: episode 593 • milestone 550",
+      "episodeCount": 593,
+      "durationMinutes": 7,
+      "qualities": ["360p", "480p", "720p", "1080p"],
+      "subtitleLanguages": ["ID", "EN"],
+      "sourceNote": "Fallback shelf for the official AnimeXin lane. Live parsing will replace this entry when the source is reachable."
+    },
+    {
+      "id": "https://animexin.dev/supreme-god-emperor-episode-1-subbed/",
+      "title": "Supreme God Emperor Episode 1",
+      "tagline": "Milestone seed for legacy server mapping on AnimeXin.",
+      "overview": "Episode 1 is seeded to represent the oldest playback pattern we checked for AnimeXin compatibility.",
+      "contentType": "ANIME",
+      "yearLabel": "2020",
+      "genres": ["Donghua", "Fantasy"],
+      "releaseHint": "Legacy milestone",
+      "episodeCount": 1,
+      "durationMinutes": 7,
+      "qualities": ["360p", "480p", "720p"],
+      "subtitleLanguages": ["ID", "EN"]
+    },
+    {
+      "id": "https://animexin.dev/supreme-god-emperor-episode-200-subtitle/",
+      "title": "Supreme God Emperor Episode 200",
+      "tagline": "Milestone seed for mid-run player variation checks.",
+      "overview": "Episode 200 is included so the AnimeXin lane can benchmark mid-run server rotation against older and newer milestones.",
+      "contentType": "ANIME",
+      "yearLabel": "2023",
+      "genres": ["Donghua", "Action"],
+      "releaseHint": "Milestone 200",
+      "episodeCount": 200,
+      "durationMinutes": 7,
+      "qualities": ["360p", "480p", "720p"],
+      "subtitleLanguages": ["ID", "EN"]
+    },
+    {
+      "id": "https://animexin.dev/supreme-god-emperor-episode-252-subtitle/",
+      "title": "Supreme God Emperor Episode 252",
+      "tagline": "Milestone seed for mixed server generations on AnimeXin.",
+      "overview": "Episode 252 sits in the transition zone between older and newer player stacks, making it useful for fallback verification.",
+      "contentType": "ANIME",
+      "yearLabel": "2024",
+      "genres": ["Donghua", "Action"],
+      "releaseHint": "Milestone 252",
+      "episodeCount": 252,
+      "durationMinutes": 7,
+      "qualities": ["360p", "480p", "720p", "1080p"],
+      "subtitleLanguages": ["ID", "EN"]
+    },
+    {
+      "id": "https://animexin.dev/supreme-god-emperor-episode-300-indonesia-english-sub/",
+      "title": "Supreme God Emperor Episode 300",
+      "tagline": "Milestone seed for newer mirrored player stacks on AnimeXin.",
+      "overview": "Episode 300 gives TetoNova a newer checkpoint for direct media, mirrored embeds, and auto-fallback behavior on AnimeXin.",
+      "contentType": "ANIME",
+      "yearLabel": "2024",
+      "genres": ["Donghua", "Fantasy"],
+      "releaseHint": "Milestone 300",
+      "episodeCount": 300,
+      "durationMinutes": 7,
+      "qualities": ["360p", "480p", "720p", "1080p"],
+      "subtitleLanguages": ["ID", "EN"]
+    },
+    {
+      "id": "https://animexin.dev/supreme-god-emperor-episode-400-indonesia-english-sub/",
+      "title": "Supreme God Emperor Episode 400",
+      "tagline": "Milestone seed for stable dual-hardsub and all-sub player checks.",
+      "overview": "Episode 400 confirms the newer AnimeXin stack where Dailymotion, Ok.ru, Mega, Rumble, and Dood remain present across hard-sub and all-sub lanes.",
+      "contentType": "ANIME",
+      "yearLabel": "2025",
+      "genres": ["Donghua", "Fantasy"],
+      "releaseHint": "Milestone 400",
+      "episodeCount": 400,
+      "durationMinutes": 7,
+      "qualities": ["360p", "480p", "720p", "1080p"],
+      "subtitleLanguages": ["ID", "EN"]
+    },
+    {
+      "id": "https://animexin.dev/supreme-god-emperor-episode-450-indonesia-english-sub/",
+      "title": "Supreme God Emperor Episode 450",
+      "tagline": "Milestone seed for post-400 mirror consistency checks.",
+      "overview": "Episode 450 keeps the same multi-server stack as episode 400, making it useful for verifying that AnimeXin does not rotate hosts wildly between nearby milestones.",
+      "contentType": "ANIME",
+      "yearLabel": "2025",
+      "genres": ["Donghua", "Action"],
+      "releaseHint": "Milestone 450",
+      "episodeCount": 450,
+      "durationMinutes": 7,
+      "qualities": ["360p", "480p", "720p", "1080p"],
+      "subtitleLanguages": ["ID", "EN"]
+    },
+    {
+      "id": "https://animexin.dev/supreme-god-emperor-episode-500-indonesia-english-sub/",
+      "title": "Supreme God Emperor Episode 500",
+      "tagline": "Milestone seed for late-run server consistency checks.",
+      "overview": "Episode 500 still exposes the same Dailymotion, Ok.ru, Mega, Rumble, and Dood family, so TetoNova can treat the 400-500 range as one stable playback generation on AnimeXin.",
+      "contentType": "ANIME",
+      "yearLabel": "2025",
+      "genres": ["Donghua", "Action", "Adventure"],
+      "releaseHint": "Milestone 500",
+      "episodeCount": 500,
+      "durationMinutes": 7,
+      "qualities": ["360p", "480p", "720p", "1080p"],
+      "subtitleLanguages": ["ID", "EN"]
+    }
+  ],
+  "sections": [
+    {
+      "title": "AnimeXin Pilot",
+      "subtitle": "Official TetoNova fallback shelf for the AnimeXin donghua lane.",
+      "itemIds": [
+        "https://animexin.dev/supreme-god-emperor/",
+        "https://animexin.dev/supreme-god-emperor-episode-300-indonesia-english-sub/"
+      ]
+    },
+    {
+      "title": "Supreme God Emperor Milestones",
+      "subtitle": "Milestone episode seeds used to harden player extraction on AnimeXin.",
+      "itemIds": [
+        "https://animexin.dev/supreme-god-emperor-episode-1-subbed/",
+        "https://animexin.dev/supreme-god-emperor-episode-200-subtitle/",
+        "https://animexin.dev/supreme-god-emperor-episode-252-subtitle/",
+        "https://animexin.dev/supreme-god-emperor-episode-300-indonesia-english-sub/",
+        "https://animexin.dev/supreme-god-emperor-episode-400-indonesia-english-sub/",
+        "https://animexin.dev/supreme-god-emperor-episode-450-indonesia-english-sub/",
+        "https://animexin.dev/supreme-god-emperor-episode-500-indonesia-english-sub/"
+      ]
+    }
+  ],
+  "calendar": [
+    {
+      "title": "Supreme God Emperor",
+      "releaseDayLabel": "Friday",
+      "releaseTimeLabel": "20:00",
+      "contentType": "ANIME"
+    }
+  ]
+}

@@ -1,0 +1,82 @@
+{
+  "items": [
+    {
+      "id": "moonline-cadet",
+      "title": "Moonline Cadet",
+      "tagline": "Fallback shelf for the official Animasu lane",
+      "overview": "A synthetic catalog entry shipped with TetoNova so the Animasu compatibility lane can browse safely while the live parser is still pending.",
+      "contentType": "ANIME",
+      "yearLabel": "2026",
+      "genres": [
+        "Adventure",
+        "Drama"
+      ],
+      "releaseHint": "Update Selasa 19:15",
+      "episodeCount": 13,
+      "durationMinutes": 24,
+      "qualities": [
+        "1080p",
+        "720p",
+        "480p"
+      ],
+      "subtitleLanguages": [
+        "ID",
+        "EN"
+      ],
+      "sourceNote": "Fallback preview for the Animasu compatibility lane. Live parsing will replace this shelf when the adapter is promoted."
+    },
+    {
+      "id": "aurora-noise",
+      "title": "Aurora Noise",
+      "tagline": "Compact slice-of-life lane for search and detail checks",
+      "overview": "A bright music drama used to seed home, detail, and continue-watching flows for the Animasu starter lane.",
+      "contentType": "ANIME",
+      "yearLabel": "2025",
+      "genres": [
+        "Music",
+        "Slice of Life"
+      ],
+      "releaseHint": "Episode baru Jumat 17:45",
+      "episodeCount": 9,
+      "durationMinutes": 22,
+      "qualities": [
+        "720p",
+        "480p"
+      ],
+      "subtitleLanguages": [
+        "ID"
+      ]
+    }
+  ],
+  "sections": [
+    {
+      "title": "Animasu Pilot",
+      "subtitle": "Official TetoNova fallback shelf for the Animasu compatibility lane.",
+      "itemIds": [
+        "moonline-cadet",
+        "aurora-noise"
+      ]
+    },
+    {
+      "title": "Mood Booster",
+      "subtitle": "Lightweight anime picks while the live parser is still cooking.",
+      "itemIds": [
+        "aurora-noise"
+      ]
+    }
+  ],
+  "calendar": [
+    {
+      "title": "Moonline Cadet",
+      "releaseDayLabel": "Tuesday",
+      "releaseTimeLabel": "19:15",
+      "contentType": "ANIME"
+    },
+    {
+      "title": "Aurora Noise",
+      "releaseDayLabel": "Friday",
+      "releaseTimeLabel": "17:45",
+      "contentType": "ANIME"
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "id": "fundrama-compat",
+  "name": "FunDrama",
+  "version": "1.0.0",
+  "contentTypes": [
+    "SERIES"
+  ],
+  "capabilities": [
+    "HOME",
+    "SEARCH",
+    "DETAIL",
+    "PLAYBACK",
+    "SUBTITLES"
+  ],
+  "entry": "compat/fundrama/catalog.json",
+  "upstreamUrl": "https://drakula.dramabos.my.id/fundrama",
+  "apiBaseUrl": "https://drakula.dramabos.my.id/fundrama/api/v1",
+  "webBaseUrl": "https://drakula.dramabos.my.id/fundrama",
+  "healthProbeUrl": "https://drakula.dramabos.my.id/fundrama-api.html",
+  "category": "Dracin/Drakor"
+}

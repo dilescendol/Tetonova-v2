@@ -1,0 +1,21 @@
+{
+  "id": "kuramanime-compat",
+  "name": "Kuramanime",
+  "version": "1.0.0",
+  "contentTypes": [
+    "ANIME"
+  ],
+  "capabilities": [
+    "HOME",
+    "SEARCH",
+    "DETAIL",
+    "PLAYBACK",
+    "SUBTITLES"
+  ],
+  "entry": "compat/kuramanime/catalog.json",
+  "upstreamUrl": "https://v18.kuramanime.ing",
+  "apiBaseUrl": "https://v18.kuramanime.ing",
+  "webBaseUrl": "https://v18.kuramanime.ing",
+  "healthProbeUrl": "https://v18.kuramanime.ing/",
+  "category": "Anime/Donghua"
+}

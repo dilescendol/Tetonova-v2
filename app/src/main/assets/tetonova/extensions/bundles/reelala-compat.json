@@ -1,0 +1,21 @@
+{
+  "id": "reelala-compat",
+  "name": "Reelala",
+  "version": "1.0.0",
+  "contentTypes": [
+    "SERIES"
+  ],
+  "capabilities": [
+    "HOME",
+    "SEARCH",
+    "DETAIL",
+    "PLAYBACK",
+    "SUBTITLES"
+  ],
+  "entry": "compat/reelala/catalog.json",
+  "upstreamUrl": "https://drakula.dramabos.my.id/reelala",
+  "apiBaseUrl": "https://drakula.dramabos.my.id/reelala/api/v1",
+  "webBaseUrl": "https://drakula.dramabos.my.id/reelala",
+  "healthProbeUrl": "https://drakula.dramabos.my.id/reelala.html",
+  "category": "Dracin/Drakor"
+}

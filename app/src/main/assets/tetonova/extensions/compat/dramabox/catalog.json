@@ -1,0 +1,72 @@
+{
+  "items": [
+    {
+      "id": "hidden-vows",
+      "title": "Hidden Vows",
+      "tagline": "Fallback shelf for the official DramaBox lane",
+      "overview": "A synthetic short-drama title seeded into TetoNova so the DramaBox lane stays browseable while live API hydration is unavailable or bandwidth-capped.",
+      "contentType": "SERIES",
+      "yearLabel": "2026",
+      "genres": ["Drama", "Romance", "Short Drama"],
+      "releaseHint": "Episode drop every Tuesday",
+      "episodeCount": 68,
+      "durationMinutes": 2,
+      "qualities": ["480p", "720p", "1080p"],
+      "subtitleLanguages": ["ID", "EN"],
+      "sourceNote": "Fallback shelf for the official DramaBox lane. Live API hydration will replace these entries when the upstream is reachable."
+    },
+    {
+      "id": "after-the-contract",
+      "title": "After The Contract",
+      "tagline": "Starter short-drama tile for DramaBox",
+      "overview": "A synthetic contract-marriage short drama used to keep home, detail, and player flows alive while the live API is rate-limited.",
+      "contentType": "SERIES",
+      "yearLabel": "2025",
+      "genres": ["Drama", "Short Drama", "Melodrama"],
+      "releaseHint": "All episodes ready",
+      "episodeCount": 54,
+      "durationMinutes": 2,
+      "qualities": ["480p", "720p"],
+      "subtitleLanguages": ["ID"]
+    },
+    {
+      "id": "midnight-heir",
+      "title": "Midnight Heir",
+      "tagline": "DramaBox fallback tile for suspense-heavy browsing",
+      "overview": "A synthetic inheritance thriller included so the DramaBox lane still feels representative during upstream lockouts.",
+      "contentType": "SERIES",
+      "yearLabel": "2024",
+      "genres": ["Drama", "Thriller", "Short Drama"],
+      "releaseHint": "Binge ready",
+      "episodeCount": 72,
+      "durationMinutes": 2,
+      "qualities": ["480p", "720p", "1080p"],
+      "subtitleLanguages": ["ID"]
+    }
+  ],
+  "sections": [
+    {
+      "title": "DramaBox Pilot",
+      "subtitle": "Official TetoNova fallback shelf for the DramaBox short-drama lane.",
+      "itemIds": ["hidden-vows", "after-the-contract", "midnight-heir"]
+    },
+    {
+      "title": "Short Drama Picks",
+      "subtitle": "Starter short-drama titles while the public upstream is unavailable.",
+      "itemIds": ["hidden-vows", "after-the-contract"]
+    },
+    {
+      "title": "Suspense Shelf",
+      "subtitle": "A darker short-drama pick for the DramaBox fallback lane.",
+      "itemIds": ["midnight-heir"]
+    }
+  ],
+  "calendar": [
+    {
+      "title": "Hidden Vows",
+      "releaseDayLabel": "Tuesday",
+      "releaseTimeLabel": "20:00",
+      "contentType": "SERIES"
+    }
+  ]
+}

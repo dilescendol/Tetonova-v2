@@ -1,0 +1,59 @@
+{
+  "items": [
+    {
+      "id": "signal-bloom",
+      "title": "Signal Bloom",
+      "tagline": "Fallback shelf for the official NontonAnimeID lane",
+      "overview": "A synthetic catalog entry shipped with TetoNova so the NontonAnimeID compatibility lane can browse safely while the live parser is still pending.",
+      "contentType": "ANIME",
+      "yearLabel": "2026",
+      "genres": ["Action", "Mystery"],
+      "releaseHint": "Update Minggu 19:30",
+      "episodeCount": 12,
+      "durationMinutes": 24,
+      "qualities": ["480p", "720p", "1080p"],
+      "subtitleLanguages": ["ID", "EN"],
+      "sourceNote": "Fallback preview for the NontonAnimeID compatibility lane. Live parsing will replace this shelf when the adapter is promoted."
+    },
+    {
+      "id": "violet-engine",
+      "title": "Violet Engine",
+      "tagline": "Starter catalog for browse and quick resume checks",
+      "overview": "A clean sci-fi action title used to seed home, detail, and continue-watching flows for the NontonAnimeID starter lane.",
+      "contentType": "ANIME",
+      "yearLabel": "2025",
+      "genres": ["Sci-Fi", "Action"],
+      "releaseHint": "Episode baru Kamis 18:00",
+      "episodeCount": 10,
+      "durationMinutes": 23,
+      "qualities": ["480p", "720p"],
+      "subtitleLanguages": ["ID"]
+    }
+  ],
+  "sections": [
+    {
+      "title": "NontonAnimeID Pilot",
+      "subtitle": "Official TetoNova fallback shelf for the NontonAnimeID compatibility lane.",
+      "itemIds": ["signal-bloom", "violet-engine"]
+    },
+    {
+      "title": "Action Week",
+      "subtitle": "Lightweight anime picks while the live parser is still cooking.",
+      "itemIds": ["signal-bloom"]
+    }
+  ],
+  "calendar": [
+    {
+      "title": "Signal Bloom",
+      "releaseDayLabel": "Sunday",
+      "releaseTimeLabel": "19:30",
+      "contentType": "ANIME"
+    },
+    {
+      "title": "Violet Engine",
+      "releaseDayLabel": "Thursday",
+      "releaseTimeLabel": "18:00",
+      "contentType": "ANIME"
+    }
+  ]
+}

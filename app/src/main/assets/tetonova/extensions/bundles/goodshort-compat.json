@@ -1,0 +1,21 @@
+{
+  "id": "goodshort-compat",
+  "name": "GoodShort",
+  "version": "1.0.0",
+  "contentTypes": [
+    "SERIES"
+  ],
+  "capabilities": [
+    "HOME",
+    "SEARCH",
+    "DETAIL",
+    "PLAYBACK",
+    "SUBTITLES"
+  ],
+  "entry": "compat/goodshort/catalog.json",
+  "upstreamUrl": "https://goodshort.dramabos.my.id",
+  "apiBaseUrl": "https://goodshort.dramabos.my.id/api/v1",
+  "webBaseUrl": "https://goodshort.dramabos.my.id",
+  "healthProbeUrl": "https://goodshort.dramabos.my.id/api.html",
+  "category": "Dracin/Drakor"
+}

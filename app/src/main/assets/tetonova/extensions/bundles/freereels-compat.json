@@ -1,0 +1,21 @@
+{
+  "id": "freereels-compat",
+  "name": "FreeReels",
+  "version": "1.0.0",
+  "contentTypes": [
+    "SERIES"
+  ],
+  "capabilities": [
+    "HOME",
+    "SEARCH",
+    "DETAIL",
+    "PLAYBACK",
+    "SUBTITLES"
+  ],
+  "entry": "compat/freereels/catalog.json",
+  "upstreamUrl": "https://drakula.dramabos.my.id/freereels",
+  "apiBaseUrl": "https://drakula.dramabos.my.id/freereels/api/v1",
+  "webBaseUrl": "https://drakula.dramabos.my.id/freereels",
+  "healthProbeUrl": "https://drakula.dramabos.my.id/freereels-api.html",
+  "category": "Dracin/Drakor"
+}

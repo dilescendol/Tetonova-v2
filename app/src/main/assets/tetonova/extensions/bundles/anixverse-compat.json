@@ -1,0 +1,18 @@
+{
+  "id": "anixverse-compat",
+  "name": "Anixverse",
+  "version": "1.0.0",
+  "contentTypes": [
+    "ANIME"
+  ],
+  "capabilities": [
+    "HOME",
+    "SEARCH",
+    "DETAIL",
+    "PLAYBACK",
+    "SUBTITLES"
+  ],
+  "entry": "compat/anixverse/catalog.json",
+  "upstreamUrl": "https://anixverseone.com",
+  "category": "Anime/Donghua"
+}

@@ -1,0 +1,76 @@
+{
+  "items": [
+    {
+      "id": "signal-kitchen",
+      "title": "Signal Kitchen",
+      "tagline": "Series fallback tile for the official PusatFilm lane",
+      "overview": "A synthetic serial title seeded into TetoNova so the PusatFilm lane stays browseable while live parsing hydrates real movie and series shelves.",
+      "contentType": "SERIES",
+      "yearLabel": "2026",
+      "genres": ["Series", "Drama", "Mystery"],
+      "releaseHint": "New episode Wednesday 20:00",
+      "episodeCount": 12,
+      "durationMinutes": 46,
+      "qualities": ["480p", "720p", "1080p"],
+      "subtitleLanguages": ["ID"],
+      "sourceNote": "Fallback shelf for the official PusatFilm lane. Live parsing will replace these items when the source is reachable."
+    },
+    {
+      "id": "harbor-room-21",
+      "title": "Harbor Room 21",
+      "tagline": "Movie fallback tile for PusatFilm's film shelf",
+      "overview": "A synthetic film entry included so TetoNova can keep the PusatFilm lane representative even when remote download mirrors rotate.",
+      "contentType": "MOVIE",
+      "yearLabel": "2025",
+      "genres": ["Movie", "Thriller", "Drama"],
+      "releaseHint": "Movie page ready",
+      "qualities": ["480p", "720p", "1080p"],
+      "subtitleLanguages": ["ID", "EN"]
+    },
+    {
+      "id": "neon-courtyard",
+      "title": "Neon Courtyard",
+      "tagline": "Drama fallback tile for PusatFilm's serial shelf",
+      "overview": "A synthetic drama title used by TetoNova to validate search, detail, and continue-watching flows for the PusatFilm compat lane.",
+      "contentType": "SERIES",
+      "yearLabel": "2024",
+      "genres": ["Series", "Romance", "Slice of Life"],
+      "releaseHint": "New episode Sunday 21:00",
+      "episodeCount": 10,
+      "durationMinutes": 52,
+      "qualities": ["480p", "720p"],
+      "subtitleLanguages": ["ID"]
+    }
+  ],
+  "sections": [
+    {
+      "title": "PusatFilm Pilot",
+      "subtitle": "Official TetoNova fallback shelf for the PusatFilm mixed lane.",
+      "itemIds": ["signal-kitchen", "harbor-room-21", "neon-courtyard"]
+    },
+    {
+      "title": "Series Shelf",
+      "subtitle": "Starter serial picks for episodic browsing.",
+      "itemIds": ["signal-kitchen", "neon-courtyard"]
+    },
+    {
+      "title": "Film Shelf",
+      "subtitle": "Fallback movie tile for the PusatFilm lane.",
+      "itemIds": ["harbor-room-21"]
+    }
+  ],
+  "calendar": [
+    {
+      "title": "Signal Kitchen",
+      "releaseDayLabel": "Wednesday",
+      "releaseTimeLabel": "20:00",
+      "contentType": "SERIES"
+    },
+    {
+      "title": "Neon Courtyard",
+      "releaseDayLabel": "Sunday",
+      "releaseTimeLabel": "21:00",
+      "contentType": "SERIES"
+    }
+  ]
+}

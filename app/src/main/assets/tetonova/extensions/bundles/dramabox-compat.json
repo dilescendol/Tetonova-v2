@@ -1,0 +1,22 @@
+{
+  "id": "dramabox-compat",
+  "name": "DramaBox",
+  "version": "1.0.0",
+  "contentTypes": [
+    "SERIES"
+  ],
+  "capabilities": [
+    "HOME",
+    "SEARCH",
+    "DETAIL",
+    "PLAYBACK",
+    "SUBTITLES"
+  ],
+  "entry": "compat/dramabox/catalog.json",
+  "upstreamUrl": "https://dramabox.dramabos.my.id",
+  "apiBaseUrl": "https://dramabox.dramabos.my.id/api/v1",
+  "webBaseUrl": "https://dramabox.dramabos.my.id",
+  "healthProbeUrl": "https://dramabox.dramabos.my.id/api/v1/latest?lang=in",
+  "accessCode": "A49C5D6FED6BD029B18F525D8A8B0F5E",
+  "category": "Dracin/Drakor"
+}

@@ -1,0 +1,21 @@
+{
+  "id": "starshort-compat",
+  "name": "StarShort",
+  "version": "1.0.0",
+  "contentTypes": [
+    "SERIES"
+  ],
+  "capabilities": [
+    "HOME",
+    "SEARCH",
+    "DETAIL",
+    "PLAYBACK",
+    "SUBTITLES"
+  ],
+  "entry": "compat/starshort/catalog.json",
+  "upstreamUrl": "https://drakula.dramabos.my.id/starshort",
+  "apiBaseUrl": "https://drakula.dramabos.my.id/starshort/api/v1",
+  "webBaseUrl": "https://drakula.dramabos.my.id/starshort",
+  "healthProbeUrl": "https://drakula.dramabos.my.id/starshort-api.html",
+  "category": "Dracin/Drakor"
+}

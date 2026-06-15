@@ -1,0 +1,74 @@
+{
+  "items": [
+    {
+      "id": "melolo-pilot",
+      "title": "Melolo Pilot",
+      "tagline": "Fallback shelf for the official Melolo lane",
+      "overview": "A synthetic short-drama entry shipped with TetoNova so the Melolo compatibility lane can browse safely while the live parser is still pending.",
+      "contentType": "SERIES",
+      "yearLabel": "2026",
+      "genres": [
+        "Drama",
+        "Romance"
+      ],
+      "releaseHint": "Episode baru rilis tiap pekan",
+      "episodeCount": 60,
+      "durationMinutes": 2,
+      "qualities": [
+        "480p",
+        "720p"
+      ],
+      "subtitleLanguages": [
+        "ID"
+      ],
+      "sourceNote": "Fallback preview for the Melolo compatibility lane. Live parsing will replace this shelf when the dramabos-shortdrama-v1 adapter is promoted."
+    },
+    {
+      "id": "melolo-starter",
+      "title": "Melolo Starter",
+      "tagline": "Starter catalog for browse and resume checks",
+      "overview": "A second short-drama entry used to seed home, detail, and continue-watching flows for the Melolo starter lane.",
+      "contentType": "SERIES",
+      "yearLabel": "2025",
+      "genres": [
+        "Drama",
+        "Slice of Life"
+      ],
+      "releaseHint": "Episode baru rilis tiap pekan",
+      "episodeCount": 80,
+      "durationMinutes": 2,
+      "qualities": [
+        "480p",
+        "720p"
+      ],
+      "subtitleLanguages": [
+        "ID"
+      ]
+    }
+  ],
+  "sections": [
+    {
+      "title": "Melolo Pilot",
+      "subtitle": "Official TetoNova fallback shelf for the Melolo compatibility lane.",
+      "itemIds": [
+        "melolo-pilot",
+        "melolo-starter"
+      ]
+    },
+    {
+      "title": "Short Drama Pickups",
+      "subtitle": "Lightweight short-drama picks while the live parser is still cooking.",
+      "itemIds": [
+        "melolo-pilot"
+      ]
+    }
+  ],
+  "calendar": [
+    {
+      "title": "Melolo Pilot",
+      "releaseDayLabel": "Friday",
+      "releaseTimeLabel": "20:00",
+      "contentType": "SERIES"
+    }
+  ]
+}

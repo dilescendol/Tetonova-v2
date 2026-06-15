@@ -1,0 +1,18 @@
+{
+  "id": "nova-cinema",
+  "name": "Nova Cinema",
+  "version": "1.0.0",
+  "contentTypes": [
+    "MOVIE",
+    "SERIES"
+  ],
+  "capabilities": [
+    "HOME",
+    "SEARCH",
+    "DETAIL",
+    "PLAYBACK",
+    "SUBTITLES"
+  ],
+  "entry": "main.js",
+  "category": "Movie"
+}

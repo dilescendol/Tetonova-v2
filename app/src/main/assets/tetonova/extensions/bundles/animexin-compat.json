@@ -1,0 +1,18 @@
+{
+  "id": "animexin-compat",
+  "name": "AnimeXin",
+  "version": "1.0.0",
+  "contentTypes": [
+    "ANIME"
+  ],
+  "capabilities": [
+    "HOME",
+    "SEARCH",
+    "DETAIL",
+    "PLAYBACK",
+    "SUBTITLES"
+  ],
+  "entry": "compat/animexin/catalog.json",
+  "upstreamUrl": "https://animexin.dev",
+  "category": "Anime/Donghua"
+}

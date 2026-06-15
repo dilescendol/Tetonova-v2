@@ -1,0 +1,19 @@
+{
+  "id": "pusatfilm-compat",
+  "name": "PusatFilm",
+  "version": "1.0.0",
+  "contentTypes": [
+    "MOVIE",
+    "SERIES"
+  ],
+  "capabilities": [
+    "HOME",
+    "SEARCH",
+    "DETAIL",
+    "PLAYBACK",
+    "SUBTITLES"
+  ],
+  "entry": "compat/pusatfilm/catalog.json",
+  "upstreamUrl": "https://v3.pusatfilm21info.com/",
+  "category": "Movie"
+}

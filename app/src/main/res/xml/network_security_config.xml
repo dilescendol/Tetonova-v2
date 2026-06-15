@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Source sites are arbitrary third-party hosts; some serve over plain HTTP (bare-IP mirrors like
+  oppadrama) and their cover images load over HTTP too. Permit cleartext so live scraping + Coil
+  cover loading work for those hosts. The app talks only to public content sites, no app secrets.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

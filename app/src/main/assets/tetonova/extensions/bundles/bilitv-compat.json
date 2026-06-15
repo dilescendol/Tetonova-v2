@@ -1,0 +1,21 @@
+{
+  "id": "bilitv-compat",
+  "name": "Bilitv",
+  "version": "1.0.0",
+  "contentTypes": [
+    "SERIES"
+  ],
+  "capabilities": [
+    "HOME",
+    "SEARCH",
+    "DETAIL",
+    "PLAYBACK",
+    "SUBTITLES"
+  ],
+  "entry": "compat/bilitv/catalog.json",
+  "upstreamUrl": "https://bilitv.dramabos.my.id",
+  "apiBaseUrl": "https://bilitv.dramabos.my.id/api/v1",
+  "webBaseUrl": "https://bilitv.dramabos.my.id",
+  "healthProbeUrl": "https://bilitv.dramabos.my.id/api.html",
+  "category": "Dracin/Drakor"
+}

@@ -1,0 +1,59 @@
+{
+  "items": [
+    {
+      "id": "jade-observatory",
+      "title": "Jade Observatory",
+      "tagline": "Starter donghua shelf for the official Anixverse lane",
+      "overview": "A synthetic cultivation serial shipped with TetoNova so the Anixverse lane can stay browseable while live parsing handles real titles on supported networks.",
+      "contentType": "ANIME",
+      "yearLabel": "2026",
+      "genres": ["Donghua", "Fantasy", "Action"],
+      "releaseHint": "New episode Sunday 20:00",
+      "episodeCount": 14,
+      "durationMinutes": 22,
+      "qualities": ["480p", "720p", "1080p"],
+      "subtitleLanguages": ["ID", "EN"],
+      "sourceNote": "Fallback shelf for the official Anixverse lane. Live parsing will replace these items when the source is reachable."
+    },
+    {
+      "id": "celestial-forge",
+      "title": "Celestial Forge",
+      "tagline": "High-energy donghua pick for quick playback checks",
+      "overview": "A synthetic action-heavy donghua title seeded into TetoNova to validate search, detail, and continue-watching flows for Anixverse.",
+      "contentType": "ANIME",
+      "yearLabel": "2025",
+      "genres": ["Donghua", "Martial Arts", "Adventure"],
+      "releaseHint": "Next episode Wednesday 19:30",
+      "episodeCount": 9,
+      "durationMinutes": 23,
+      "qualities": ["480p", "720p"],
+      "subtitleLanguages": ["ID"]
+    }
+  ],
+  "sections": [
+    {
+      "title": "Anixverse Pilot",
+      "subtitle": "Official TetoNova fallback shelf for the Anixverse donghua lane.",
+      "itemIds": ["jade-observatory", "celestial-forge"]
+    },
+    {
+      "title": "Donghua Picks",
+      "subtitle": "Starter shelf for cultivation and action-focused browsing.",
+      "itemIds": ["celestial-forge"]
+    }
+  ],
+  "calendar": [
+    {
+      "title": "Jade Observatory",
+      "releaseDayLabel": "Sunday",
+      "releaseTimeLabel": "20:00",
+      "contentType": "ANIME"
+    },
+    {
+      "title": "Celestial Forge",
+      "releaseDayLabel": "Wednesday",
+      "releaseTimeLabel": "19:30",
+      "contentType": "ANIME"
+    }
+  ]
+}

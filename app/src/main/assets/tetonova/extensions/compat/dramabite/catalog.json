@@ -1,0 +1,74 @@
+{
+  "items": [
+    {
+      "id": "dramabite-pilot",
+      "title": "DramaBite Pilot",
+      "tagline": "Fallback shelf for the official DramaBite lane",
+      "overview": "A synthetic short-drama entry shipped with TetoNova so the DramaBite compatibility lane can browse safely while the live parser is still pending.",
+      "contentType": "SERIES",
+      "yearLabel": "2026",
+      "genres": [
+        "Drama",
+        "Romance"
+      ],
+      "releaseHint": "Episode baru rilis tiap pekan",
+      "episodeCount": 60,
+      "durationMinutes": 2,
+      "qualities": [
+        "480p",
+        "720p"
+      ],
+      "subtitleLanguages": [
+        "ID"
+      ],
+      "sourceNote": "Fallback preview for the DramaBite compatibility lane. Live parsing will replace this shelf when the dramabos-shortdrama-v1 adapter is promoted."
+    },
+    {
+      "id": "dramabite-starter",
+      "title": "DramaBite Starter",
+      "tagline": "Starter catalog for browse and resume checks",
+      "overview": "A second short-drama entry used to seed home, detail, and continue-watching flows for the DramaBite starter lane.",
+      "contentType": "SERIES",
+      "yearLabel": "2025",
+      "genres": [
+        "Drama",
+        "Slice of Life"
+      ],
+      "releaseHint": "Episode baru rilis tiap pekan",
+      "episodeCount": 80,
+      "durationMinutes": 2,
+      "qualities": [
+        "480p",
+        "720p"
+      ],
+      "subtitleLanguages": [
+        "ID"
+      ]
+    }
+  ],
+  "sections": [
+    {
+      "title": "DramaBite Pilot",
+      "subtitle": "Official TetoNova fallback shelf for the DramaBite compatibility lane.",
+      "itemIds": [
+        "dramabite-pilot",
+        "dramabite-starter"
+      ]
+    },
+    {
+      "title": "Short Drama Pickups",
+      "subtitle": "Lightweight short-drama picks while the live parser is still cooking.",
+      "itemIds": [
+        "dramabite-pilot"
+      ]
+    }
+  ],
+  "calendar": [
+    {
+      "title": "DramaBite Pilot",
+      "releaseDayLabel": "Friday",
+      "releaseTimeLabel": "20:00",
+      "contentType": "SERIES"
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "id": "anichin-compat",
+  "name": "Anichin",
+  "version": "1.0.0",
+  "contentTypes": [
+    "ANIME"
+  ],
+  "capabilities": [
+    "HOME",
+    "SEARCH",
+    "DETAIL",
+    "PLAYBACK",
+    "SUBTITLES"
+  ],
+  "entry": "compat/anichin/catalog.json",
+  "upstreamUrl": "https://anichin.moe",
+  "category": "Anime/Donghua"
+}

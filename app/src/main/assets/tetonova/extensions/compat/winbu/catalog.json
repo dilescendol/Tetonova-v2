@@ -1,0 +1,76 @@
+{
+  "items": [
+    {
+      "id": "city-pop-detectives",
+      "title": "City Pop Detectives",
+      "tagline": "Starter series shelf for the official Winbu lane",
+      "overview": "A synthetic episodic mystery seeded into TetoNova so the Winbu lane stays browseable while live parsing hydrates real series and movie entries.",
+      "contentType": "SERIES",
+      "yearLabel": "2026",
+      "genres": ["Series", "Mystery", "Drama"],
+      "releaseHint": "New episode Friday 21:00",
+      "episodeCount": 10,
+      "durationMinutes": 46,
+      "qualities": ["480p", "720p", "1080p"],
+      "subtitleLanguages": ["ID", "EN"],
+      "sourceNote": "Fallback shelf for the official Winbu lane. Live parsing will replace these items when the source is reachable."
+    },
+    {
+      "id": "ember-school-archive",
+      "title": "Ember School Archive",
+      "tagline": "Anime fallback tile for Winbu's mixed lane",
+      "overview": "A synthetic school-action anime title used by TetoNova to validate search, detail, and continue-watching flows for Winbu.",
+      "contentType": "ANIME",
+      "yearLabel": "2025",
+      "genres": ["Anime", "Action", "School"],
+      "releaseHint": "Next episode Tuesday 19:00",
+      "episodeCount": 12,
+      "durationMinutes": 24,
+      "qualities": ["480p", "720p"],
+      "subtitleLanguages": ["ID"]
+    },
+    {
+      "id": "midnight-terminal",
+      "title": "Midnight Terminal",
+      "tagline": "Movie fallback tile for Winbu's movie lane",
+      "overview": "A synthetic movie entry included so TetoNova can keep Winbu representative even when remote players rotate or throttle.",
+      "contentType": "MOVIE",
+      "yearLabel": "2024",
+      "genres": ["Movie", "Thriller", "Drama"],
+      "releaseHint": "Movie page ready",
+      "qualities": ["480p", "720p", "1080p"],
+      "subtitleLanguages": ["ID", "EN"]
+    }
+  ],
+  "sections": [
+    {
+      "title": "Winbu Pilot",
+      "subtitle": "Official TetoNova fallback shelf for the Winbu mixed lane.",
+      "itemIds": ["city-pop-detectives", "ember-school-archive", "midnight-terminal"]
+    },
+    {
+      "title": "Series Lane",
+      "subtitle": "Starter shelf for episodic and seasonal browsing.",
+      "itemIds": ["city-pop-detectives", "ember-school-archive"]
+    },
+    {
+      "title": "Movie Shelf",
+      "subtitle": "Fallback movie tile for Winbu's film lane.",
+      "itemIds": ["midnight-terminal"]
+    }
+  ],
+  "calendar": [
+    {
+      "title": "City Pop Detectives",
+      "releaseDayLabel": "Friday",
+      "releaseTimeLabel": "21:00",
+      "contentType": "SERIES"
+    },
+    {
+      "title": "Ember School Archive",
+      "releaseDayLabel": "Tuesday",
+      "releaseTimeLabel": "19:00",
+      "contentType": "ANIME"
+    }
+  ]
+}

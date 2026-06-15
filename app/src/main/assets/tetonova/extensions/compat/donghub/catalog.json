@@ -1,0 +1,76 @@
+{
+  "items": [
+    {
+      "id": "dragon-vault",
+      "title": "Dragon Vault",
+      "tagline": "Starter donghua shelf for the official Donghub lane",
+      "overview": "A synthetic action-fantasy donghua title seeded into TetoNova so the Donghub lane stays browseable while live parsing handles real titles on supported networks.",
+      "contentType": "ANIME",
+      "yearLabel": "2026",
+      "genres": ["Donghua", "Action", "Fantasy"],
+      "releaseHint": "New episode Saturday 20:30",
+      "episodeCount": 18,
+      "durationMinutes": 22,
+      "qualities": ["480p", "720p", "1080p"],
+      "subtitleLanguages": ["ID", "EN"],
+      "sourceNote": "Fallback shelf for the official Donghub lane. Live parsing will replace these items when the source is reachable."
+    },
+    {
+      "id": "vermilion-sky-chronicle",
+      "title": "Vermilion Sky Chronicle",
+      "tagline": "High-energy cultivation pick for Donghub playback checks",
+      "overview": "A synthetic cultivation serial used by TetoNova to validate search, detail, and continue-watching flows for the Donghub compatibility lane.",
+      "contentType": "ANIME",
+      "yearLabel": "2025",
+      "genres": ["Donghua", "Cultivation", "Adventure"],
+      "releaseHint": "Next episode Tuesday 19:45",
+      "episodeCount": 12,
+      "durationMinutes": 23,
+      "qualities": ["480p", "720p"],
+      "subtitleLanguages": ["ID"]
+    },
+    {
+      "id": "ember-gate-movie",
+      "title": "Ember Gate Movie",
+      "tagline": "Movie fallback tile for Donghub's mixed lane",
+      "overview": "A synthetic movie entry included so TetoNova can keep the Donghub lane representative even when remote movie shelves are unavailable.",
+      "contentType": "MOVIE",
+      "yearLabel": "2024",
+      "genres": ["Donghua", "Movie", "Fantasy"],
+      "releaseHint": "Movie page ready",
+      "qualities": ["480p", "720p", "1080p"],
+      "subtitleLanguages": ["ID", "EN"]
+    }
+  ],
+  "sections": [
+    {
+      "title": "Donghub Pilot",
+      "subtitle": "Official TetoNova fallback shelf for the Donghub hub lane.",
+      "itemIds": ["dragon-vault", "vermilion-sky-chronicle", "ember-gate-movie"]
+    },
+    {
+      "title": "Donghua Picks",
+      "subtitle": "Starter shelf for fast action and cultivation browsing.",
+      "itemIds": ["dragon-vault", "vermilion-sky-chronicle"]
+    },
+    {
+      "title": "Movie Shelf",
+      "subtitle": "Fallback movie tile for Donghub's mixed source support.",
+      "itemIds": ["ember-gate-movie"]
+    }
+  ],
+  "calendar": [
+    {
+      "title": "Dragon Vault",
+      "releaseDayLabel": "Saturday",
+      "releaseTimeLabel": "20:30",
+      "contentType": "ANIME"
+    },
+    {
+      "title": "Vermilion Sky Chronicle",
+      "releaseDayLabel": "Tuesday",
+      "releaseTimeLabel": "19:45",
+      "contentType": "ANIME"
+    }
+  ]
+}

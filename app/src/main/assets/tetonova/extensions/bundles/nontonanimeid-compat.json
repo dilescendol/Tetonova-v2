@@ -1,0 +1,18 @@
+{
+  "id": "nontonanimeid-compat",
+  "name": "NontonAnimeID",
+  "version": "1.0.0",
+  "contentTypes": [
+    "ANIME"
+  ],
+  "capabilities": [
+    "HOME",
+    "SEARCH",
+    "DETAIL",
+    "PLAYBACK",
+    "SUBTITLES"
+  ],
+  "entry": "compat/nontonanimeid/catalog.json",
+  "upstreamUrl": "https://s11.nontonanimeid.boats",
+  "category": "Anime/Donghua"
+}

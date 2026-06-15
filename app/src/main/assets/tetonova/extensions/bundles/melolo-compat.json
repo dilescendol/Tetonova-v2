@@ -1,0 +1,21 @@
+{
+  "id": "melolo-compat",
+  "name": "Melolo",
+  "version": "1.0.0",
+  "contentTypes": [
+    "SERIES"
+  ],
+  "capabilities": [
+    "HOME",
+    "SEARCH",
+    "DETAIL",
+    "PLAYBACK",
+    "SUBTITLES"
+  ],
+  "entry": "compat/melolo/catalog.json",
+  "upstreamUrl": "https://melolo.dramabos.my.id",
+  "apiBaseUrl": "https://melolo.dramabos.my.id/api/v1",
+  "webBaseUrl": "https://melolo.dramabos.my.id",
+  "healthProbeUrl": "https://melolo.dramabos.my.id/api.html",
+  "category": "Dracin/Drakor"
+}

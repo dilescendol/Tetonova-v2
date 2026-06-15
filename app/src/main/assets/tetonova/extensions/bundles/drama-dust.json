@@ -1,0 +1,17 @@
+{
+  "id": "drama-dust",
+  "name": "Drama Dust",
+  "version": "1.0.0",
+  "contentTypes": [
+    "SERIES",
+    "ANIME"
+  ],
+  "capabilities": [
+    "HOME",
+    "SEARCH",
+    "DETAIL",
+    "PLAYBACK"
+  ],
+  "entry": "main.js",
+  "category": "Dracin/Drakor"
+}

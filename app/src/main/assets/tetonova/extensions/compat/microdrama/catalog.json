@@ -1,0 +1,74 @@
+{
+  "items": [
+    {
+      "id": "microdrama-pilot",
+      "title": "Micro Drama Pilot",
+      "tagline": "Fallback shelf for the official Micro Drama lane",
+      "overview": "A synthetic short-drama entry shipped with TetoNova so the Micro Drama compatibility lane can browse safely while the live parser is still pending.",
+      "contentType": "SERIES",
+      "yearLabel": "2026",
+      "genres": [
+        "Drama",
+        "Romance"
+      ],
+      "releaseHint": "Episode baru rilis tiap pekan",
+      "episodeCount": 60,
+      "durationMinutes": 2,
+      "qualities": [
+        "480p",
+        "720p"
+      ],
+      "subtitleLanguages": [
+        "ID"
+      ],
+      "sourceNote": "Fallback preview for the Micro Drama compatibility lane. Live parsing will replace this shelf when the dramabos-shortdrama-v1 adapter is promoted."
+    },
+    {
+      "id": "microdrama-starter",
+      "title": "Micro Drama Starter",
+      "tagline": "Starter catalog for browse and resume checks",
+      "overview": "A second short-drama entry used to seed home, detail, and continue-watching flows for the Micro Drama starter lane.",
+      "contentType": "SERIES",
+      "yearLabel": "2025",
+      "genres": [
+        "Drama",
+        "Slice of Life"
+      ],
+      "releaseHint": "Episode baru rilis tiap pekan",
+      "episodeCount": 80,
+      "durationMinutes": 2,
+      "qualities": [
+        "480p",
+        "720p"
+      ],
+      "subtitleLanguages": [
+        "ID"
+      ]
+    }
+  ],
+  "sections": [
+    {
+      "title": "Micro Drama Pilot",
+      "subtitle": "Official TetoNova fallback shelf for the Micro Drama compatibility lane.",
+      "itemIds": [
+        "microdrama-pilot",
+        "microdrama-starter"
+      ]
+    },
+    {
+      "title": "Short Drama Pickups",
+      "subtitle": "Lightweight short-drama picks while the live parser is still cooking.",
+      "itemIds": [
+        "microdrama-pilot"
+      ]
+    }
+  ],
+  "calendar": [
+    {
+      "title": "Micro Drama Pilot",
+      "releaseDayLabel": "Friday",
+      "releaseTimeLabel": "20:00",
+      "contentType": "SERIES"
+    }
+  ]
+}
