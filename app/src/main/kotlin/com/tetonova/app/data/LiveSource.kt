@@ -13,6 +13,13 @@ object LiveSource {
         return LiveParser.parseList(html, url)
     }
 
+    /** Scrape the playable server/mirror list from an episode watch page (for the player's
+     *  "Source video" picker). Empty on any failure. */
+    suspend fun servers(url: String): List<VideoServer> {
+        val html = LiveClient.getHtml(url) ?: return emptyList()
+        return LiveParser.parseServers(html)
+    }
+
     suspend fun detail(url: String): LiveDetail? {
         // A page is "usable" if it yielded a synopsis OR an episode list — NOT title, which many
         // themes (winbu/samehadaku/…) bury where our selectors miss it; the hero title comes from

@@ -33,6 +33,11 @@ data class LiveDetail(
 
 data class LiveEpisode(val num: Int, val title: String, val url: String)
 
+/** One playable mirror/server scraped from a watch page. [embedUrl] is the host iframe URL
+ *  (ok.ru / dailymotion / filelions / …) — played in a WebView, since these are embeds, not
+ *  direct streams. [name] is the human label (e.g. "OK.ru", "Dailymotion [Ads]"). */
+data class VideoServer(val name: String, val embedUrl: String)
+
 /**
  * Parser for the "tsthemes" / Dooplay WordPress theme shared by virtually every source in the
  * registry (anichin, animexin, otakudesu, samehadaku, anoboy, donghub, …). Selectors are kept
@@ -40,6 +45,57 @@ data class LiveEpisode(val num: Int, val title: String, val url: String)
  * serves all of them and the app degrades gracefully when a site drifts.
  */
 object LiveParser {
+
+    /**
+     * Scrape the watch page's server list. Anichin/Dooplay expose it as
+     * `<select class="mirror"><option value="BASE64(<iframe src=…>)">Name</option>`; decode each
+     * option and pull the iframe src. Falls back to a bare on-page `<iframe>` for single-server
+     * themes. Best-effort: returns empty on any failure.
+     */
+    fun parseServers(html: String): List<VideoServer> {
+        val doc = Jsoup.parse(html)
+        val out = LinkedHashMap<String, VideoServer>()  // dedupe by embed url, preserve page order
+        doc.select("select.mirror option, select[name=mirror] option").forEach { opt ->
+            val value = opt.attr("value").trim()
+            if (value.isEmpty()) return@forEach
+            val src = decodeB64(value)?.let(::iframeSrc) ?: return@forEach
+            // anichin labels its options ("OK.ru"…); anixcafe leaves them blank → derive from host.
+            val name = opt.text().trim().ifBlank { hostLabel(src) }
+            out.putIfAbsent(src, VideoServer(name, src))
+        }
+        if (out.isEmpty()) {
+            doc.select("iframe[src]").map { it.absUrl("src").ifBlank { it.attr("src") } }
+                .firstOrNull { it.startsWith("http") }
+                ?.let { out[it] = VideoServer("Server", it) }
+        }
+        return out.values.toList()
+    }
+
+    /** Friendly server label from the embed host (for sources like anixcafe that leave option text blank). */
+    private fun hostLabel(url: String): String {
+        val h = runCatching { java.net.URI(url).host.orEmpty() }.getOrDefault("").removePrefix("www.").lowercase()
+        return when {
+            "ok.ru" in h || "odnoklassniki" in h -> "OK.ru"
+            "dailymotion" in h -> "Dailymotion"
+            "rumble" in h -> "Rumble"
+            "videoplayer" in h -> "Player VIP"
+            "luluvid" in h -> "LuluVid"
+            "dood" in h || "d-s.io" in h || "playmogo" in h || "dsvplay" in h -> "Dood"
+            "fembed" in h -> "Fembed"
+            "short.ink" in h || "short.icu" in h -> "New Player"
+            "streamwish" in h || "wishfast" in h -> "StreamWish"
+            "sblongvu" in h || "streamsb" in h || "sbchill" in h || "likessb" in h -> "StreamSB"
+            "krakenfiles" in h -> "KrakenFiles"
+            else -> h.substringBefore('.').replaceFirstChar { it.uppercase() }.ifBlank { "Server" }
+        }
+    }
+
+    private fun decodeB64(s: String): String? =
+        runCatching { String(java.util.Base64.getMimeDecoder().decode(s)) }.getOrNull()
+
+    private fun iframeSrc(iframeHtml: String): String? =
+        Regex("""src\s*=\s*["']?([^"'\s>]+)""", RegexOption.IGNORE_CASE)
+            .find(iframeHtml)?.groupValues?.get(1)?.takeIf { it.startsWith("http") }
 
     fun parseList(html: String, baseUrl: String): List<LiveItem> {
         val doc = Jsoup.parse(html, baseUrl)

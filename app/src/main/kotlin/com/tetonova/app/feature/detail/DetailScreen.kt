@@ -60,6 +60,7 @@ import com.tetonova.app.data.MovieInfo
 import com.tetonova.app.data.OmdbResolver
 import com.tetonova.app.data.TnData
 import com.tetonova.app.ui.DetailArg
+import com.tetonova.app.ui.PlayerArg
 import com.tetonova.app.ui.bleedEnd
 import com.tetonova.app.ui.toDetailArg
 import com.tetonova.core.designsystem.Art
@@ -207,7 +208,7 @@ private sealed interface LiveLoad {
 }
 
 @Composable
-fun DetailScreen(arg: DetailArg, onBack: () -> Unit, onOpenDetail: (DetailArg) -> Unit) {
+fun DetailScreen(arg: DetailArg, onBack: () -> Unit, onOpenDetail: (DetailArg) -> Unit, onOpenPlayer: (PlayerArg) -> Unit) {
     val c = TnTheme.colors
     val context = LocalContext.current
     val base = remember(arg) { enrich(arg) }
@@ -259,7 +260,10 @@ fun DetailScreen(arg: DetailArg, onBack: () -> Unit, onOpenDetail: (DetailArg) -
                 d, current, inList, liked, wide, onBack,
                 onToggleList = { inList = !inList; toast(if (inList) "Ditambahkan ke daftar" else "Dihapus dari daftar") },
                 onToggleLike = { liked = !liked; toast(if (liked) "Disukai" else "Suka dibatalkan") },
-                onPlay = { openUrl(eps.firstOrNull { it.num == current }?.url ?: d.url) },
+                onPlay = {
+                    val ep = eps.firstOrNull { it.num == current }
+                    onOpenPlayer(PlayerArg(d.title, ep?.url ?: d.url, ep?.let { "Episode ${it.num}" }))
+                },
                 onShare = { share() },
             )
             // light content sheet, lifted over the hero
@@ -275,7 +279,8 @@ fun DetailScreen(arg: DetailArg, onBack: () -> Unit, onOpenDetail: (DetailArg) -
                         DetailTab("Detail", tab == "info") { tab = "info" }
                     }
                     Spacer(Modifier.height(18.dp))
-                    if (tab == "ep") EpisodeTab(eps, current, sortAsc, wide, liveLoading, { sortAsc = !sortAsc }, { current = it }, onOpenDetail, d.title)
+                    if (tab == "ep") EpisodeTab(eps, current, sortAsc, wide, liveLoading, { sortAsc = !sortAsc }, { current = it },
+                        { ep -> current = ep.num; onOpenPlayer(PlayerArg(d.title, ep.url, "Episode ${ep.num}")) }, onOpenDetail, d.title)
                     else AboutTab(d, liveLoading)
                     Spacer(Modifier.height(32.dp))
                 }
@@ -426,7 +431,8 @@ private fun DetailTab(label: String, on: Boolean, onClick: () -> Unit) {
 @Composable
 private fun EpisodeTab(
     eps: List<Episode>, current: Int, sortAsc: Boolean, wide: Boolean, liveLoading: Boolean,
-    onSort: () -> Unit, onSelect: (Int) -> Unit, onOpenDetail: (DetailArg) -> Unit, currentTitle: String,
+    onSort: () -> Unit, onSelect: (Int) -> Unit, onPlayEpisode: (Episode) -> Unit,
+    onOpenDetail: (DetailArg) -> Unit, currentTitle: String,
 ) {
     val c = TnTheme.colors
     val columns = if (wide) 2 else 1
@@ -503,7 +509,7 @@ private fun EpisodeTab(
             Spacer(Modifier.height(14.dp))
             shown.chunked(columns).forEach { row ->
                 Row(Modifier.fillMaxWidth().padding(bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    row.forEach { ep -> EpCard(ep, ep.num == current, Modifier.weight(1f)) { onSelect(ep.num) } }
+                    row.forEach { ep -> EpCard(ep, ep.num == current, Modifier.weight(1f)) { onPlayEpisode(ep) } }
                     if (row.size < columns) repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
                 }
             }

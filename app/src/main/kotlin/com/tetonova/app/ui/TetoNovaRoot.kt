@@ -50,6 +50,7 @@ import com.tetonova.app.feature.downloads.DownloadsScreen
 import com.tetonova.app.feature.extensions.ExtensionsScreen
 import com.tetonova.app.feature.forum.ForumScreen
 import com.tetonova.app.feature.home.HomeScreen
+import com.tetonova.app.feature.player.PlayerScreen
 import com.tetonova.app.feature.profile.ProfileScreen
 import com.tetonova.app.feature.search.SearchScreen
 import com.tetonova.app.feature.settings.HelpScreen
@@ -88,7 +89,11 @@ fun TetoNovaRoot(windowSizeClass: WindowSizeClass) {
             when (val scr = state.screen) {
                 is Screen.Detail -> {
                     BackHandler { state.back() }
-                    DetailScreen(arg = scr.arg, onBack = { state.back() }, onOpenDetail = state::openDetail)
+                    DetailScreen(arg = scr.arg, onBack = { state.back() }, onOpenDetail = state::openDetail, onOpenPlayer = state::openPlayer)
+                }
+                is Screen.Player -> {
+                    BackHandler { state.closePlayer() }
+                    PlayerScreen(arg = scr.arg, onBack = { state.closePlayer() })
                 }
                 is Screen.Report -> {
                     BackHandler { state.openSettings() }
