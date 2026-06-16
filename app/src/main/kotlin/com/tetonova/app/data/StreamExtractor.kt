@@ -38,6 +38,10 @@ object StreamExtractor {
         return DEAD.none { it in u }
     }
 
+    /** DoodStream family domains (anixcafe ships it as "playmogo.com"). */
+    private val DOOD = listOf("dood", "playmogo", "dsvplay", "d-s.io", "ds2play", "do0od", "doodstream")
+    private fun isDoodHost(u: String): Boolean = u.lowercase().let { l -> DOOD.any { it in l } }
+
     suspend fun extract(server: VideoServer, referer: String): ExtractResult = runCatching {
         val u = server.embedUrl
         when {
@@ -49,6 +53,7 @@ object StreamExtractor {
                 mapOf("Referer" to "https://www.dailymotion.com/", "Origin" to "https://www.dailymotion.com"),
             )
             "rumble.com" in u -> ExtractResult(rumble(u), originHeaders(u))
+            isDoodHost(u) -> dood(u)
             else -> generic(u, referer).let { ExtractResult(it, if (it.isEmpty()) emptyMap() else originHeaders(u)) }
         }
     }.getOrElse { ExtractResult(emptyList()) }
@@ -101,6 +106,36 @@ object StreamExtractor {
             if (url.contains("m3u8")) return listOf(StreamVariant("Auto", url))
         }
         return emptyList()
+    }
+
+    // ---- DoodStream family: GET /pass_md5/<id>/<token> (with the embed's cookies) → CDN base URL,
+    //      then the playable mp4 = base + 10 random chars + ?token=<token>&expiry=<now>. mp4 wants the
+    //      dood host as Referer (no Origin). The pass_md5 token is short-lived so we fetch it fresh. ----
+    private suspend fun dood(embedUrl: String): ExtractResult = withContext(Dispatchers.IO) {
+        val origin = runCatching { java.net.URI(embedUrl).let { "${it.scheme}://${it.host}" } }.getOrNull()
+            ?: return@withContext ExtractResult(emptyList())
+        // Per-call cookie jar so the cookie the embed page sets is sent on the /pass_md5 request.
+        val jar = object : okhttp3.CookieJar {
+            private val store = mutableListOf<okhttp3.Cookie>()
+            override fun saveFromResponse(url: okhttp3.HttpUrl, cookies: List<okhttp3.Cookie>) { store += cookies }
+            override fun loadForRequest(url: okhttp3.HttpUrl): List<okhttp3.Cookie> = store
+        }
+        val client = http.newBuilder().cookieJar(jar).build()
+        fun get(url: String, referer: String, xhr: Boolean): String? = runCatching {
+            val rb = Request.Builder().url(url).header("User-Agent", UA).header("Referer", referer)
+            if (xhr) rb.header("X-Requested-With", "XMLHttpRequest")
+            client.newCall(rb.build()).execute().use { it.body?.string() }
+        }.getOrNull()
+
+        val html = get(embedUrl, "$origin/", false) ?: return@withContext ExtractResult(emptyList())
+        val pass = Regex("/pass_md5/[^\"'\\s]+").find(html)?.value ?: return@withContext ExtractResult(emptyList())
+        val token = pass.substringAfterLast('/')
+        val base = get("$origin$pass", embedUrl, true)?.trim()?.takeIf { it.startsWith("http") }
+            ?: return@withContext ExtractResult(emptyList())
+        val pool = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+        val rand = buildString { repeat(10) { append(pool[kotlin.random.Random.nextInt(pool.length)]) } }
+        val url = "$base$rand?token=$token&expiry=${System.currentTimeMillis()}"
+        ExtractResult(listOf(StreamVariant("Auto", url)), mapOf("Referer" to "$origin/"))
     }
 
     // ---- Rumble: embedJS → ua.hls.auto + ua.mp4[quality] ----

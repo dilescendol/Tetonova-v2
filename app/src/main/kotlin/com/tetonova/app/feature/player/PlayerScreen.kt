@@ -141,11 +141,16 @@ private fun ServerPlayer(
     onBack: () -> Unit,
     onExternal: () -> Unit,
 ) {
-    // JWPlayer hosts (videoplayer.vip): master.txt anti-leech 404s ExoPlayer, but the WebView plays
-    // fine — so play it in a WebView with the embed's own UI hidden and OUR controls overlaid, driven
-    // via the jwplayer() JS API.
-    if (isJwPlayerHost(server.embedUrl)) {
-        WebPlayerStage(server.embedUrl, referer, arg.title, arg.episodeLabel, servers, server, onPickServer, onBack, onExternal)
+    // Hosts whose token streams 404/403 ExoPlayer (browser-context anti-leech) but play fine in a
+    // WebView — JWPlayer (videoplayer.vip) and Dailymotion. Play them in the WebView with the host UI
+    // hidden and OUR controls overlaid, driven via the host's JS/postMessage API.
+    val webPlayer = when {
+        isJwPlayerHost(server.embedUrl) -> jwPlayer(server.embedUrl, referer)
+        isDailymotionHost(server.embedUrl) -> dmPlayer(server.embedUrl, referer)
+        else -> null
+    }
+    if (webPlayer != null) {
+        WebPlayerStage(webPlayer, server.embedUrl, arg.title, arg.episodeLabel, servers, server, onPickServer, onBack, onExternal)
         return
     }
     var phase by remember(server) { mutableStateOf<Phase>(Phase.Extracting) }
@@ -221,6 +226,79 @@ private const val JW_STATE_JS =
         "return JSON.stringify({st:p.getState(),pos:Math.floor(p.getPosition()||0),dur:Math.floor(p.getDuration()||0),q:q,qi:qi});}catch(e){return '';}})();"
 
 private fun isJwPlayerHost(embedUrl: String): Boolean = "videoplayer.vip" in embedUrl
+private fun isDailymotionHost(embedUrl: String): Boolean = "dailymotion" in embedUrl
+
+// Dailymotion is cross-origin (no CSS/JS injection) and its raw iframe only posts benchmark telemetry
+// to the parent, not the Player API. So we host it via the official Dailymotion Player SDK inside OUR
+// wrapper page (loaded with the embedder origin as base URL): createPlayer() returns a player whose
+// getState() we poll (videoTime/Duration/Quality/QualitiesList) and whose play/pause/seek/setQuality
+// we call. State + commands land in window.__dm / window.__p.
+private fun dmWrapperHtml(embedUrl: String): String {
+    val playerId = Regex("player/([^/.]+)\\.html").find(embedUrl)?.groupValues?.get(1) ?: "xir9o"
+    val videoId = Regex("[?&]video=([^&]+)").find(embedUrl)?.groupValues?.get(1)
+        ?: Regex("dailymotion\\.com/(?:embed/)?video/([^_?&/]+)").find(embedUrl)?.groupValues?.get(1) ?: ""
+    return """<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<style>html,body{margin:0;padding:0;height:100%;background:#000;overflow:hidden}#dmp{position:fixed;inset:0;width:100%;height:100%}</style></head>
+<body><div id="dmp"></div>
+<script>
+window.__dm={st:'idle',pos:0,dur:0,q:[],qi:0};
+window.__dmSetQ=function(i){try{var q=window.__dm.q;if(window.__p&&q&&q[i]!=null)window.__p.setQuality(''+q[i]);}catch(e){}};
+window.dailymotion={onScriptLoaded:function(){
+ dailymotion.createPlayer('dmp',{video:'$videoId',params:{mute:false}}).then(function(p){
+  window.__p=p;try{p.play();}catch(e){}
+  setInterval(function(){p.getState().then(function(s){var m=window.__dm;
+   m.st=s.playerIsBuffering?'buffering':(s.playerIsPlaying?'playing':'paused');
+   if(s.videoTime!=null)m.pos=Math.floor(s.videoTime);
+   if(s.videoDuration!=null)m.dur=Math.floor(s.videoDuration);
+   if(s.videoQualitiesList)m.q=[].concat(s.videoQualitiesList).map(String);
+   if(s.videoQuality!=null){var qi=m.q.indexOf(''+s.videoQuality);if(qi>=0)m.qi=qi;}
+  }).catch(function(e){});},500);
+ }).catch(function(e){});
+}};
+</script>
+<script src="https://geo.dailymotion.com/libs/player/$playerId.js"></script>
+</body></html>"""
+}
+
+private const val DM_STATE_JS =
+    "(function(){try{var m=window.__dm;if(!m)return '';" +
+        "return JSON.stringify({st:m.st,pos:m.pos,dur:m.dur,q:m.q,qi:m.qi});}catch(e){return '';}})();"
+
+/** Host-specific JS surface for [WebPlayerStage] — one Compose scaffold drives both JWPlayer
+ *  (videoplayer.vip, jwplayer() API) and Dailymotion (cross-origin iframe + postMessage bridge). */
+private class WebPlayer(
+    val load: (WebView) -> Unit,
+    val setupJs: String,                 // run onPageFinished ("" = none; wrapper self-inits)
+    val stateJs: String,                 // polled → {st,pos,dur,q?,qi?}
+    val playKick: String,                // JS to (re)start playback
+    val toggle: String,                  // JS to toggle play/pause
+    val seekAbs: (Long) -> String,       // JS to seek to absolute seconds
+    val setQuality: (Int) -> String,     // JS to select quality index
+    val allowHost: (String) -> Boolean,  // main-frame nav allowed for this host (else blocked as an ad)
+)
+
+private fun jwPlayer(embedUrl: String, referer: String) = WebPlayer(
+    load = { it.loadUrl(embedUrl, mapOf("Referer" to referer)) },
+    setupJs = JW_SETUP_JS, stateJs = JW_STATE_JS,
+    playKick = "try{jwplayer().play(true);}catch(e){}",
+    toggle = "try{var p=jwplayer();p.getState()=='playing'?p.pause(true):p.play(true);}catch(e){}",
+    seekAbs = { "try{jwplayer().seek($it);}catch(e){}" },
+    setQuality = { "try{jwplayer().setCurrentQuality($it);}catch(e){}" },
+    allowHost = { it.endsWith("videoplayer.vip") },
+)
+
+private fun dmPlayer(embedUrl: String, referer: String) = WebPlayer(
+    load = {
+        val base = runCatching { java.net.URI(referer).let { u -> "${u.scheme}://${u.host}/" } }.getOrNull() ?: "https://anixcafe.com/"
+        it.loadDataWithBaseURL(base, dmWrapperHtml(embedUrl), "text/html", "utf-8", null)
+    },
+    setupJs = "", stateJs = DM_STATE_JS,
+    playKick = "try{window.__p&&window.__p.play();}catch(e){}",
+    toggle = "try{var m=window.__dm;if(window.__p)window.__p[m&&m.st=='playing'?'pause':'play']();}catch(e){}",
+    seekAbs = { "try{window.__p&&window.__p.seek($it);}catch(e){}" },
+    setQuality = { "try{window.__dmSetQ&&window.__dmSetQ($it);}catch(e){}" },
+    allowHost = { it.contains("dailymotion") || it.endsWith("dmcdn.net") },
+)
 
 /** Ad/tracker/anti-bot-overlay hosts to block in the JWPlayer WebView (e.g. the ADEX "verify you are
  *  human" interstitial). Blocking them at the network level keeps the video clean behind our controls. */
@@ -523,8 +601,8 @@ private fun WebStage(
 
 @Composable
 private fun WebPlayerStage(
+    player: WebPlayer,
     embedUrl: String,
-    referer: String,
     title: String,
     episodeLabel: String?,
     servers: List<VideoServer>,
@@ -543,12 +621,12 @@ private fun WebPlayerStage(
     var qualityIdx by remember { mutableStateOf(0) }
     var started by remember { mutableStateOf(false) }
 
-    // Poll JWPlayer state (and keep its UI hidden) ~every 700ms.
+    // Poll the host's state (and keep its UI hidden) ~every 700ms.
     LaunchedEffect(web) {
         val wv = web ?: return@LaunchedEffect
         while (true) {
             delay(700)
-            wv.evaluateJavascript(JW_STATE_JS) { r ->
+            wv.evaluateJavascript(player.stateJs) { r ->
                 val json = r?.removeSurrounding("\"")?.replace("\\\"", "\"")?.takeIf { it.startsWith("{") }
                 if (json != null) runCatching {
                     val o = org.json.JSONObject(json)
@@ -557,9 +635,9 @@ private fun WebPlayerStage(
                     position = o.optLong("pos")
                     o.optJSONArray("q")?.let { a -> qualities = (0 until a.length()).map { a.optString(it) } }
                     qualityIdx = o.optInt("qi").coerceAtLeast(0)
-                    // Kick auto-play until it actually starts (setup's play() can fire before JWPlayer is ready).
+                    // Kick auto-play until it actually starts (the host's play() can fire before it's ready).
                     // Reveal only once frames are rolling (pos>0) so the startup clutter stays behind the cover.
-                    if (!started) { if (playing && position > 0L) started = true else wv.evaluateJavascript("try{jwplayer().play(true);}catch(e){}", null) }
+                    if (!started) { if (playing && position > 0L) started = true else wv.evaluateJavascript(player.playKick, null) }
                 }
             }
         }
@@ -567,7 +645,7 @@ private fun WebPlayerStage(
     LaunchedEffect(controls, playing) { if (controls && playing) { delay(4000); controls = false } }
 
     fun js(code: String) { web?.evaluateJavascript(code, null) }
-    fun toggle() = js("try{var p=jwplayer();p.getState()=='playing'?p.pause(true):p.play(true);}catch(e){}")
+    fun toggle() = js(player.toggle)
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         key(embedUrl) {
@@ -588,13 +666,13 @@ private fun WebPlayerStage(
                                 if (isAdHost(request.url.host.orEmpty()))
                                     WebResourceResponse("text/plain", "utf-8", java.io.ByteArrayInputStream(ByteArray(0)))
                                 else null
-                            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
-                                val h = request.url.host.orEmpty()
-                                return request.isForMainFrame && !h.endsWith("videoplayer.vip") // block ad redirects
+                            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean =
+                                request.isForMainFrame && !player.allowHost(request.url.host.orEmpty()) // block ad redirects
+                            override fun onPageFinished(view: WebView, url: String?) {
+                                if (player.setupJs.isNotEmpty()) view.evaluateJavascript(player.setupJs, null)
                             }
-                            override fun onPageFinished(view: WebView, url: String?) { view.evaluateJavascript(JW_SETUP_JS, null) }
                         }
-                        loadUrl(embedUrl, mapOf("Referer" to referer))
+                        player.load(this)
                     }
                 },
                 update = { web = it },
@@ -622,8 +700,8 @@ private fun WebPlayerStage(
                     onDoubleTap = { off ->
                         val w = size.width
                         when {
-                            off.x < w / 3f -> js("try{jwplayer().seek(Math.max(0,jwplayer().getPosition()-10));}catch(e){}")
-                            off.x > w * 2f / 3f -> js("try{jwplayer().seek(jwplayer().getPosition()+10);}catch(e){}")
+                            off.x < w / 3f -> js(player.seekAbs((position - 10).coerceAtLeast(0)))
+                            off.x > w * 2f / 3f -> js(player.seekAbs(position + 10))
                             else -> toggle()
                         }
                         controls = true
@@ -640,7 +718,7 @@ private fun WebPlayerStage(
                     Pill("Resolusi", qualities.getOrElse(qualityIdx) { "Auto" }, qualities.indices.toList(),
                         itemLabel = { qualities[it] }, selected = { it == qualityIdx }) { idx ->
                         qualityIdx = idx
-                        js("try{jwplayer().setCurrentQuality($idx);}catch(e){}")
+                        js(player.setQuality(idx))
                     }
                 }
             }
@@ -660,7 +738,7 @@ private fun WebPlayerStage(
                 Text(fmtTime(position * 1000), color = Color.White, fontSize = 12.sp)
                 Slider(
                     value = if (duration > 0L) (position.toFloat() / duration).coerceIn(0f, 1f) else 0f,
-                    onValueChange = { f -> if (duration > 0L) { val p = (f * duration).toLong(); position = p; js("try{jwplayer().seek($p);}catch(e){}") } },
+                    onValueChange = { f -> if (duration > 0L) { val p = (f * duration).toLong(); position = p; js(player.seekAbs(p)) } },
                     modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
                     colors = SliderDefaults.colors(thumbColor = Color.White, activeTrackColor = Color.White, inactiveTrackColor = Color.White.copy(0.3f)),
                 )

@@ -95,7 +95,9 @@ object LiveParser {
 
     private fun iframeSrc(iframeHtml: String): String? =
         Regex("""src\s*=\s*["']?([^"'\s>]+)""", RegexOption.IGNORE_CASE)
-            .find(iframeHtml)?.groupValues?.get(1)?.takeIf { it.startsWith("http") }
+            .find(iframeHtml)?.groupValues?.get(1)
+            ?.let { if (it.startsWith("//")) "https:$it" else it } // anixcafe gives ok.ru as protocol-relative //ok.ru/…
+            ?.takeIf { it.startsWith("http") }
 
     fun parseList(html: String, baseUrl: String): List<LiveItem> {
         val doc = Jsoup.parse(html, baseUrl)
