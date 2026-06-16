@@ -50,18 +50,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.window.PopupProperties
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.core.view.WindowCompat
-import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.WindowInsetsControllerCompat
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
+import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultHttpDataSource
@@ -89,29 +88,34 @@ fun PlayerScreen(arg: PlayerArg, onBack: () -> Unit) {
     val context = LocalContext.current
     val referer = arg.url.orEmpty()
 
-    // Landscape + immersive (hide status/nav bars) while playing. MainActivity has
-    // configChanges=orientation|screenSize so this does NOT recreate the activity. Restore on exit.
+    // Force landscape while playing. MainActivity has configChanges=orientation|screenSize so this does
+    // NOT recreate the activity. Restore on exit. (Immersive is handled by the sticky effect below.)
     DisposableEffect(Unit) {
         val activity = context as? Activity
         val prev = activity?.requestedOrientation
         activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-        val controller = activity?.window?.let { WindowCompat.getInsetsController(it, it.decorView) }
-        controller?.apply {
-            systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-            hide(WindowInsetsCompat.Type.systemBars())
-        }
-        onDispose {
-            activity?.requestedOrientation = prev ?: ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
-            controller?.show(WindowInsetsCompat.Type.systemBars())
-        }
+        onDispose { activity?.requestedOrientation = prev ?: ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED }
     }
-    // The WebView/player and focus changes re-show the status/nav bars (clock, battery leak in), so
-    // keep re-hiding them while the player is open. hide() on already-hidden bars is a no-op.
-    LaunchedEffect(Unit) {
-        val controller = (context as? Activity)?.window?.let { WindowCompat.getInsetsController(it, it.decorView) }
-        while (true) {
-            controller?.hide(WindowInsetsCompat.Type.systemBars())
-            delay(1200)
+    // Opening a Compose dropdown (Source/Resolusi) spawns a focusable popup window; while it's focused
+    // the system shows the bars, and on close the activity doesn't re-assert immersive on its own. Use
+    // legacy IMMERSIVE_STICKY AND re-apply it whenever the activity window regains focus (popup closed).
+    @Suppress("DEPRECATION")
+    DisposableEffect(Unit) {
+        val decor = (context as? Activity)?.window?.decorView
+        val sticky = android.view.View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or
+            android.view.View.SYSTEM_UI_FLAG_FULLSCREEN or
+            android.view.View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
+            android.view.View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
+            android.view.View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
+            android.view.View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+        decor?.systemUiVisibility = sticky
+        val focusL = android.view.ViewTreeObserver.OnWindowFocusChangeListener { hasFocus ->
+            if (hasFocus) decor?.systemUiVisibility = sticky
+        }
+        decor?.viewTreeObserver?.addOnWindowFocusChangeListener(focusL)
+        onDispose {
+            decor?.viewTreeObserver?.removeOnWindowFocusChangeListener(focusL)
+            decor?.systemUiVisibility = android.view.View.SYSTEM_UI_FLAG_VISIBLE
         }
     }
 
@@ -461,16 +465,25 @@ private fun ExoStage(
             .build().apply { playWhenReady = true }
     }
     // For a single adaptive stream (HLS, e.g. Rumble/LuluStream) the resolutions live as variant tracks
-    // inside the manifest — read them so the Resolusi picker can cap quality via the track selector.
+    // inside the manifest — read them so the Resolusi picker can FORCE a specific track (capping the
+    // max alone lets ABR still pick a low rung on weak bandwidth → blurry despite a 1080p choice).
+    var latestTracks by remember(variants) { mutableStateOf<Tracks?>(null) }
     var trackHeights by remember(variants) { mutableStateOf<List<Int>>(emptyList()) }
     var selHeight by remember(variants) { mutableStateOf<Int?>(null) } // null = Auto (adaptive)
     fun applyHeight(h: Int?) {
         selHeight = h
-        trackSelector.setParameters(
-            trackSelector.buildUponParameters().apply {
-                if (h == null) clearVideoSizeConstraints() else setMaxVideoSize(Int.MAX_VALUE, h)
-            },
-        )
+        val p = trackSelector.buildUponParameters()
+        if (h == null) {
+            p.clearOverridesOfType(C.TRACK_TYPE_VIDEO)
+        } else {
+            latestTracks?.groups?.firstOrNull { g ->
+                g.type == C.TRACK_TYPE_VIDEO && (0 until g.length).any { g.getTrackFormat(it).height == h }
+            }?.let { g ->
+                val idx = (0 until g.length).first { g.getTrackFormat(it).height == h }
+                p.setOverrideForType(TrackSelectionOverride(g.mediaTrackGroup, idx))
+            }
+        }
+        trackSelector.setParameters(p)
     }
 
     var playing by remember { mutableStateOf(false) }
@@ -487,6 +500,7 @@ private fun ExoStage(
             }
             override fun onIsPlayingChanged(p: Boolean) { playing = p }
             override fun onTracksChanged(tracks: Tracks) {
+                latestTracks = tracks
                 val hs = sortedSetOf<Int>(compareByDescending { it })
                 tracks.groups.filter { it.type == C.TRACK_TYPE_VIDEO }.forEach { g ->
                     for (i in 0 until g.length) g.getTrackFormat(i).height.let { if (it > 0) hs.add(it) }
@@ -837,7 +851,7 @@ private fun SourcePill(servers: List<VideoServer>, current: VideoServer, onPick:
     var open by remember { mutableStateOf(false) }
     Box {
         PillRow("Source", shortServerName(current.name)) { open = true }
-        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }, properties = PopupProperties(focusable = false)) {
             servers.forEach { s ->
                 DropdownMenuItem(text = { Text(s.name + if (s.embedUrl == current.embedUrl) "  ✓" else "") }, onClick = { onPick(s); open = false })
             }
@@ -853,7 +867,7 @@ private fun <T> Pill(label: String, value: String, items: List<T>, itemLabel: (T
     var open by remember { mutableStateOf(false) }
     Box {
         PillRow(label, value) { open = true }
-        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }, properties = PopupProperties(focusable = false)) {
             items.forEach { it2 ->
                 DropdownMenuItem(text = { Text(itemLabel(it2) + if (selected(it2)) "  ✓" else "") }, onClick = { onPick(it2); open = false })
             }
