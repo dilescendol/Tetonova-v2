@@ -59,12 +59,15 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
+import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 import androidx.media3.ui.PlayerView
 import com.tetonova.app.data.ExtractResult
 import com.tetonova.app.data.LiveSource
@@ -100,6 +103,15 @@ fun PlayerScreen(arg: PlayerArg, onBack: () -> Unit) {
         onDispose {
             activity?.requestedOrientation = prev ?: ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
             controller?.show(WindowInsetsCompat.Type.systemBars())
+        }
+    }
+    // The WebView/player and focus changes re-show the status/nav bars (clock, battery leak in), so
+    // keep re-hiding them while the player is open. hide() on already-hidden bars is a no-op.
+    LaunchedEffect(Unit) {
+        val controller = (context as? Activity)?.window?.let { WindowCompat.getInsetsController(it, it.decorView) }
+        while (true) {
+            controller?.hide(WindowInsetsCompat.Type.systemBars())
+            delay(1200)
         }
     }
 
@@ -238,10 +250,28 @@ private fun dmWrapperHtml(embedUrl: String): String {
     val videoId = Regex("[?&]video=([^&]+)").find(embedUrl)?.groupValues?.get(1)
         ?: Regex("dailymotion\\.com/(?:embed/)?video/([^_?&/]+)").find(embedUrl)?.groupValues?.get(1) ?: ""
     return """<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
-<style>html,body{margin:0;padding:0;height:100%;background:#000;overflow:hidden}#dmp{position:fixed;inset:0;width:100%;height:100%}</style></head>
+<style>html,body{margin:0;padding:0;height:100%;width:100%;background:#000;overflow:hidden}
+#dmp{position:fixed!important;top:0;left:0;width:100vw!important;height:100vh!important}
+/* The SDK injects its own wrapper div + iframe; force them to fill (some player IDs default to a
+   16:9 aspect box that otherwise leaves a black bar). */
+#dmp>*,#dmp iframe{position:absolute!important;top:0!important;left:0!important;width:100%!important;height:100%!important;max-height:none!important;padding:0!important;border:0!important}</style></head>
 <body><div id="dmp"></div>
 <script>
 window.__dm={st:'idle',pos:0,dur:0,q:[],qi:0};
+// The SDK sizes #dmp + its iframe to ~640x720 via late !important stylesheet rules (taller than the
+// 640x360 viewport → black bar). Beat them with inline !important on #dmp AND the iframe chain,
+// re-applied since the SDK builds/resizes async.
+// The SDK sizes #dmp with a `padding-bottom:56.25%` aspect hack + late !important rules (→ 640x720,
+// taller than the 640x360 viewport = black bar). Beat them with inline !important on #dmp (kill the
+// padding) and the iframe chain, re-applied since the SDK builds/resizes async.
+function S(el,k,v){el.style.setProperty(k,v,'important');}
+function fit(){try{
+ var dmp=document.getElementById('dmp');var h=window.innerHeight+'px';
+ if(dmp){S(dmp,'position','fixed');S(dmp,'top','0');S(dmp,'left','0');S(dmp,'width',window.innerWidth+'px');S(dmp,'height',h);S(dmp,'max-height',h);S(dmp,'min-height','0');S(dmp,'padding','0');S(dmp,'padding-bottom','0');S(dmp,'box-sizing','border-box');}
+ var el=document.querySelector('#dmp iframe');
+ while(el&&el!==dmp){S(el,'position','absolute');S(el,'top','0');S(el,'left','0');S(el,'width','100%');S(el,'height','100%');S(el,'max-height','100%');S(el,'min-height','0');S(el,'padding','0');S(el,'margin','0');el=el.parentElement;}
+}catch(e){}}
+setInterval(fit,400);
 window.__dmSetQ=function(i){try{var q=window.__dm.q;if(window.__p&&q&&q[i]!=null)window.__p.setQuality(''+q[i]);}catch(e){}};
 window.dailymotion={onScriptLoaded:function(){
  dailymotion.createPlayer('dmp',{video:'$videoId',params:{mute:false}}).then(function(p){
@@ -415,6 +445,7 @@ private fun ExoStage(
 ) {
     val context = LocalContext.current
     var quality by remember(variants) { mutableStateOf(variants.first()) } // first = highest
+    val trackSelector = remember { DefaultTrackSelector(context) }
     val exo = remember {
         // Use exactly the headers the resolver said this stream needs (extractor per-host, or the
         // sniffer's captured request headers). Empty = none (Dailymotion's CDN 403s on Referer/Origin).
@@ -426,7 +457,20 @@ private fun ExoStage(
             .setDefaultRequestProperties(props.filterKeys { !it.equals("User-Agent", true) })
         ExoPlayer.Builder(context)
             .setMediaSourceFactory(DefaultMediaSourceFactory(httpFactory))
+            .setTrackSelector(trackSelector)
             .build().apply { playWhenReady = true }
+    }
+    // For a single adaptive stream (HLS, e.g. Rumble/LuluStream) the resolutions live as variant tracks
+    // inside the manifest — read them so the Resolusi picker can cap quality via the track selector.
+    var trackHeights by remember(variants) { mutableStateOf<List<Int>>(emptyList()) }
+    var selHeight by remember(variants) { mutableStateOf<Int?>(null) } // null = Auto (adaptive)
+    fun applyHeight(h: Int?) {
+        selHeight = h
+        trackSelector.setParameters(
+            trackSelector.buildUponParameters().apply {
+                if (h == null) clearVideoSizeConstraints() else setMaxVideoSize(Int.MAX_VALUE, h)
+            },
+        )
     }
 
     var playing by remember { mutableStateOf(false) }
@@ -442,6 +486,13 @@ private fun ExoStage(
                 if (s == Player.STATE_READY) duration = exo.duration.coerceAtLeast(0L)
             }
             override fun onIsPlayingChanged(p: Boolean) { playing = p }
+            override fun onTracksChanged(tracks: Tracks) {
+                val hs = sortedSetOf<Int>(compareByDescending { it })
+                tracks.groups.filter { it.type == C.TRACK_TYPE_VIDEO }.forEach { g ->
+                    for (i in 0 until g.length) g.getTrackFormat(i).height.let { if (it > 0) hs.add(it) }
+                }
+                trackHeights = hs.toList()
+            }
             override fun onPlayerError(e: androidx.media3.common.PlaybackException) { onError() }
         }
         exo.addListener(l)
@@ -505,8 +556,17 @@ private fun ExoStage(
             Box(Modifier.fillMaxSize().background(Color.Black.copy(0.35f)))
             TopBar(arg.title, arg.episodeLabel, onBack) {
                 SourcePill(servers, server, onPickServer, onExternal)
-                Spacer(Modifier.width(8.dp))
-                Pill("Resolusi", quality.label, variants, { it.label }, { it.label == quality.label }) { quality = it }
+                if (variants.size > 1) {
+                    // Per-quality stream URLs (e.g. ok.ru, Rumble mp4 ladder).
+                    Spacer(Modifier.width(8.dp))
+                    Pill("Resolusi", quality.label, variants, { it.label }, { it.label == quality.label }) { quality = it }
+                } else if (trackHeights.size > 1) {
+                    // Single adaptive HLS stream — pick from the manifest's variant heights (+ Auto).
+                    Spacer(Modifier.width(8.dp))
+                    val opts = listOf<Int?>(null) + trackHeights
+                    Pill("Resolusi", selHeight?.let { "${it}p" } ?: "Auto", opts,
+                        itemLabel = { it?.let { h -> "${h}p" } ?: "Auto" }, selected = { it == selHeight }) { applyHeight(it) }
+                }
             }
             // center play / pause
             Box(
@@ -766,12 +826,17 @@ private fun BoxScope.TopBar(title: String, episodeLabel: String?, onBack: () -> 
     }
 }
 
+/** Strip the source's parenthetical hint (anichin appends "[Ganti kalo gak ada suaranya]", "[ADS]", …)
+ *  so the compact pill stays short; the full label is still shown in the dropdown. */
+private fun shortServerName(name: String): String =
+    name.replace(Regex("\\s*\\[[^\\]]*\\]"), "").trim().ifBlank { name }
+
 /** Source-server picker pill + dropdown (with an "open externally" tail). */
 @Composable
 private fun SourcePill(servers: List<VideoServer>, current: VideoServer, onPick: (VideoServer) -> Unit, onExternal: () -> Unit) {
     var open by remember { mutableStateOf(false) }
     Box {
-        PillRow("Source", current.name) { open = true }
+        PillRow("Source", shortServerName(current.name)) { open = true }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             servers.forEach { s ->
                 DropdownMenuItem(text = { Text(s.name + if (s.embedUrl == current.embedUrl) "  ✓" else "") }, onClick = { onPick(s); open = false })
