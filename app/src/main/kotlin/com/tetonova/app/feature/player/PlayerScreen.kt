@@ -141,6 +141,13 @@ private fun ServerPlayer(
     onBack: () -> Unit,
     onExternal: () -> Unit,
 ) {
+    // JWPlayer hosts (videoplayer.vip): master.txt anti-leech 404s ExoPlayer, but the WebView plays
+    // fine — so play it in a WebView with the embed's own UI hidden and OUR controls overlaid, driven
+    // via the jwplayer() JS API.
+    if (isJwPlayerHost(server.embedUrl)) {
+        WebPlayerStage(server.embedUrl, referer, arg.title, arg.episodeLabel, servers, server, onPickServer, onBack, onExternal)
+        return
+    }
     var phase by remember(server) { mutableStateOf<Phase>(Phase.Extracting) }
     LaunchedEffect(server) {
         // 1) static extractor (ok.ru/dailymotion/rumble/filemoon) → 2) WebView sniffer → 3) WebView embed.
@@ -173,11 +180,56 @@ private sealed interface Phase {
 
 private const val DESKTOP_UA =
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-private const val NUDGE_JS =
-    "(function(){try{var v=document.querySelector('video');if(v){v.muted=true;v.play&&v.play();}" +
-        "var c=document.elementFromPoint(innerWidth/2,innerHeight/2);if(c)c.click();" +
-        "['#play','.play','.vjs-big-play-button','.play-button','#vplayer','.fp-ui','.jw-icon-display','.plyr__control--overlaid']" +
-        ".forEach(function(s){var e=document.querySelector(s);if(e)e.click();});}catch(e){}})();"
+// Kicks playback AND reads the resolved stream URL straight from JWPlayer's API (videoplayer.vip
+// decrypts its AES config client-side, then jwplayer().setup({...file/sources...}) — so the playlist
+// holds the real /hls/ URL without us breaking their crypto). Falls back to clicking play buttons /
+// reading a <video> src. Returns the URL string (or "").
+private const val READER_JS =
+    "(function(){try{var f='';" +
+        "if(window.jwplayer){var p=jwplayer();" + // read only — do NOT play() (would consume the single-use token)
+        // videoplayer.vip is an "All In One" multi-source JWPlayer — read the ACTIVE item, not [0].
+        "var it=(p.getPlaylistItem&&p.getPlaylistItem())||null;" +
+        "var pl=(p.getPlaylist&&p.getPlaylist())||[];" +
+        "if(!it&&pl[0])it=pl[0];" +
+        "if(it)f=it.file||(it.sources&&it.sources[0]&&it.sources[0].file)||'';" +
+        "if(!f&&p.getConfig){var c=p.getConfig();if(c&&c.playlist&&c.playlist[0]){var s=c.playlist[0];f=s.file||(s.sources&&s.sources[0]&&s.sources[0].file)||'';}}}" +
+        "return f;}catch(e){return '';}})();"
+
+// JS-bridge for JWPlayer hosts (videoplayer.vip): hide the embed's own UI, then drive/read it via API.
+private const val JW_SETUP_JS =
+    "(function(){" +
+        // Force the layout viewport to device width (embed sets width=640 → player rendered small).
+        "try{var mv=document.querySelector('meta[name=viewport]');if(!mv){mv=document.createElement('meta');mv.name='viewport';document.head.appendChild(mv);}mv.setAttribute('content','width=device-width,initial-scale=1,user-scalable=no');}catch(e){}" +
+        "try{var s=document.createElement('style');s.innerHTML=" +
+        // Hide JWPlayer's own control UI (safe).
+        "'.jw-controlbar,.jw-icon-display,.jw-title,.jw-logo,.jw-rightclick,.jw-nextup-container,#iframeAds,iframe[id*=\"ads\" i],iframe[id*=\"Ads\"],#btnServer,[id*=\"btnServer\"]{display:none!important;}'+" +
+        // Force the player + video to fill the screen (embed defaults to a small 640x360 box → looked black).
+        "'html,body{margin:0!important;padding:0!important;width:100%!important;height:100%!important;background:#000!important;overflow:hidden!important;}'+" +
+        "'.jwplayer,.jw-wrapper,.jw-aspect,#vplayer,#player{position:fixed!important;top:0!important;left:0!important;width:100%!important;height:100%!important;padding:0!important;max-width:none!important;}'+" +
+        "'video{width:100%!important;height:100%!important;object-fit:contain!important;}';" +
+        "document.head.appendChild(s);}catch(e){}try{jwplayer().setControls(false);jwplayer().resize(window.innerWidth,window.innerHeight);jwplayer().play();}catch(e){}})();"
+private const val JW_STATE_JS =
+    "(function(){try{if(!window.jwplayer)return '';var p=jwplayer();if(!p.getState)return '';" +
+        "try{p.setControls(false);}catch(e){}" +
+        // Kill full-screen fixed overlays that contain no <video> (ad/click-catchers covering the player).
+        "try{for(var i=0;i<8;i++){var t0=document.elementFromPoint(innerWidth/2,innerHeight/2);" +
+        "if(t0&&(t0.tagName=='DIV'||t0.tagName=='IFRAME')&&!t0.querySelector('video')){t0.style.display='none';}else break;}}catch(e){}" +
+        "try{p.resize(window.innerWidth,window.innerHeight);}catch(e){}" +
+        // Hide videoplayer.vip's \"Welcome back / resume watching?\" dialog (the small div holding that text).
+        "try{var dv=document.querySelectorAll('div');for(var j=0;j<dv.length;j++){var e=dv[j];var tx=(e.textContent||'');if(/resume watching|welcome back/i.test(tx)&&tx.length<170){e.style.display='none';}}}catch(e){}" +
+        "var q=[];var qi=0;try{var ql=p.getQualityLevels()||[];for(var k=0;k<ql.length;k++)q.push(ql[k].label||('Q'+k));qi=p.getCurrentQuality();}catch(e){}" +
+        "return JSON.stringify({st:p.getState(),pos:Math.floor(p.getPosition()||0),dur:Math.floor(p.getDuration()||0),q:q,qi:qi});}catch(e){return '';}})();"
+
+private fun isJwPlayerHost(embedUrl: String): Boolean = "videoplayer.vip" in embedUrl
+
+/** Ad/tracker/anti-bot-overlay hosts to block in the JWPlayer WebView (e.g. the ADEX "verify you are
+ *  human" interstitial). Blocking them at the network level keeps the video clean behind our controls. */
+private val AD_HOSTS = listOf(
+    "exceedbronzetooth", "protrafficinspector", "255md", "dtscout", "dtscdn", "onaudience", "histats",
+    "crwdcntrl", "adex", "doubleclick", "googlesyndication", "kettledrooping", "spendsdetachment",
+    "zoologyfibre", "popads", "popcash", "propeller", "adsterra", "hilltopads",
+)
+private fun isAdHost(host: String): Boolean = host.lowercase().let { h -> AD_HOSTS.any { it in h } }
 
 private fun looksLikeStream(u: String): Boolean {
     val low = u.lowercase()
@@ -206,7 +258,23 @@ private fun SniffStage(embedUrl: String, referer: String, onSniffed: (String, Ma
     LaunchedEffect(embedUrl) { delay(22_000); if (done.compareAndSet(false, true)) onFail() }
     LaunchedEffect(web) {
         val wv = web ?: return@LaunchedEffect
-        repeat(10) { delay(1500); if (done.get()) return@LaunchedEffect; wv.evaluateJavascript(NUDGE_JS, null) }
+        repeat(14) {
+            delay(1500)
+            if (done.get()) return@LaunchedEffect
+            wv.evaluateJavascript(READER_JS) { result ->
+                val url = result?.trim('"', ' ')?.replace("\\/", "/")
+                    ?.takeIf { it.startsWith("http") && !it.startsWith("blob") }
+                if (url != null && done.compareAndSet(false, true)) {
+                    val origin = runCatching { java.net.URI(embedUrl).let { "${it.scheme}://${it.host}" } }.getOrNull()
+                    val cookie = runCatching { android.webkit.CookieManager.getInstance().getCookie(origin ?: embedUrl) }.getOrNull()
+                    val h = buildMap {
+                        put("Referer", embedUrl)
+                        cookie?.let { put("Cookie", it) } // NO Origin — media fetch is same-origin
+                    }
+                    onSniffed(url, h)
+                }
+            }
+        }
     }
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         AndroidView(
@@ -222,12 +290,19 @@ private fun SniffStage(embedUrl: String, referer: String, onSniffed: (String, Ma
                         override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
                             val u = request.url.toString()
                             if (looksLikeStream(u) && done.compareAndSet(false, true)) {
-                                val h = HashMap(request.requestHeaders).apply { putIfAbsent("Referer", referer) }
+                                val origin = runCatching { java.net.URI(embedUrl).let { "${it.scheme}://${it.host}" } }.getOrNull()
+                                val cookie = runCatching { android.webkit.CookieManager.getInstance().getCookie(origin ?: embedUrl) }.getOrNull()
+                                val h = HashMap(request.requestHeaders).apply {
+                                    putIfAbsent("Referer", referer) // request headers already carry the embed Referer
+                                    cookie?.let { put("Cookie", it) } // NO Origin — JWPlayer's media fetch doesn't send it
+                                }
                                 Handler(Looper.getMainLooper()).post { onSniffed(u, h) }
+                                // Block the WebView's own fetch so a single-use token stays unused → ExoPlayer gets a fresh hit.
+                                return WebResourceResponse("text/plain", "utf-8", java.io.ByteArrayInputStream(ByteArray(0)))
                             }
                             return null
                         }
-                        override fun onPageFinished(view: WebView, url: String?) { view.evaluateJavascript(NUDGE_JS, null) }
+                        override fun onPageFinished(view: WebView, url: String?) { view.evaluateJavascript(READER_JS, null) }
                     }
                     loadUrl(embedUrl, mapOf("Referer" to referer))
                 }
@@ -441,6 +516,160 @@ private fun WebStage(
 // Shared bits
 // ---------------------------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------------------------
+// JWPlayer WebView stage — videoplayer.vip plays in the WebView (its master.txt 404s ExoPlayer),
+// with the embed's own UI hidden and OUR controls overlaid, driven via the jwplayer() JS API.
+// ---------------------------------------------------------------------------------------------
+
+@Composable
+private fun WebPlayerStage(
+    embedUrl: String,
+    referer: String,
+    title: String,
+    episodeLabel: String?,
+    servers: List<VideoServer>,
+    current: VideoServer,
+    onPickServer: (VideoServer) -> Unit,
+    onBack: () -> Unit,
+    onExternal: () -> Unit,
+) {
+    var web by remember(embedUrl) { mutableStateOf<WebView?>(null) }
+    var playing by remember { mutableStateOf(false) }
+    var position by remember { mutableLongStateOf(0L) } // seconds
+    var duration by remember { mutableLongStateOf(0L) } // seconds
+    var controls by remember { mutableStateOf(true) }
+    var fullscreen by remember { mutableStateOf(false) }
+    var qualities by remember { mutableStateOf<List<String>>(emptyList()) }
+    var qualityIdx by remember { mutableStateOf(0) }
+    var started by remember { mutableStateOf(false) }
+
+    // Poll JWPlayer state (and keep its UI hidden) ~every 700ms.
+    LaunchedEffect(web) {
+        val wv = web ?: return@LaunchedEffect
+        while (true) {
+            delay(700)
+            wv.evaluateJavascript(JW_STATE_JS) { r ->
+                val json = r?.removeSurrounding("\"")?.replace("\\\"", "\"")?.takeIf { it.startsWith("{") }
+                if (json != null) runCatching {
+                    val o = org.json.JSONObject(json)
+                    playing = o.optString("st") == "playing"
+                    o.optLong("dur").let { if (it > 0L) duration = it }
+                    position = o.optLong("pos")
+                    o.optJSONArray("q")?.let { a -> qualities = (0 until a.length()).map { a.optString(it) } }
+                    qualityIdx = o.optInt("qi").coerceAtLeast(0)
+                    // Kick auto-play until it actually starts (setup's play() can fire before JWPlayer is ready).
+                    // Reveal only once frames are rolling (pos>0) so the startup clutter stays behind the cover.
+                    if (!started) { if (playing && position > 0L) started = true else wv.evaluateJavascript("try{jwplayer().play(true);}catch(e){}", null) }
+                }
+            }
+        }
+    }
+    LaunchedEffect(controls, playing) { if (controls && playing) { delay(4000); controls = false } }
+
+    fun js(code: String) { web?.evaluateJavascript(code, null) }
+    fun toggle() = js("try{var p=jwplayer();p.getState()=='playing'?p.pause(true):p.play(true);}catch(e){}")
+
+    Box(Modifier.fillMaxSize().background(Color.Black)) {
+        key(embedUrl) {
+            AndroidView(
+                factory = { ctx ->
+                    WebView(ctx).apply {
+                        layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+                        setBackgroundColor(android.graphics.Color.BLACK)
+                        settings.javaScriptEnabled = true
+                        settings.domStorageEnabled = true
+                        settings.mediaPlaybackRequiresUserGesture = false
+                        settings.loadWithOverviewMode = true
+                        settings.useWideViewPort = true
+                        settings.userAgentString = DESKTOP_UA
+                        webChromeClient = fullscreenChromeClient(ctx, { fullscreen = true }, { fullscreen = false })
+                        webViewClient = object : WebViewClient() {
+                            override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? =
+                                if (isAdHost(request.url.host.orEmpty()))
+                                    WebResourceResponse("text/plain", "utf-8", java.io.ByteArrayInputStream(ByteArray(0)))
+                                else null
+                            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+                                val h = request.url.host.orEmpty()
+                                return request.isForMainFrame && !h.endsWith("videoplayer.vip") // block ad redirects
+                            }
+                            override fun onPageFinished(view: WebView, url: String?) { view.evaluateJavascript(JW_SETUP_JS, null) }
+                        }
+                        loadUrl(embedUrl, mapOf("Referer" to referer))
+                    }
+                },
+                update = { web = it },
+                onRelease = { it.destroy() },
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
+        // Until the video is actually rolling, cover the WebView with an opaque loading screen so the
+        // user never sees JWPlayer's startup clutter (resume dialog, ad ✕, server menu, grey play poster).
+        // The WebView stays attached & full-size behind the cover, so Chromium keeps decoding/playing.
+        if (!started) {
+            LoadingBox("Menyiapkan video…")
+            Box(
+                Modifier.align(Alignment.TopStart).padding(10.dp).size(38.dp).clip(CircleShape)
+                    .background(Color.White.copy(0.15f)).clickable { onBack() },
+                contentAlignment = Alignment.Center,
+            ) { Text("‹", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold) }
+            return@Box
+        }
+        // Tap layer: toggle controls; double-tap L/R seeks ∓10s via jwplayer().
+        Box(
+            Modifier.fillMaxSize().pointerInput(Unit) {
+                detectTapGestures(
+                    onTap = { controls = !controls },
+                    onDoubleTap = { off ->
+                        val w = size.width
+                        when {
+                            off.x < w / 3f -> js("try{jwplayer().seek(Math.max(0,jwplayer().getPosition()-10));}catch(e){}")
+                            off.x > w * 2f / 3f -> js("try{jwplayer().seek(jwplayer().getPosition()+10);}catch(e){}")
+                            else -> toggle()
+                        }
+                        controls = true
+                    },
+                )
+            },
+        )
+        if (controls && !fullscreen) {
+            Box(Modifier.fillMaxSize().background(Color.Black.copy(0.25f)))
+            TopBar(title, episodeLabel, onBack) {
+                SourcePill(servers, current, onPickServer, onExternal)
+                if (qualities.size > 1) {
+                    Spacer(Modifier.width(8.dp))
+                    Pill("Resolusi", qualities.getOrElse(qualityIdx) { "Auto" }, qualities.indices.toList(),
+                        itemLabel = { qualities[it] }, selected = { it == qualityIdx }) { idx ->
+                        qualityIdx = idx
+                        js("try{jwplayer().setCurrentQuality($idx);}catch(e){}")
+                    }
+                }
+            }
+            Box(
+                Modifier.align(Alignment.Center).size(64.dp).clip(CircleShape).background(Color.White.copy(0.18f)).clickable { toggle() },
+                contentAlignment = Alignment.Center,
+            ) {
+                if (playing) Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Box(Modifier.size(width = 6.dp, height = 22.dp).clip(RoundedCornerShape(2.dp)).background(Color.White))
+                    Box(Modifier.size(width = 6.dp, height = 22.dp).clip(RoundedCornerShape(2.dp)).background(Color.White))
+                } else Text("▶", color = Color.White, fontSize = 26.sp)
+            }
+            Row(
+                Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(fmtTime(position * 1000), color = Color.White, fontSize = 12.sp)
+                Slider(
+                    value = if (duration > 0L) (position.toFloat() / duration).coerceIn(0f, 1f) else 0f,
+                    onValueChange = { f -> if (duration > 0L) { val p = (f * duration).toLong(); position = p; js("try{jwplayer().seek($p);}catch(e){}") } },
+                    modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
+                    colors = SliderDefaults.colors(thumbColor = Color.White, activeTrackColor = Color.White, inactiveTrackColor = Color.White.copy(0.3f)),
+                )
+                Text(fmtTime(duration * 1000), color = Color.White, fontSize = 12.sp)
+            }
+        }
+    }
+}
+
 @Composable
 private fun BoxScope.TopBar(title: String, episodeLabel: String?, onBack: () -> Unit, trailing: @Composable () -> Unit) {
     Row(
@@ -582,8 +811,11 @@ private fun playerWebViewClient(allowHost: String) = object : WebViewClient() {
 
 /** Prefer a clean, high-quality server (ok.ru / dailymotion) over the ad-heavy mirrors. */
 private fun pickRecommended(servers: List<VideoServer>): VideoServer? {
-    val pref = listOf("ok.ru", "okru", "dailymotion")
-    return servers.firstOrNull { s -> pref.any { s.name.lowercase().contains(it) } }
+    // Prefer hosts that play in OUR controls: JWPlayer (videoplayer.vip, often named "All In One") and
+    // ok.ru both do; Dailymotion only embeds (its token m3u8 403s ExoPlayer) so it ranks below those.
+    return servers.firstOrNull { isJwPlayerHost(it.embedUrl) }
+        ?: servers.firstOrNull { s -> s.name.lowercase().let { "ok.ru" in it || "okru" in it } || "ok.ru" in s.embedUrl }
+        ?: servers.firstOrNull { it.name.contains("dailymotion", ignoreCase = true) || "dailymotion" in it.embedUrl }
         ?: servers.firstOrNull { !it.name.contains("[Ads]", ignoreCase = true) }
         ?: servers.firstOrNull()
 }
