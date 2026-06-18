@@ -23,3 +23,5 @@ rootProject.name = "TetoNova"
 include(":app")
 include(":core:model")
 include(":core:designsystem")
+include(":core:scraper")
+include(":server:scraper")

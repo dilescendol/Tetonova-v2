@@ -1,6 +1,9 @@
-package com.tetonova.app.data
+package com.tetonova.core.scraper
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -38,13 +41,27 @@ object StreamExtractor {
         return DEAD.none { it in u }
     }
 
+    /** True when the URL is itself a directly-playable stream (path ends in a media extension before
+     *  any query) rather than an embed host page — e.g. kuramadrive's signed .mp4. */
+    private fun isDirectVideo(url: String): Boolean {
+        val path = url.substringBefore('?').substringBefore('#').lowercase()
+        return path.endsWith(".mp4") || path.endsWith(".m3u8") || path.endsWith(".mkv")
+    }
+
     /** DoodStream family domains (anixcafe ships it as "playmogo.com"). */
     private val DOOD = listOf("dood", "playmogo", "dsvplay", "d-s.io", "ds2play", "do0od", "doodstream")
     private fun isDoodHost(u: String): Boolean = u.lowercase().let { l -> DOOD.any { it in l } }
 
-    suspend fun extract(server: VideoServer, referer: String): ExtractResult = runCatching {
-        val u = server.embedUrl
+    suspend fun extract(server: VideoServer, referer: String): ExtractResult =
+        if (server.variants.isNotEmpty()) extractVariants(server.variants, referer)
+        else extractEmbed(server.embedUrl, referer)
+
+    /** Resolve a single embed-host iframe URL into direct stream variants + the headers its CDN needs. */
+    private suspend fun extractEmbed(embedUrl: String, referer: String): ExtractResult = runCatching {
+        val u = embedUrl
         when {
+            // Already a direct, playable stream (kuramadrive's per-resolution .mp4) — pass it through.
+            isDirectVideo(u) -> ExtractResult(listOf(StreamVariant("Auto", u)))
             "ok.ru" in u || "odnoklassniki" in u -> ExtractResult(okru(u), originHeaders(u))
             // Dailymotion verifies the embedder: fetch metadata AS the real embedder (anixcafe) to get a
             // valid token, then play the manifest with the dailymotion.com referer (mimics the iframe).
@@ -54,9 +71,29 @@ object StreamExtractor {
             )
             "rumble.com" in u -> ExtractResult(rumble(u), originHeaders(u))
             isDoodHost(u) -> dood(u)
+            "filedon" in u -> ExtractResult(filedon(u, referer)) // presigned R2 URL → no headers
+            "desustream" in u -> desustream(u, referer) // googlevideo plays raw → no headers
             else -> generic(u, referer).let { ExtractResult(it, if (it.isEmpty()) emptyMap() else originHeaders(u)) }
         }
     }.getOrElse { ExtractResult(emptyList()) }
+
+    /**
+     * Otakudesu-style source: each [variants] entry is the SAME host at a different resolution (e.g.
+     * vidhide 360p/480p/720p, each its own iframe), so resolve them in parallel and relabel each with
+     * the site's resolution — that becomes the player's Resolusi picker. One host throughout, so one
+     * headers map (the first non-empty). Presented high→low (the order [OtakudesuSource] built).
+     */
+    private suspend fun extractVariants(variants: List<ServerVariant>, referer: String): ExtractResult = coroutineScope {
+        val resolved = variants.map { v -> async { v to extractEmbed(v.embedUrl, referer) } }.awaitAll()
+        val out = ArrayList<StreamVariant>()
+        var headers: Map<String, String> = emptyMap()
+        for ((v, res) in resolved) {
+            val stream = res.variants.firstOrNull() ?: continue
+            if (headers.isEmpty()) headers = res.headers
+            out.add(StreamVariant(v.label, stream.url))
+        }
+        ExtractResult(out, headers)
+    }
 
     private fun originHeaders(embedUrl: String): Map<String, String> {
         val origin = runCatching { java.net.URI(embedUrl).let { "${it.scheme}://${it.host}" } }.getOrNull() ?: return emptyMap()
@@ -155,12 +192,43 @@ object StreamExtractor {
         return out
     }
 
-    // ---- Generic Filemoon-family: unpack packed JS → m3u8 (filelions/streamwish/short.ink/…) ----
+    // ---- Generic Filemoon-family: unpack packed JS → m3u8 (filelions/streamwish/odvidhide/short.ink/…) ----
     private suspend fun generic(embedUrl: String, referer: String): List<StreamVariant> {
-        val html = fetch(embedUrl, referer.ifBlank { embedUrl }) ?: return emptyList()
+        // Direct first (with the embedder referer many hosts require); if that host is Internet-Positif
+        // blocked the direct fetch fails → fall back to the flare-capable client (odvidhide etc.).
+        val html = fetch(embedUrl, referer.ifBlank { embedUrl }) ?: LiveClient.getHtml(embedUrl) ?: return emptyList()
         val m3u8 = findStream(html) ?: return emptyList()
         return listOf(StreamVariant("Auto", m3u8))
     }
+
+    // ---- filedon.co: a presigned Cloudflare-R2 .mp4 in a JSON `"url":"…"` field. Entity-escaped
+    //      (&quot;) and with \/-escaped slashes; the presigned query self-authenticates so no headers. ----
+    private suspend fun filedon(embedUrl: String, referer: String): List<StreamVariant> {
+        val html = fetch(embedUrl, referer.ifBlank { embedUrl }) ?: LiveClient.getHtml(embedUrl) ?: return emptyList()
+        val text = org.jsoup.parser.Parser.unescapeEntities(html, false)
+        val mp4 = Regex(""""(https?:[^"]+?\.mp4[^"]*)"""").find(text)?.groupValues?.get(1) ?: return emptyList()
+        return listOf(StreamVariant("Auto", mp4.replace("\\/", "/")))
+    }
+
+    // ---- desustream.info: otakudesu's own player. The `ondesu/new/hd` player serves a direct
+    //      <source googlevideo mp4>. The `updesu/v5` player wraps a Blogger video.g iframe that's now a
+    //      JS-only Google WIZ app (no static stream) — but the SAME desustream id IS served directly by
+    //      the ondesu player, so we rewrite the path to it instead of trying to crack Blogger. ----
+    private suspend fun desustream(embedUrl: String, referer: String): ExtractResult {
+        val html = fetch(embedUrl, referer.ifBlank { embedUrl }) ?: LiveClient.getHtml(embedUrl)
+        html?.let { googleVideoFrom(it) }?.let { return ExtractResult(listOf(StreamVariant("Auto", it))) }
+        // No direct <source> (updesu/Blogger) → borrow the ondesu/new/hd player for the same id.
+        val alt = embedUrl.replace(Regex("""/dstream/[^/]+/(?:[^/?]+/)*index\.php"""), "/dstream/ondesu/new/hd/index.php")
+        if (alt != embedUrl) {
+            val altHtml = fetch(alt, referer.ifBlank { alt }) ?: LiveClient.getHtml(alt)
+            altHtml?.let { googleVideoFrom(it) }?.let { return ExtractResult(listOf(StreamVariant("Auto", it))) }
+        }
+        return ExtractResult(emptyList())
+    }
+
+    private fun googleVideoFrom(html: String): String? =
+        Regex("""<source[^>]+src=["']([^"']*googlevideo\.com[^"']+)["']""").find(html)?.groupValues?.get(1)
+            ?: Regex("""https?://[^"'\s\\]+googlevideo\.com/videoplayback[^"'\s\\]*""").find(html)?.value
 
     private fun findStream(html: String): String? {
         val text = (unpack(html) ?: "") + "\n" + html

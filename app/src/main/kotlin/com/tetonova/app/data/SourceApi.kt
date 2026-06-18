@@ -1,6 +1,8 @@
 package com.tetonova.app.data
 
+import android.util.Log
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
@@ -15,21 +17,31 @@ import java.util.concurrent.TimeUnit
 class SourceApi(private val baseUrl: String) {
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
+    // Generous timeouts: the LDPlayer emulator's NAT'd network is slow to first-byte, and an 8s budget
+    // was timing out → the app silently ran panel-less (no live Home, no live search).
     private val client = OkHttpClient.Builder()
-        .connectTimeout(8, TimeUnit.SECONDS)
-        .readTimeout(8, TimeUnit.SECONDS)
+        .connectTimeout(20, TimeUnit.SECONDS)
+        .readTimeout(20, TimeUnit.SECONDS)
         .build()
 
+    /** Fetch the sources feed, retrying a few times so a transient network hiccup on a cold start
+     *  doesn't strand the app on the bundled registry for the whole session. */
     suspend fun fetch(): SourcesResponse? = withContext(Dispatchers.IO) {
         val base = baseUrl.trim().trimEnd('/')
         if (base.isEmpty()) return@withContext null
-        runCatching {
-            val req = Request.Builder().url("$base/api/v1/sources").get().build()
-            client.newCall(req).execute().use { resp ->
-                if (!resp.isSuccessful) return@use null
-                val body = resp.body?.string().orEmpty()
-                if (body.isBlank()) null else json.decodeFromString<SourcesResponse>(body)
+        repeat(3) { attempt ->
+            val r = runCatching {
+                val req = Request.Builder().url("$base/api/v1/sources").get().build()
+                client.newCall(req).execute().use { resp ->
+                    if (!resp.isSuccessful) error("HTTP ${resp.code}")
+                    val body = resp.body?.string().orEmpty()
+                    if (body.isBlank()) error("empty body") else json.decodeFromString<SourcesResponse>(body)
+                }
             }
-        }.getOrNull()
+            r.getOrNull()?.let { return@withContext it }
+            Log.w("TnPanel", "panel fetch attempt ${attempt + 1}/3 failed: ${r.exceptionOrNull()?.javaClass?.simpleName}: ${r.exceptionOrNull()?.message}")
+            if (attempt < 2) delay(2000)
+        }
+        null
     }
 }

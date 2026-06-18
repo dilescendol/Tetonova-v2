@@ -112,11 +112,11 @@ fun HomeScreen(
             QuickChips(sources = sources, selected = selectedSource, selectedLabel = selectedLabel, onSelect = { selectedSource = it }, lite = lite, onToggleLite = onToggleLite, dataSaver = dataSaver, onToggleDataSaver = onToggleDataSaver)
 
             if (sections.isEmpty()) {
-                // Panel not loaded yet (or unreachable) — fall back to the bundled catalog rails.
+                // Panel not loaded yet (or unreachable) — fall back to the bundled catalog rails (drama hidden).
                 SectionHead(title = "Lanjut nonton", sub = "Quick resume")
-                PosterRail(items = TnData.posters.take(8), showProgress = false, onOpenDetail = onOpenDetail)
+                PosterRail(items = TnData.homePosters.take(8), showProgress = false, onOpenDetail = onOpenDetail)
                 SectionHead(title = "Rilisan Terbaru", sub = "Baru rilis", action = { com.tetonova.app.ui.TnGhostButton(text = "Lihat semua") })
-                PosterRail(items = TnData.posters.asReversed().take(12), showProgress = false, onOpenDetail = onOpenDetail)
+                PosterRail(items = TnData.homePosters.asReversed().take(12), showProgress = false, onOpenDetail = onOpenDetail)
             } else {
                 sections.forEach { sec ->
                     // Fetch this rail live from the source's real web page; show the seed until it lands.

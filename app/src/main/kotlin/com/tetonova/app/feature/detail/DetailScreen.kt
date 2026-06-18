@@ -54,8 +54,8 @@ import coil.compose.AsyncImage
 import com.tetonova.app.data.AnimeInfo
 import com.tetonova.app.data.CharacterInfo
 import com.tetonova.app.data.CoverResolver
-import com.tetonova.app.data.LiveDetail
-import com.tetonova.app.data.LiveSource
+import com.tetonova.core.scraper.LiveDetail
+import com.tetonova.core.scraper.LiveSource
 import com.tetonova.app.data.MovieInfo
 import com.tetonova.app.data.OmdbResolver
 import com.tetonova.app.data.TnData

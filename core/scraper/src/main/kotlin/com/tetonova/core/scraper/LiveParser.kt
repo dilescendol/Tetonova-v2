@@ -1,4 +1,4 @@
-package com.tetonova.app.data
+package com.tetonova.core.scraper
 
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
@@ -35,8 +35,17 @@ data class LiveEpisode(val num: Int, val title: String, val url: String)
 
 /** One playable mirror/server scraped from a watch page. [embedUrl] is the host iframe URL
  *  (ok.ru / dailymotion / filelions / …) — played in a WebView, since these are embeds, not
- *  direct streams. [name] is the human label (e.g. "OK.ru", "Dailymotion [Ads]"). */
-data class VideoServer(val name: String, val embedUrl: String)
+ *  direct streams. [name] is the human label (e.g. "OK.ru", "Dailymotion [Ads]").
+ *
+ *  [variants] is non-empty only for sources that pick the resolution BEFORE the embed (otakudesu
+ *  groups its mirrors host→[360p/480p/720p], each resolution a separate iframe). When present,
+ *  [StreamExtractor] resolves each variant to a direct stream so the player's Resolusi picker offers
+ *  them — i.e. the "Source → Resolusi" model. [embedUrl] then mirrors the top variant (highest reso)
+ *  so host checks / the WebView fallback still work. Empty for ordinary single-embed hosts. */
+data class VideoServer(val name: String, val embedUrl: String, val variants: List<ServerVariant> = emptyList())
+
+/** A resolution choice within a [VideoServer] (e.g. "720p" → that host's 720p iframe URL). */
+data class ServerVariant(val label: String, val embedUrl: String)
 
 /**
  * Parser for the "tsthemes" / Dooplay WordPress theme shared by virtually every source in the

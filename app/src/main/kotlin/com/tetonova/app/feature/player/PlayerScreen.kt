@@ -68,11 +68,11 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 import androidx.media3.ui.PlayerView
-import com.tetonova.app.data.ExtractResult
-import com.tetonova.app.data.LiveSource
-import com.tetonova.app.data.StreamExtractor
-import com.tetonova.app.data.StreamVariant
-import com.tetonova.app.data.VideoServer
+import com.tetonova.core.scraper.ExtractResult
+import com.tetonova.core.scraper.LiveSource
+import com.tetonova.core.scraper.StreamExtractor
+import com.tetonova.core.scraper.StreamVariant
+import com.tetonova.core.scraper.VideoServer
 import com.tetonova.app.ui.PlayerArg
 import kotlinx.coroutines.delay
 import java.util.concurrent.atomic.AtomicBoolean
