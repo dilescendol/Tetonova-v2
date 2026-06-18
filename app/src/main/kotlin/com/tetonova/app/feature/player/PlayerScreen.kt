@@ -42,6 +42,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -122,15 +123,21 @@ fun PlayerScreen(arg: PlayerArg, onBack: () -> Unit) {
     var loading by remember { mutableStateOf(true) }
     var servers by remember { mutableStateOf<List<VideoServer>>(emptyList()) }
     var selected by remember { mutableStateOf<VideoServer?>(null) }
+    // Servers that failed auto-play (extraction / playback error / too-slow) — skipped on failover.
+    val failed = remember { mutableStateListOf<String>() }
+    fun keyOf(s: VideoServer) = s.name + "|" + s.embedUrl
 
     LaunchedEffect(arg.url) {
         loading = true
-        // Show every server except dead file/gated hosts; each is resolved static → sniff → WebView.
+        failed.clear()
+        // Every playable server, FASTEST-FIRST (pre-resolved direct streams → clean players → embeds),
+        // so auto-pick plays the quickest source and failover walks the rest in that order.
         val list = arg.url?.let { runCatching { LiveSource.servers(it) }.getOrNull() }.orEmpty()
             .filter { StreamExtractor.isPlayable(it.embedUrl) }
+            .sortedWith(compareBy({ speedRank(it) }, { it.name }))
         servers = list
         android.util.Log.d("TnPlayer", "servers(${arg.url}): ${list.map { it.name }} variants=${list.firstOrNull()?.variants?.map { v -> v.label }}")
-        selected = pickRecommended(list)
+        selected = list.firstOrNull() // auto-pick the fastest source
         loading = false
     }
 
@@ -139,11 +146,22 @@ fun PlayerScreen(arg: PlayerArg, onBack: () -> Unit) {
         runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(arg.url))) }
     }
 
+    // Auto-failover: mark the current server failed and jump to the next-fastest untried one. Returns
+    // false when none remain (caller then drops to the WebView fallback for the last server).
+    fun onServerFailed(): Boolean {
+        selected?.let { if (keyOf(it) !in failed) failed.add(keyOf(it)) }
+        val next = servers.firstOrNull { keyOf(it) !in failed }
+        if (next != null) selected = next
+        return next != null
+    }
+    // Manual pick overrides auto-pick and resets the failover trail (the user's choice wins).
+    fun onPickServer(s: VideoServer) { failed.clear(); selected = s }
+
     val current = selected
     when {
         loading -> LoadingBox("Mencari source…")
         current == null -> NoSourceBox(::openExternal, onBack)
-        else -> ServerPlayer(current, arg, servers, referer, { selected = it }, onBack, ::openExternal)
+        else -> ServerPlayer(current, arg, servers, referer, ::onPickServer, ::onServerFailed, onBack, ::openExternal)
     }
 }
 
@@ -155,6 +173,7 @@ private fun ServerPlayer(
     servers: List<VideoServer>,
     referer: String,
     onPickServer: (VideoServer) -> Unit,
+    onServerFailed: () -> Boolean,
     onBack: () -> Unit,
     onExternal: () -> Unit,
 ) {
@@ -176,14 +195,17 @@ private fun ServerPlayer(
         val res = runCatching { StreamExtractor.extract(server, referer) }.getOrDefault(ExtractResult(emptyList()))
         phase = if (res.variants.isNotEmpty()) Phase.Exo(res.variants, res.headers) else Phase.Sniffing
     }
+    // A server that won't play (sniff failed / playback error / too slow) hands off to the next-fastest
+    // candidate; only when none remain do we drop to the WebView embed for the last server.
+    val onFail = { if (!onServerFailed()) phase = Phase.Web }
     when (val p = phase) {
         Phase.Extracting -> LoadingBox("Menyiapkan video…")
         Phase.Sniffing -> SniffStage(
             embedUrl = server.embedUrl, referer = referer,
             onSniffed = { url, h -> phase = Phase.Exo(listOf(StreamVariant("Auto", url)), h) },
-            onFail = { phase = Phase.Web },
+            onFail = onFail,
         )
-        is Phase.Exo -> ExoStage(p.variants, p.headers, arg, server, servers, onPickServer, onBack, onExternal, onError = { phase = Phase.Web })
+        is Phase.Exo -> ExoStage(p.variants, p.headers, arg, server, servers, onPickServer, onBack, onExternal, onError = onFail)
         Phase.Web -> WebStage(server, arg, servers, referer, onPickServer, onBack, onExternal)
     }
 }
@@ -449,7 +471,8 @@ private fun ExoStage(
     onError: () -> Unit,
 ) {
     val context = LocalContext.current
-    var quality by remember(variants) { mutableStateOf(variants.first()) } // first = highest
+    // Default to the highest resolution (4K→1080→720→480→360), robust to label variants (4K/UHD/FHD/HD).
+    var quality by remember(variants) { mutableStateOf(variants.maxByOrNull { resoHeight(it.label) } ?: variants.first()) }
     val trackSelector = remember { DefaultTrackSelector(context) }
     val exo = remember {
         // Use exactly the headers the resolver said this stream needs (extractor per-host, or the
@@ -471,6 +494,8 @@ private fun ExoStage(
     var latestTracks by remember(variants) { mutableStateOf<Tracks?>(null) }
     var trackHeights by remember(variants) { mutableStateOf<List<Int>>(emptyList()) }
     var selHeight by remember(variants) { mutableStateOf<Int?>(null) } // null = Auto (adaptive)
+    // Reso priority: default to the HIGHEST track (not ABR "Auto") until the user picks a resolution.
+    var autoReso by remember(variants) { mutableStateOf(true) }
     fun applyHeight(h: Int?) {
         selHeight = h
         val p = trackSelector.buildUponParameters()
@@ -507,6 +532,8 @@ private fun ExoStage(
                     for (i in 0 until g.length) g.getTrackFormat(i).height.let { if (it > 0) hs.add(it) }
                 }
                 trackHeights = hs.toList()
+                // Honour reso priority (highest-first): force the top track instead of leaving ABR on "Auto".
+                if (autoReso) hs.firstOrNull()?.let { if (it != selHeight) applyHeight(it) }
             }
             override fun onPlayerError(e: androidx.media3.common.PlaybackException) { onError() }
         }
@@ -529,6 +556,12 @@ private fun ExoStage(
             val d = exo.duration; if (d > 0L) duration = d
             delay(500)
         }
+    }
+    // Watchdog ("terlalu lama"): no first frame within the budget = dead/too-slow stream → hand off to
+    // the next source via onError (the failover). Re-armed on each Resolusi change.
+    LaunchedEffect(quality) {
+        delay(12_000)
+        if (exo.currentPosition <= 0L && !playing) onError()
     }
     LaunchedEffect(controls, playing) { if (controls && playing) { delay(4000); controls = false } }
 
@@ -580,7 +613,7 @@ private fun ExoStage(
                     Spacer(Modifier.width(8.dp))
                     val opts = listOf<Int?>(null) + trackHeights
                     Pill("Resolusi", selHeight?.let { "${it}p" } ?: "Auto", opts,
-                        itemLabel = { it?.let { h -> "${h}p" } ?: "Auto" }, selected = { it == selHeight }) { applyHeight(it) }
+                        itemLabel = { it?.let { h -> "${h}p" } ?: "Auto" }, selected = { it == selHeight }) { autoReso = false; applyHeight(it) }
                 }
             }
             // center play / pause
@@ -967,13 +1000,35 @@ private fun playerWebViewClient(allowHost: String) = object : WebViewClient() {
     }
 }
 
-/** Prefer a clean, high-quality server (ok.ru / dailymotion) over the ad-heavy mirrors. */
-private fun pickRecommended(servers: List<VideoServer>): VideoServer? {
-    // Prefer hosts that play in OUR controls: JWPlayer (videoplayer.vip, often named "All In One") and
-    // ok.ru both do; Dailymotion only embeds (its token m3u8 403s ExoPlayer) so it ranks below those.
-    return servers.firstOrNull { isJwPlayerHost(it.embedUrl) }
-        ?: servers.firstOrNull { s -> s.name.lowercase().let { "ok.ru" in it || "okru" in it } || "ok.ru" in s.embedUrl }
-        ?: servers.firstOrNull { it.name.contains("dailymotion", ignoreCase = true) || "dailymotion" in it.embedUrl }
-        ?: servers.firstOrNull { !it.name.contains("[Ads]", ignoreCase = true) }
-        ?: servers.firstOrNull()
+/**
+ * Order servers fastest-first for auto-pick + failover ("terkencang dulu"): pre-resolved direct per-
+ * resolution streams (kuramadrive/otakudesu) start instantly; first-party direct mp4 next; clean
+ * players we drive in our own controls (JWPlayer/ok.ru); packed-JS HLS embeds; ad-heavy / WebView-only last.
+ */
+private fun speedRank(s: VideoServer): Int {
+    val host = s.embedUrl.lowercase()
+    val name = s.name.lowercase()
+    return when {
+        s.variants.isNotEmpty() -> 0
+        "desustream" in host || "filedon" in host || "googlevideo" in host || host.substringBefore('?').endsWith(".mp4") -> 1
+        isJwPlayerHost(s.embedUrl) || "ok.ru" in host || "okru" in name -> 2
+        "filemoon" in host || "filelions" in host || "vidhide" in host || "lulustream" in host || "rumble" in host -> 3
+        isDailymotionHost(s.embedUrl) || "[ads]" in name -> 5
+        else -> 4
+    }
+}
+
+/** Resolution height from a variant label, robust to label variants — for highest-first priority. */
+private fun resoHeight(label: String): Int {
+    val l = label.lowercase()
+    return when {
+        "2160" in l || "4k" in l || "uhd" in l -> 2160
+        "1440" in l || "2k" in l -> 1440
+        "1080" in l || "fhd" in l -> 1080
+        "720" in l || l == "hd" -> 720
+        "480" in l -> 480
+        "360" in l -> 360
+        "240" in l -> 240
+        else -> label.filter { it.isDigit() }.toIntOrNull() ?: 0
+    }
 }
