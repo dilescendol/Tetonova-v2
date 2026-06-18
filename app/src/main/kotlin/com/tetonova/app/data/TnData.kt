@@ -13,6 +13,9 @@ import com.tetonova.core.model.PosterItem
 import com.tetonova.core.model.SampleData
 import com.tetonova.core.model.SpotItem
 import com.tetonova.core.model.SpotTag
+import com.tetonova.core.scraper.LiveClient
+import com.tetonova.core.scraper.LiveItem
+import com.tetonova.core.scraper.LiveSource
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -44,7 +47,11 @@ object TnData {
     fun init(context: Context) {
         if (registry != null) return
         registry = ExtensionRegistry(context.applicationContext).apply { load() }
-        LiveClient.appContext = context.applicationContext
+        // Wire the Android-specific bypass hooks into the pure-JVM LiveClient: a WebView-backed
+        // challenge solver (Turnstile/verify_human/kuramadrive) + a CookieManager-backed jar so
+        // clearance cookies are reused by OkHttp.
+        LiveClient.cookieJar = WebViewCookieJar
+        LiveClient.challengeSolver = WebViewChallengeSolver(context.applicationContext)
     }
 
     // ---------------- panel state ----------------
@@ -72,7 +79,9 @@ object TnData {
         private set
 
     suspend fun refreshFromPanel(panelUrl: String) {
-        val resp = SourceApi(panelUrl).fetch() ?: return
+        val resp = SourceApi(panelUrl).fetch()
+        android.util.Log.d("TnPanel", "refreshFromPanel($panelUrl): ${resp?.sources?.size ?: "NULL"} sources, flare=${resp?.proxyBypass?.flareSolverrEndpoint?.ifBlank { "blank" } ?: "none"}")
+        if (resp == null) return
         if (resp.sources.isNotEmpty()) panelSources = resp.sources
         if (resp.supportMe != null) supportMe = resp.supportMe
         resp.telemetry?.ingestToken?.takeIf { it.isNotBlank() }?.let { telemetryToken = it }
@@ -88,6 +97,16 @@ object TnData {
 
     private fun enabledPanelSources() = panelSources.filter { it.enabled }
     private val hasPanel: Boolean get() = panelSources.isNotEmpty()
+
+    /** Drama/dracin/drakor sources (e.g. oppadrama) are temporarily hidden from Home — they belong to
+     *  the gated dramabos surface, handled separately. Filters Home source chips, rails and spotlight. */
+    private fun isDramaCategory(category: String?): Boolean {
+        val c = category.orEmpty().lowercase(Locale.ROOT)
+        return "drama" in c || "dracin" in c || "drakor" in c
+    }
+
+    /** Home-only source list with drama hidden. */
+    private fun homeEnabledSources() = enabledPanelSources().filterNot { isDramaCategory(it.category) }
 
     // ---------------- live scraping (Home rails fetched from each source's real web page) ----------------
 
@@ -236,7 +255,7 @@ object TnData {
     /** "Semua" + each enabled panel source that has at least one Home-section link. */
     fun homeSources(): List<HomeSourceChip> {
         if (!hasPanel) return listOf(HomeSourceChip(null, "Semua"))
-        val sources = enabledPanelSources()
+        val sources = homeEnabledSources()
             .filter { !it.homeLinks?.showAll.isNullOrEmpty() || !it.homeLinks?.showOnClick.isNullOrEmpty() }
             .map { HomeSourceChip(it.sourceId, it.displayName.ifBlank { it.sourceId }) }
         return listOf(HomeSourceChip(null, "Semua")) + sources
@@ -245,7 +264,7 @@ object TnData {
     /** Mode "Semua": one row per source's `showAll` link, content = that source's catalog. */
     fun homeSectionsAll(): List<HomeSection> {
         if (!hasPanel) return emptyList()
-        return enabledPanelSources().flatMap { src ->
+        return homeEnabledSources().flatMap { src ->
             (src.homeLinks?.showAll ?: emptyList()).map { link ->
                 HomeSection(link.label.ifBlank { src.displayName }, src.sourceId, link.url, postersForSource(src.sourceId))
             }
@@ -311,8 +330,14 @@ object TnData {
         if (allItems.isEmpty()) SampleData.posters else allItems.map { catalogToPoster(it.ext, it.item) }
     }
 
+    /** Bundled-catalog posters for Home rails / fallback, with drama hidden (it lives on its own surface). */
+    val homePosters: List<PosterItem> by lazy {
+        if (allItems.isEmpty()) SampleData.posters
+        else allItems.filterNot { isDramaCategory(it.ext.category) }.map { catalogToPoster(it.ext, it.item) }
+    }
+
     val spots: List<SpotItem> by lazy {
-        val withSyn = allItems.filter { !it.item.overview.isNullOrBlank() }
+        val withSyn = allItems.filterNot { isDramaCategory(it.ext.category) }.filter { !it.item.overview.isNullOrBlank() }
         if (withSyn.isEmpty()) return@lazy SampleData.spots
         withSyn.take(6).map { e ->
             val it = e.item

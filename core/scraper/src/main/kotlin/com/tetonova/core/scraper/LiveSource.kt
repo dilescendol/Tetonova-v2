@@ -1,4 +1,4 @@
-package com.tetonova.app.data
+package com.tetonova.core.scraper
 
 import java.net.URLEncoder
 
@@ -11,6 +11,24 @@ object LiveSource {
     suspend fun list(url: String): List<LiveItem> {
         val html = LiveClient.getHtml(url) ?: return emptyList()
         return LiveParser.parseList(html, url)
+    }
+
+    /** Scrape the playable server/mirror list from an episode watch page (for the player's
+     *  "Source video" picker). Empty on any failure. */
+    suspend fun servers(url: String): List<VideoServer> {
+        val html = LiveClient.getHtml(url) ?: return emptyList()
+        // Otakudesu hides its mirrors behind admin-ajax and groups them by resolution — resolve them
+        // into host→[reso] servers. Falls through to the generic parser (which still finds the default
+        // #pembed iframe) when otakudesu's AJAX flow yields nothing.
+        if (OtakudesuSource.isOtakudesu(html)) {
+            OtakudesuSource.servers(html, url).let { if (it.isNotEmpty()) return it }
+        }
+        // Kuramanime's kuramadrive player renders direct per-resolution <source> mp4s into the (byparr-
+        // solved) page — expose them as one Source with a Resolusi picker.
+        if (KuramanimeSource.isKuramanime(url, html)) {
+            KuramanimeSource.servers(html).let { if (it.isNotEmpty()) return it }
+        }
+        return LiveParser.parseServers(html)
     }
 
     suspend fun detail(url: String): LiveDetail? {

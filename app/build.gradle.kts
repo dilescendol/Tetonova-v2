@@ -16,6 +16,11 @@ android {
         versionCode = 1
         versionName = "0.1.0"
 
+        // App hanya berbahasa Indonesia + Inggris. Buang string locale lain yang
+        // dibawa Compose/Material3 dari resources.arsc. Default strings.xml app
+        // (tanpa qualifier) tetap selalu disertakan.
+        resourceConfigurations += listOf("en", "in")
+
         // Control-panel base URL for the live /api/v1/sources feed (sources + Home sections).
         // Precedence: Gradle property -> env var -> the live panel default.
         val controlPanelUrl = (project.findProperty("TETONOVA_CONTROL_PANEL_URL") as String?)
@@ -30,7 +35,8 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
@@ -53,6 +59,7 @@ android {
 dependencies {
     implementation(project(":core:model"))
     implementation(project(":core:designsystem"))
+    implementation(project(":core:scraper"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
@@ -69,6 +76,7 @@ dependencies {
     implementation(libs.androidx.navigation.compose)
 
     implementation(libs.androidx.media3.exoplayer)
+    implementation(libs.androidx.media3.exoplayer.hls)
     implementation(libs.androidx.media3.ui)
     implementation(libs.androidx.media3.session)
 

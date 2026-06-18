@@ -87,8 +87,8 @@ fun SearchScreen(onOpenDetail: (DetailArg) -> Unit) {
             },
         )
         if (blank) {
-            // No query yet: show the bundled trending rail (not a search result set).
-            PosterGrid(items = TnData.posters.take(12), onOpenDetail = onOpenDetail)
+            // No query yet: show the bundled trending rail (not a search result set); drama hidden.
+            PosterGrid(items = TnData.homePosters.take(12), onOpenDetail = onOpenDetail)
         } else {
             PosterGrid(items = live.toList(), onOpenDetail = onOpenDetail)
             if (loading) {

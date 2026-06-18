@@ -32,6 +32,14 @@ data class DetailArg(
     val cover: String? = null,
 )
 
+/** Argument bag for the in-app player. `url` is the episode's source URL (a direct stream plays
+ *  in-app; a watch page is offered to an external player). */
+data class PlayerArg(
+    val title: String,
+    val url: String?,
+    val episodeLabel: String? = null,
+)
+
 // Enriches with the real catalog entry (overview/genres/year) when the title is in the
 // registry; otherwise returns a basic arg built from the poster fields.
 fun PosterItem.toDetailArg(): DetailArg = TnData.detailArgFor(this)
@@ -58,6 +66,7 @@ fun SpotItem.toDetailArg(): DetailArg {
 sealed interface Screen {
     data class Tab(val dest: NavDest) : Screen
     data class Detail(val arg: DetailArg) : Screen
+    data class Player(val arg: PlayerArg) : Screen
     data object Settings : Screen
     data object Report : Screen
     data object ReleaseNotes : Screen
@@ -69,12 +78,21 @@ class AppState {
     var screen by mutableStateOf<Screen>(Screen.Tab(NavDest.HOME))
         private set
     private var prevTab: NavDest = NavDest.HOME
+    // The screen the player was launched from (usually Detail), so closing the player returns there.
+    private var beforePlayer: Screen? = null
 
     // Persisted settings (survive app restart via SettingsStore). signedIn stays in-memory.
     var darkTheme by persistedBool("dark_theme", false)
     var accentId by persistedString("accent_id", "rose")
     var signedIn by mutableStateOf(true)
     var lite by persistedBool("lite_mode", false)
+    // TODO(player): playback settings below aren't consumed yet (playback is external via Intent.ACTION_VIEW).
+    //   When the in-app Media3 player is built, wire these — see memory `player-spec` for the full design:
+    //   - quality: Auto = highest variant then step-down 4K→1080p→720p→480p→360p; fixed = that reso at first play.
+    //   - autoNext: on video end, go to next episode.  skipOp: skip intro/ending (needs timestamps; interim = manual button).
+    //   - dataSaver: player picks a lighter variant (non-player interim: lighter images + less-frequent live refresh).
+    //   Player UX: tap-1× toggles controls (not exit to Detail); double-tap L/R = ∓10s; overflow = [Resolusi]+[Source video]
+    //   with host→resolution drill-down; subtitle sidecar .srt/.ass. Needs multi-host/variant sources (LiveEpisode = 1 url).
     var quality by persistedString("quality", "auto")
     var dataSaver by persistedBool("data_saver", false)
     var autoNext by persistedBool("auto_next", true)
@@ -94,6 +112,16 @@ class AppState {
 
     fun openDetail(arg: DetailArg) {
         screen = Screen.Detail(arg)
+    }
+
+    fun openPlayer(arg: PlayerArg) {
+        beforePlayer = screen
+        screen = Screen.Player(arg)
+    }
+
+    fun closePlayer() {
+        screen = beforePlayer ?: Screen.Tab(prevTab)
+        beforePlayer = null
     }
 
     fun openSettings() {
