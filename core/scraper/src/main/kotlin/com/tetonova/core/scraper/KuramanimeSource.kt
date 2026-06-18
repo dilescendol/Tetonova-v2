@@ -21,6 +21,14 @@ object KuramanimeSource {
     fun isKuramanime(url: String, html: String): Boolean =
         "kuramanime" in url.lowercase() || "kuramadrive" in html
 
+    /**
+     * True once kuramadrive's JS has injected its per-resolution mp4 `<source size=…>` tags — i.e.
+     * exactly when [servers] can succeed. Used as the WebView "ready" predicate so the on-device
+     * browser keeps polling the live DOM until the player sources actually appear (they're injected
+     * after the Cloudflare challenge clears + a token flow runs), instead of returning the bare page.
+     */
+    fun hasSources(html: String): Boolean = servers(html).isNotEmpty()
+
     fun servers(html: String): List<VideoServer> {
         val doc = Jsoup.parse(html)
         // plyr-style resolution sources: <source src="…mp4" size="720" type="video/mp4">

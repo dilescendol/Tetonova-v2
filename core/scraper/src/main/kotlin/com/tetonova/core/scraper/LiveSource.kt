@@ -16,15 +16,20 @@ object LiveSource {
     /** Scrape the playable server/mirror list from an episode watch page (for the player's
      *  "Source video" picker). Empty on any failure. */
     suspend fun servers(url: String): List<VideoServer> {
-        val html = LiveClient.getHtml(url) ?: return emptyList()
+        // Kuramanime injects its player <source> tags via JS *after* the CF challenge clears, so the
+        // WebView must keep polling until they appear (flare/byparr hand back the bare page too early).
+        // Every other source just needs a non-challenge page.
+        val isKura = "kuramanime" in url.lowercase() || "kuramadrive" in url.lowercase()
+        val html = (if (isKura) LiveClient.getHtml(url) { KuramanimeSource.hasSources(it) }
+                    else LiveClient.getHtml(url)) ?: return emptyList()
         // Otakudesu hides its mirrors behind admin-ajax and groups them by resolution — resolve them
         // into host→[reso] servers. Falls through to the generic parser (which still finds the default
         // #pembed iframe) when otakudesu's AJAX flow yields nothing.
         if (OtakudesuSource.isOtakudesu(html)) {
             OtakudesuSource.servers(html, url).let { if (it.isNotEmpty()) return it }
         }
-        // Kuramanime's kuramadrive player renders direct per-resolution <source> mp4s into the (byparr-
-        // solved) page — expose them as one Source with a Resolusi picker.
+        // Kuramanime's kuramadrive player renders direct per-resolution <source> mp4s into the (WebView-
+        // rendered) page — expose them as one Source with a Resolusi picker.
         if (KuramanimeSource.isKuramanime(url, html)) {
             KuramanimeSource.servers(html).let { if (it.isNotEmpty()) return it }
         }

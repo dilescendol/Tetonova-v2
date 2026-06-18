@@ -129,6 +129,7 @@ fun PlayerScreen(arg: PlayerArg, onBack: () -> Unit) {
         val list = arg.url?.let { runCatching { LiveSource.servers(it) }.getOrNull() }.orEmpty()
             .filter { StreamExtractor.isPlayable(it.embedUrl) }
         servers = list
+        android.util.Log.d("TnPlayer", "servers(${arg.url}): ${list.map { it.name }} variants=${list.firstOrNull()?.variants?.map { v -> v.label }}")
         selected = pickRecommended(list)
         loading = false
     }

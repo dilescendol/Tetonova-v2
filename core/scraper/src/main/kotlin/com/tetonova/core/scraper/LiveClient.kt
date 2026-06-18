@@ -79,9 +79,17 @@ object LiveClient {
         .build()
 
     /** Best-effort HTML for [url]. Returns null only when nothing at all came back. */
-    suspend fun getHtml(url: String): String? = withContext(Dispatchers.IO) {
+    /**
+     * Fetch [url]'s HTML through the bypass tiers (direct → flare `/v1` → byparr `/v1cf` → WebView
+     * solver). [ready] decides when a tier's response is good enough to return; it defaults to "not a
+     * challenge page". Callers that need a JS-rendered result — e.g. kuramanime's per-resolution
+     * `<source>` tags, injected *after* the challenge clears + a token flow runs — pass a stricter
+     * predicate so the WebView keeps polling the live DOM until that content is actually present
+     * (instead of returning the bare cleared page).
+     */
+    suspend fun getHtml(url: String, ready: (String) -> Boolean = { !isChallenge(it) }): String? = withContext(Dispatchers.IO) {
         val d = runCatching { fetchDirect(url) }.getOrNull()
-        if (d != null && !isChallenge(d)) return@withContext d
+        if (d != null && ready(d)) return@withContext d
 
         // A "verify_human" interstitial (oppadrama) must clear in the solver — which persists a
         // reusable cookie — NOT via FlareSolverr: flare clears it but strips the ?order=update query
@@ -89,15 +97,16 @@ object LiveClient {
         val cookieClearance = d != null && ("verify_human" in d || "Verifying your browser" in d)
 
         if (!cookieClearance && flareEndpoint.isNotBlank()) {
-            solveVia(flareEndpoint, url)?.let { if (!isChallenge(it)) return@withContext it }
-            cfEndpoint()?.let { cf -> solveVia(cf, url)?.let { if (!isChallenge(it)) return@withContext it } }
+            solveVia(flareEndpoint, url)?.let { if (ready(it)) return@withContext it }
+            cfEndpoint()?.let { cf -> solveVia(cf, url)?.let { if (ready(it)) return@withContext it } }
         }
-        // A real in-app WebView runs the challenge JS (Turnstile / verify_human) and persists the
-        // clearance cookie; we then re-fetch directly so a query the challenge stripped is honoured.
+        // A real in-app WebView runs the challenge JS (Turnstile / verify_human / kuramadrive) and
+        // persists the clearance cookie; we then re-fetch directly so a query the challenge stripped is
+        // honoured (skipped when the re-fetch can't satisfy [ready], e.g. JS-injected player sources).
         challengeSolver?.let { cs ->
-            val cleared = cs.solve(url) { html -> !isChallenge(html) }
-            if (cleared != null && !isChallenge(cleared)) {
-                runCatching { fetchDirect(url) }.getOrNull()?.let { if (!isChallenge(it)) return@withContext it }
+            val cleared = cs.solve(url, ready)
+            if (cleared != null && ready(cleared)) {
+                runCatching { fetchDirect(url) }.getOrNull()?.let { if (ready(it)) return@withContext it }
                 return@withContext cleared
             }
         }
