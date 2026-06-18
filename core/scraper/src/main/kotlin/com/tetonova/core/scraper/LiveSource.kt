@@ -19,19 +19,20 @@ object LiveSource {
         // Kuramanime injects its player <source> tags via JS *after* the CF challenge clears, so the
         // WebView must keep polling until they appear (flare/byparr hand back the bare page too early).
         // Every other source just needs a non-challenge page.
-        val isKura = "kuramanime" in url.lowercase() || "kuramadrive" in url.lowercase()
-        val html = (if (isKura) LiveClient.getHtml(url) { KuramanimeSource.hasSources(it) }
-                    else LiveClient.getHtml(url)) ?: return emptyList()
+        // Kuramanime: kuramadrive's <source> tags are JS-injected after a per-load token flow that the
+        // host RATE-LIMITS — so do exactly ONE load here (a retry would just burn another token and make
+        // the throttle worse). Quick re-opens may briefly come back empty; the NoSource screen offers a
+        // manual retry, and 2b enumeration is lazy so it doesn't add competing kuramadrive loads.
+        if ("kuramanime" in url.lowercase() || "kuramadrive" in url.lowercase()) {
+            val h = LiveClient.getHtml(url) { KuramanimeSource.hasSources(it) }
+            return if (h != null) KuramanimeSource.servers(h) else emptyList()
+        }
+        val html = LiveClient.getHtml(url) ?: return emptyList()
         // Otakudesu hides its mirrors behind admin-ajax and groups them by resolution — resolve them
         // into host→[reso] servers. Falls through to the generic parser (which still finds the default
         // #pembed iframe) when otakudesu's AJAX flow yields nothing.
         if (OtakudesuSource.isOtakudesu(html)) {
             OtakudesuSource.servers(html, url).let { if (it.isNotEmpty()) return it }
-        }
-        // Kuramanime's kuramadrive player renders direct per-resolution <source> mp4s into the (WebView-
-        // rendered) page — expose them as one Source with a Resolusi picker.
-        if (KuramanimeSource.isKuramanime(url, html)) {
-            KuramanimeSource.servers(html).let { if (it.isNotEmpty()) return it }
         }
         return LiveParser.parseServers(html)
     }

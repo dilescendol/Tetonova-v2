@@ -48,8 +48,8 @@ object StreamExtractor {
         return path.endsWith(".mp4") || path.endsWith(".m3u8") || path.endsWith(".mkv")
     }
 
-    /** DoodStream family domains (anixcafe ships it as "playmogo.com"). */
-    private val DOOD = listOf("dood", "playmogo", "dsvplay", "d-s.io", "ds2play", "do0od", "doodstream")
+    /** DoodStream family domains (anixcafe ships it as "playmogo.com"; kuramanime as "myvidplay.com"). */
+    private val DOOD = listOf("dood", "playmogo", "dsvplay", "d-s.io", "ds2play", "do0od", "doodstream", "myvidplay")
     private fun isDoodHost(u: String): Boolean = u.lowercase().let { l -> DOOD.any { it in l } }
 
     suspend fun extract(server: VideoServer, referer: String): ExtractResult =

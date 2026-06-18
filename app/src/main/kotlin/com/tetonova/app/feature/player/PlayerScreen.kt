@@ -74,8 +74,10 @@ import com.tetonova.core.scraper.LiveSource
 import com.tetonova.core.scraper.StreamExtractor
 import com.tetonova.core.scraper.StreamVariant
 import com.tetonova.core.scraper.VideoServer
+import com.tetonova.app.data.WebViewGate
 import com.tetonova.app.ui.PlayerArg
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
@@ -123,22 +125,36 @@ fun PlayerScreen(arg: PlayerArg, onBack: () -> Unit) {
     var loading by remember { mutableStateOf(true) }
     var servers by remember { mutableStateOf<List<VideoServer>>(emptyList()) }
     var selected by remember { mutableStateOf<VideoServer?>(null) }
-    // Servers that failed auto-play (extraction / playback error / too-slow) — skipped on failover.
+    var retryTick by remember { mutableStateOf(0) } // bumped by the NoSource "Coba lagi" button to re-resolve
+    // Servers that failed auto-play (extraction / playback error / 404 / too-slow) — skipped on failover.
     val failed = remember { mutableStateListOf<String>() }
     fun keyOf(s: VideoServer) = s.name + "|" + s.embedUrl
 
-    LaunchedEffect(arg.url) {
+    LaunchedEffect(arg.url, retryTick) {
         loading = true
         failed.clear()
         // Every playable server, FASTEST-FIRST (pre-resolved direct streams → clean players → embeds),
         // so auto-pick plays the quickest source and failover walks the rest in that order.
-        val list = arg.url?.let { runCatching { LiveSource.servers(it) }.getOrNull() }.orEmpty()
+        var list = arg.url?.let { runCatching { LiveSource.servers(it) }.getOrNull() }.orEmpty()
             .filter { StreamExtractor.isPlayable(it.embedUrl) }
-            .sortedWith(compareBy({ speedRank(it) }, { it.name }))
+        val kuraUrl = arg.url?.takeIf { "kuramanime" in it.lowercase() }
+        val kuramadriveOk = list.isNotEmpty() // false when kuramadrive's player token is throttled on a reopen
+        // Kuramadrive throttled (empty) → fall back to kuramanime's OTHER servers (DoodStream/etc., which
+        // don't use that token), grabbing the first that resolves, so the episode still plays vs NoSource.
+        if (kuraUrl != null && !kuramadriveOk) {
+            list = WebViewGate.kuramanimeServers(context, kuraUrl, stopAfterFirst = true)
+                .map { (name, embed) -> VideoServer(name, embed) }
+                .filter { StreamExtractor.isPlayable(it.embedUrl) }
+        }
+        list = list.sortedWith(compareBy({ speedRank(it) }, { it.name }))
         servers = list
-        android.util.Log.d("TnPlayer", "servers(${arg.url}): ${list.map { it.name }} variants=${list.firstOrNull()?.variants?.map { v -> v.label }}")
+        android.util.Log.d("TnPlayer", "servers(${arg.url}): ${list.map { it.name }}; kuramadriveOk=$kuramadriveOk")
         selected = list.firstOrNull() // auto-pick the fastest source
         loading = false
+        // NOTE: kuramadrive's player token is aggressively rate-limited, so we deliberately do NOT
+        // auto-enumerate the other servers here — that loaded kuramadrive a 2nd time per open and burned
+        // through the limit, leaving only the first (fresh) open working. Kuramadrive is used exactly once
+        // per open now; if it's throttled anyway, the fallback above resolves a non-kuramadrive server.
     }
 
     fun openExternal() {
@@ -154,13 +170,13 @@ fun PlayerScreen(arg: PlayerArg, onBack: () -> Unit) {
         if (next != null) selected = next
         return next != null
     }
-    // Manual pick overrides auto-pick and resets the failover trail (the user's choice wins).
-    fun onPickServer(s: VideoServer) { failed.clear(); selected = s }
+    // Manual pick: try the chosen source; if it can't play it still auto-switches to the next that can.
+    fun onPickServer(s: VideoServer) { failed.remove(keyOf(s)); selected = s }
 
     val current = selected
     when {
         loading -> LoadingBox("Mencari source…")
-        current == null -> NoSourceBox(::openExternal, onBack)
+        current == null -> NoSourceBox(onRetry = { retryTick++ }, onExternal = ::openExternal, onBack = onBack)
         else -> ServerPlayer(current, arg, servers, referer, ::onPickServer, ::onServerFailed, onBack, ::openExternal)
     }
 }
@@ -934,15 +950,19 @@ private fun LoadingBox(msg: String) {
 }
 
 @Composable
-private fun NoSourceBox(onExternal: () -> Unit, onBack: () -> Unit) {
+private fun NoSourceBox(onRetry: () -> Unit, onExternal: () -> Unit, onBack: () -> Unit) {
     Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(24.dp)) {
             Text("Nggak nemu source video buat episode ini", color = Color.White, fontWeight = FontWeight.Bold)
+            // Kuramanime's player token is rate-limited on quick re-opens, so a manual retry (after a beat)
+            // usually succeeds — make it the primary action.
             Spacer(Modifier.height(12.dp))
-            Box(Modifier.clip(RoundedCornerShape(50)).background(Color.White).clickable { onExternal() }.padding(horizontal = 18.dp, vertical = 10.dp)) {
-                Text("Buka di player luar", color = Color.Black, fontWeight = FontWeight.Bold)
+            Box(Modifier.clip(RoundedCornerShape(50)).background(Color.White).clickable { onRetry() }.padding(horizontal = 20.dp, vertical = 10.dp)) {
+                Text("Coba lagi", color = Color.Black, fontWeight = FontWeight.Bold)
             }
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(10.dp))
+            Text("Buka di player luar", color = Color.White.copy(0.7f), modifier = Modifier.clickable { onExternal() }.padding(8.dp))
+            Spacer(Modifier.height(2.dp))
             Text("Kembali", color = Color.White.copy(0.7f), modifier = Modifier.clickable { onBack() }.padding(8.dp))
         }
     }
