@@ -14,6 +14,7 @@ import com.tetonova.core.model.SampleData
 import com.tetonova.core.model.SpotItem
 import com.tetonova.core.model.SpotTag
 import com.tetonova.core.scraper.LiveClient
+import com.tetonova.core.scraper.LiveDetail
 import com.tetonova.core.scraper.LiveItem
 import com.tetonova.core.scraper.LiveSource
 import kotlinx.coroutines.CompletableDeferred
@@ -57,6 +58,8 @@ object TnData {
     // ---------------- panel state ----------------
 
     private var panelSources: List<SourceOverride> = emptyList()
+    /** Panel base URL (for [CatalogApi] cache reads); set on every [refreshFromPanel]. */
+    private var panelBase: String = ""
 
     /** Support/donation card config from the panel (null until fetched). */
     var supportMe: SupportMe? = null
@@ -79,6 +82,7 @@ object TnData {
         private set
 
     suspend fun refreshFromPanel(panelUrl: String) {
+        panelBase = panelUrl.trim().trimEnd('/')
         val resp = SourceApi(panelUrl).fetch()
         android.util.Log.d("TnPanel", "refreshFromPanel($panelUrl): ${resp?.sources?.size ?: "NULL"} sources, flare=${resp?.proxyBypass?.flareSolverrEndpoint?.ifBlank { "blank" } ?: "none"}")
         if (resp == null) return
@@ -108,25 +112,97 @@ object TnData {
     /** Home-only source list with drama hidden. */
     private fun homeEnabledSources() = enabledPanelSources().filterNot { isDramaCategory(it.category) }
 
+    // ---------------- panel cache routing (1f) ----------------
+
+    private fun sourceById(id: String) = panelSources.firstOrNull { it.sourceId == id }
+
+    /** The enabled source whose apiBaseUrl host matches [url]'s host — to cache-route a bare detail URL. */
+    private fun sourceForUrl(url: String): SourceOverride? {
+        val host = hostOf(url) ?: return null
+        return enabledPanelSources().firstOrNull {
+            val b = hostOf(it.apiBaseUrl); b != null && (b == host || host.endsWith(".$b") || b.endsWith(".$host"))
+        }
+    }
+
+    private fun hostOf(u: String): String? =
+        runCatching { java.net.URI(u).host?.removePrefix("www.")?.lowercase(Locale.ROOT) }.getOrNull()?.takeIf { it.isNotBlank() }
+
+    /** CatalogApi bound to the current panel base, or null when no panel is configured. */
+    private fun catalogApi(): CatalogApi? = panelBase.takeIf { it.isNotBlank() }?.let { CatalogApi(it) }
+
+    /** Cache-first per-source search: panel cache when proxy_enabled, else live scrape. */
+    private suspend fun searchSource(src: SourceOverride, query: String): List<LiveItem> {
+        if (src.proxyEnabled && !src.proxyPaths?.search.isNullOrBlank()) {
+            catalogApi()?.search(src, query)?.let { return it }
+        }
+        return runCatching { LiveSource.search(src.apiBaseUrl, query) }.getOrDefault(emptyList())
+    }
+
+    /** Detail for a source URL: panel cache first when the owning source is proxy_enabled, else live. */
+    suspend fun liveDetail(url: String): LiveDetail? {
+        val src = sourceForUrl(url)
+        if (src != null && src.proxyEnabled && !src.proxyPaths?.detail.isNullOrBlank()) {
+            catalogApi()?.detail(src, url)?.let { return it }
+        }
+        return runCatching { LiveSource.detail(url) }.getOrNull()
+    }
+
     // ---------------- live scraping (Home rails fetched from each source's real web page) ----------------
 
     private val liveScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     /** Live posters per Home-section URL. Snapshot-backed: filling a key recomposes the rail. */
     private val liveSections = mutableStateMapOf<String, List<PosterItem>>()
     private val liveRequested = Collections.synchronizedSet(HashSet<String>())
+    /** Per-source guard so a proxy_enabled source's cached catalog is fetched once, not once per rail. */
+    private val sourceCatalogRequested = Collections.synchronizedSet(HashSet<String>())
 
     /** Reactive read for a section's live posters; null until the fetch lands. */
     fun liveSectionPosters(url: String): List<PosterItem>? = liveSections[url]
 
-    /** Kick off (once per URL) a live fetch of [url]'s catalog page. Safe to call every recompose. */
+    /**
+     * Kick off (once) a fill of [url]'s Home rail. For a proxy_enabled source the panel cache is read
+     * once for the whole source (all its rails at once) — scrape-once, serve-to-all; otherwise the page
+     * is scraped live on-device. A cache miss falls back to live. Safe to call every recompose.
+     */
     fun ensureLiveSection(url: String, sourceId: String) {
-        if (url.isBlank() || !liveRequested.add(url)) return
+        if (url.isBlank()) return
+        val src = sourceById(sourceId)
+        if (src != null && src.proxyEnabled && !src.proxyPaths?.catalog.isNullOrBlank()) {
+            ensureCachedCatalog(src)
+            return
+        }
+        if (!liveRequested.add(url)) return
+        liveScope.launch { fillSectionLive(url, sourceId) }
+    }
+
+    private suspend fun fillSectionLive(url: String, sourceId: String) {
+        val items = runCatching { LiveSource.list(url) }.getOrDefault(emptyList())
+        if (items.isNotEmpty()) liveSections[url] = items.take(20).map { liveToPoster(it, sourceId) }
+        else liveRequested.remove(url) // nothing came back — allow a later retry
+    }
+
+    /** Fill every Home rail of a proxy_enabled source from the panel cache in one request; on a cache
+     *  miss/empty, fall back to live per-URL scraping for each of its rails. */
+    private fun ensureCachedCatalog(src: SourceOverride) {
+        if (!sourceCatalogRequested.add(src.sourceId)) return
         liveScope.launch {
-            val items = runCatching { LiveSource.list(url) }.getOrDefault(emptyList())
-            if (items.isNotEmpty()) {
-                liveSections[url] = items.take(20).map { liveToPoster(it, sourceId) }
+            val sections = runCatching { catalogApi()?.home(src) }.getOrNull()
+            var filled = 0
+            sections?.forEach { section ->
+                val items = section.second
+                if (items.isNotEmpty()) {
+                    liveSections[section.first] = items.take(20).map { item -> liveToPoster(item, src.sourceId) }
+                    filled++
+                }
+            }
+            if (filled > 0) {
+                android.util.Log.d("TnCache", "${src.sourceId}: filled $filled rail(s) from panel cache")
             } else {
-                liveRequested.remove(url) // nothing came back — allow a later retry
+                android.util.Log.d("TnCache", "${src.sourceId}: cache miss -> live fallback")
+                sourceCatalogRequested.remove(src.sourceId) // allow a later retry
+                val urls = (src.homeLinks?.showAll.orEmpty() + src.homeLinks?.showOnClick.orEmpty())
+                    .map { it.url }.filter { it.isNotBlank() }.distinct()
+                urls.forEach { u -> if (liveRequested.add(u)) liveScope.launch { fillSectionLive(u, src.sourceId) } }
             }
         }
     }
@@ -180,7 +256,7 @@ object TnData {
             val found = CompletableDeferred<String?>()
             val workers = enabledPanelSources().map { src ->
                 launch {
-                    runCatching { LiveSource.search(src.apiBaseUrl, title) }.getOrDefault(emptyList())
+                    searchSource(src, title)
                         .firstOrNull { matches(it.title) }
                         ?.let { found.complete(it.url) }
                 }
@@ -210,7 +286,7 @@ object TnData {
                 coroutineScope {
                     sources.forEach { src ->
                         launch {
-                            val hits = runCatching { LiveSource.search(src.apiBaseUrl, q) }.getOrDefault(emptyList())
+                            val hits = searchSource(src, q)
                             val posters = hits.mapNotNull { item ->
                                 val tl = item.title.lowercase(Locale.ROOT)
                                 val relevant = tl.contains(needle) || (tokens.isNotEmpty() && tokens.all { tl.contains(it) })

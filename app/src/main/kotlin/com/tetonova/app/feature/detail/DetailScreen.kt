@@ -55,7 +55,6 @@ import com.tetonova.app.data.AnimeInfo
 import com.tetonova.app.data.CharacterInfo
 import com.tetonova.app.data.CoverResolver
 import com.tetonova.core.scraper.LiveDetail
-import com.tetonova.core.scraper.LiveSource
 import com.tetonova.app.data.MovieInfo
 import com.tetonova.app.data.OmdbResolver
 import com.tetonova.app.data.TnData
@@ -229,7 +228,7 @@ fun DetailScreen(arg: DetailArg, onBack: () -> Unit, onOpenDetail: (DetailArg) -
         value = LiveLoad.Loading
         val url = arg.url?.takeIf { it.startsWith("http") }
             ?: runCatching { TnData.resolveLiveUrl(arg.title) }.getOrNull()
-        value = LiveLoad.Done(url?.let { runCatching { LiveSource.detail(it) }.getOrNull() })
+        value = LiveLoad.Done(url?.let { TnData.liveDetail(it) })
     }
     val live = (liveLoad as? LiveLoad.Done)?.detail
     val liveLoading = liveLoad is LiveLoad.Loading

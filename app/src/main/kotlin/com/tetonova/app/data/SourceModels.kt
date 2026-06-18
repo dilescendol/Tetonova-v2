@@ -79,6 +79,22 @@ data class SourceOverride(
     val accessCode: String? = null,
     val lastProbeStatus: String? = null,
     val homeLinks: HomeLinks? = null,
+    /** True when the panel caches this source server-side (scrape-once). The app then reads Home/
+     *  search/detail from [proxyPaths] instead of scraping on-device, falling back to live on a miss. */
+    val proxyEnabled: Boolean = false,
+    val proxyPaths: ProxyPaths? = null,
+)
+
+/**
+ * Panel cache endpoints for a source (relative to the panel base). `{id}` in [detail]/[playback] is
+ * replaced with the URL-encoded source URL. Served from the `source_catalog_cache` table (CDN-frontable).
+ */
+@Serializable
+data class ProxyPaths(
+    val catalog: String = "",
+    val detail: String = "",
+    val playback: String = "",
+    val search: String = "",
 )
 
 /** Home-section links published per source by the panel (custom label + real web URL). */
