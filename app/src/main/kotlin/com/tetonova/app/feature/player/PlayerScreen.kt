@@ -77,7 +77,6 @@ import com.tetonova.core.scraper.VideoServer
 import com.tetonova.app.data.WebViewGate
 import com.tetonova.app.ui.PlayerArg
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
@@ -148,7 +147,6 @@ fun PlayerScreen(arg: PlayerArg, onBack: () -> Unit) {
         }
         list = list.sortedWith(compareBy({ speedRank(it) }, { it.name }))
         servers = list
-        android.util.Log.d("TnPlayer", "servers(${arg.url}): ${list.map { it.name }}; kuramadriveOk=$kuramadriveOk")
         selected = list.firstOrNull() // auto-pick the fastest source
         loading = false
         // NOTE: kuramadrive's player token is aggressively rate-limited, so we deliberately do NOT

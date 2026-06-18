@@ -195,10 +195,8 @@ object TnData {
                     filled++
                 }
             }
-            if (filled > 0) {
-                android.util.Log.d("TnCache", "${src.sourceId}: filled $filled rail(s) from panel cache")
-            } else {
-                android.util.Log.d("TnCache", "${src.sourceId}: cache miss -> live fallback")
+            if (filled == 0) {
+                // cache miss/empty → fall back to live per-URL scraping for each of this source's rails
                 sourceCatalogRequested.remove(src.sourceId) // allow a later retry
                 val urls = (src.homeLinks?.showAll.orEmpty() + src.homeLinks?.showOnClick.orEmpty())
                     .map { it.url }.filter { it.isNotBlank() }.distinct()
