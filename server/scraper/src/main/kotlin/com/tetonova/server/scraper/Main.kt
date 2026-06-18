@@ -160,7 +160,18 @@ private object SourceMap {
     private fun refresh() {
         val body = http.newCall(Request.Builder().url("$panelUrl/api/v1/sources").build())
             .execute().use { it.body?.string() } ?: return
-        val arr = JSONObject(body).optJSONArray("sources") ?: return
+        val root = JSONObject(body)
+        // Auto-pull flare creds from the panel's proxyBypass block so CF-shielded sources
+        // (otakudesu/kuramanime/…) get solved server-side instead of returning a challenge page.
+        // Cache + cron mean this only hits the flare box at cron-rate, not per user.
+        root.optJSONObject("proxyBypass")?.let { pb ->
+            val ep = pb.optString("flareSolverrEndpoint")
+            if (ep.isNotBlank()) {
+                LiveClient.flareEndpoint = ep
+                LiveClient.flareToken = pb.optString("flareSolverrToken")
+            }
+        }
+        val arr = root.optJSONArray("sources") ?: return
         val m = HashMap<String, Src>()
         for (i in 0 until arr.length()) {
             val s = arr.getJSONObject(i)
@@ -178,6 +189,6 @@ private object SourceMap {
             m[id] = Src(base, links)
         }
         map = m
-        println("source map: ${m.size} sources")
+        println("source map: ${m.size} sources, flare=${LiveClient.flareEndpoint.ifBlank { "none" }}")
     }
 }
