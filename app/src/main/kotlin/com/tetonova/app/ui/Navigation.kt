@@ -32,12 +32,23 @@ data class DetailArg(
     val cover: String? = null,
 )
 
+/** One entry in the player's episode list — enough to advance to the next episode in-place. */
+data class EpRef(val num: Int, val label: String, val url: String?)
+
 /** Argument bag for the in-app player. `url` is the episode's source URL (a direct stream plays
  *  in-app; a watch page is offered to an external player). */
 data class PlayerArg(
     val title: String,
     val url: String?,
     val episodeLabel: String? = null,
+    /** The episode number being played — remembered so Detail resumes on it after the player closes. */
+    val episodeNum: Int? = null,
+    /** Content type from Detail. "Donghua" stays on the manual skip button (no MAL/AniSkip timing). */
+    val badge: String = "Anime",
+    /** MyAnimeList id (>0 only for matched anime) — the key for AniSkip OP/ED timestamps. */
+    val malId: Int = 0,
+    /** Ordered episode list, so the player can auto-advance to the next one. */
+    val playlist: List<EpRef> = emptyList(),
 )
 
 // Enriches with the real catalog entry (overview/genres/year) when the title is in the
@@ -80,6 +91,12 @@ class AppState {
     private var prevTab: NavDest = NavDest.HOME
     // The screen the player was launched from (usually Detail), so closing the player returns there.
     private var beforePlayer: Screen? = null
+    // Last episode opened in the player, keyed by the Detail it was launched from. DetailScreen leaves
+    // composition while the player is on top, so its `current` state is rebuilt fresh on return — this
+    // lets it resume on the episode the user actually played instead of resetting to episode 1.
+    private var resumeKey: String? = null
+    var resumeEpisode: Int? = null
+        private set
 
     // Persisted settings (survive app restart via SettingsStore). signedIn stays in-memory.
     var darkTheme by persistedBool("dark_theme", false)
@@ -102,6 +119,10 @@ class AppState {
     var notifForum by persistedBool("notif_forum", true)
     var pushLocal by persistedBool("push_local", true)
     var autoBackup by persistedBool("auto_backup", true)
+    // Offline downloads: a single resolution cap applied to every download (no per-episode picker),
+    // and whether to defer downloads off metered (cellular) connections.
+    var downloadQuality by persistedString("download_quality", "auto")
+    var downloadWifiOnly by persistedBool("download_wifi_only", false)
 
     val accentColor: Color get() = TnAccents.firstOrNull { it.id == accentId }?.color ?: TnAccents[0].color
 
@@ -111,13 +132,28 @@ class AppState {
     }
 
     fun openDetail(arg: DetailArg) {
+        // Feed the cross-user "Trending minggu ini" rail: report real content opens (those with a
+        // live source URL) to the panel. Best-effort + no-op when the panel/token isn't available.
+        TnData.reportOpen(arg.title, arg.url, arg.cover, arg.badge)
         screen = Screen.Detail(arg)
     }
 
     fun openPlayer(arg: PlayerArg) {
-        beforePlayer = screen
+        // Opening fresh (from Detail) records where to return; advancing within the player (auto-next
+        // re-calls this with the next episode) keeps that origin and just moves the resume forward.
+        if (screen !is Screen.Player) beforePlayer = screen
+        (screen as? Screen.Detail)?.let { resumeKey = detailKey(it.arg) }
+        resumeEpisode = arg.episodeNum
         screen = Screen.Player(arg)
     }
+
+    /** Identity of a Detail (its source URL, else title) — keys [resumeEpisode] so the resume never
+     *  bleeds onto a different title. */
+    private fun detailKey(arg: DetailArg): String = arg.url ?: arg.title
+
+    /** The episode to resume on for [arg], or null when the player wasn't last opened from it. */
+    fun resumeEpisodeFor(arg: DetailArg): Int? =
+        resumeEpisode?.takeIf { resumeKey != null && resumeKey == detailKey(arg) }
 
     fun closePlayer() {
         screen = beforePlayer ?: Screen.Tab(prevTab)

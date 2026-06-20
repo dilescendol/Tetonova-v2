@@ -103,6 +103,9 @@ data class Episode(
     val art: Int,
     /** Upstream watch page for this episode (live sources) — opened by "Tonton". */
     val url: String? = null,
+    /** Per-episode thumbnail scraped from the source list (when present); else the UI falls back
+     *  to the series cover. */
+    val thumb: String? = null,
 )
 data class CastMember(val name: String, val role: String, val grad: Int)
 data class InfoRow(val key: String, val value: String)

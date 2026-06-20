@@ -3,6 +3,12 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Offline downloads: a foreground (data-sync) service runs the Media3 DownloadManager; the
+         notification needs POST_NOTIFICATIONS on Android 13+. Downloads live in the app-private
+         external files dir, so NO storage permission is required. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
 
     <!-- Phone/tablet do not require a touchscreen; Android TV has none. -->
     <uses-feature
@@ -17,6 +23,8 @@
         android:name=".TetoNovaApplication"
         android:allowBackup="true"
         android:banner="@drawable/tv_banner"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:label="@string/app_name"
@@ -42,6 +50,18 @@
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Offline download foreground service (Media3 DownloadManager). RESTART resumes downloads
+             after the app/device restarts. -->
+        <service
+            android:name=".data.download.TnDownloadService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync">
+            <intent-filter>
+                <action android:name="androidx.media3.exoplayer.downloadService.action.RESTART" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </service>
     </application>
 
 </manifest>

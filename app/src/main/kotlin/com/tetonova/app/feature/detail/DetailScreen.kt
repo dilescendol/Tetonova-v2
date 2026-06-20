@@ -58,7 +58,12 @@ import com.tetonova.core.scraper.LiveDetail
 import com.tetonova.app.data.MovieInfo
 import com.tetonova.app.data.OmdbResolver
 import com.tetonova.app.data.TnData
+import com.tetonova.app.data.WatchProgressStore
+import com.tetonova.app.data.download.DlMeta
+import com.tetonova.app.data.download.DlUiState
+import com.tetonova.app.data.download.DownloadCenter
 import com.tetonova.app.ui.DetailArg
+import com.tetonova.app.ui.EpRef
 import com.tetonova.app.ui.PlayerArg
 import com.tetonova.app.ui.bleedEnd
 import com.tetonova.app.ui.toDetailArg
@@ -112,7 +117,7 @@ private fun DetailData.withLive(live: LiveDetail?): DetailData {
     if (live == null) return this
     val eps = live.episodes.map { e ->
         Episode(id = "e${e.num}", num = e.num, name = "Episode ${e.num}", dur = "± 24m", desc = "",
-            progress = 0, art = (art + e.num) % 8, url = e.url)
+            progress = 0, art = (art + e.num) % 8, url = e.url, thumb = e.thumb)
     }
     // Donghua (Chinese animation) per the source's origin country / genre. MAL's episode count for a
     // long-running donghua is often stale or for a different cut (e.g. it claims 720 while the source
@@ -207,7 +212,7 @@ private sealed interface LiveLoad {
 }
 
 @Composable
-fun DetailScreen(arg: DetailArg, onBack: () -> Unit, onOpenDetail: (DetailArg) -> Unit, onOpenPlayer: (PlayerArg) -> Unit) {
+fun DetailScreen(arg: DetailArg, resumeEpisode: Int?, onBack: () -> Unit, onOpenDetail: (DetailArg) -> Unit, onOpenPlayer: (PlayerArg) -> Unit) {
     val c = TnTheme.colors
     val context = LocalContext.current
     val base = remember(arg) { enrich(arg) }
@@ -234,7 +239,13 @@ fun DetailScreen(arg: DetailArg, onBack: () -> Unit, onOpenDetail: (DetailArg) -
     val liveLoading = liveLoad is LiveLoad.Loading
     val d = remember(base, mal, omdb, live) { base.withMal(mal).withOmdb(omdb).withLive(live) }
     val (eps, curIdx) = remember(d) { makeEps(d) }
-    var current by remember(d) { mutableStateOf(eps.getOrNull(curIdx)?.num ?: 1) }
+    // Episode list handed to the player so it can auto-advance (carries badge/malId for OP/ED skip).
+    val playlist = remember(eps) { eps.map { EpRef(it.num, "Episode ${it.num}", it.url) } }
+    // Resume on the episode last played (returning from the player) when it exists in this list;
+    // otherwise the progress-derived position, else the first episode.
+    var current by remember(d) {
+        mutableStateOf(resumeEpisode?.takeIf { rn -> eps.any { it.num == rn } } ?: eps.getOrNull(curIdx)?.num ?: 1)
+    }
     var tab by remember(d) { mutableStateOf("ep") }
     var inList by remember(d) { mutableStateOf(false) }
     var liked by remember(d) { mutableStateOf(false) }
@@ -261,7 +272,8 @@ fun DetailScreen(arg: DetailArg, onBack: () -> Unit, onOpenDetail: (DetailArg) -
                 onToggleLike = { liked = !liked; toast(if (liked) "Disukai" else "Suka dibatalkan") },
                 onPlay = {
                     val ep = eps.firstOrNull { it.num == current }
-                    onOpenPlayer(PlayerArg(d.title, ep?.url ?: d.url, ep?.let { "Episode ${it.num}" }))
+                    onOpenPlayer(PlayerArg(d.title, ep?.url ?: d.url, ep?.let { "Episode ${it.num}" }, ep?.num ?: current,
+                        badge = d.badge, malId = d.malId, playlist = playlist))
                 },
                 onShare = { share() },
             )
@@ -279,7 +291,8 @@ fun DetailScreen(arg: DetailArg, onBack: () -> Unit, onOpenDetail: (DetailArg) -
                     }
                     Spacer(Modifier.height(18.dp))
                     if (tab == "ep") EpisodeTab(eps, current, sortAsc, wide, liveLoading, { sortAsc = !sortAsc }, { current = it },
-                        { ep -> current = ep.num; onOpenPlayer(PlayerArg(d.title, ep.url, "Episode ${ep.num}")) }, onOpenDetail, d.title)
+                        { ep -> current = ep.num; onOpenPlayer(PlayerArg(d.title, ep.url, "Episode ${ep.num}", ep.num,
+                            badge = d.badge, malId = d.malId, playlist = playlist)) }, onOpenDetail, d.title, d.cover, d.badge)
                     else AboutTab(d, liveLoading)
                     Spacer(Modifier.height(32.dp))
                 }
@@ -431,7 +444,7 @@ private fun DetailTab(label: String, on: Boolean, onClick: () -> Unit) {
 private fun EpisodeTab(
     eps: List<Episode>, current: Int, sortAsc: Boolean, wide: Boolean, liveLoading: Boolean,
     onSort: () -> Unit, onSelect: (Int) -> Unit, onPlayEpisode: (Episode) -> Unit,
-    onOpenDetail: (DetailArg) -> Unit, currentTitle: String,
+    onOpenDetail: (DetailArg) -> Unit, currentTitle: String, cover: String?, badge: String,
 ) {
     val c = TnTheme.colors
     val columns = if (wide) 2 else 1
@@ -508,7 +521,7 @@ private fun EpisodeTab(
             Spacer(Modifier.height(14.dp))
             shown.chunked(columns).forEach { row ->
                 Row(Modifier.fillMaxWidth().padding(bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    row.forEach { ep -> EpCard(ep, ep.num == current, Modifier.weight(1f)) { onPlayEpisode(ep) } }
+                    row.forEach { ep -> EpCard(ep, ep.num == current, cover, currentTitle, badge, Modifier.weight(1f)) { onPlayEpisode(ep) } }
                     if (row.size < columns) repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
                 }
             }
@@ -564,8 +577,10 @@ private fun EpisodeEmpty(loading: Boolean) {
 
 /** Compact horizontal episode card: landscape thumbnail left + text right (tablet design). */
 @Composable
-private fun EpCard(ep: Episode, isCurrent: Boolean, modifier: Modifier, onClick: () -> Unit) {
+private fun EpCard(ep: Episode, isCurrent: Boolean, seriesCover: String?, seriesTitle: String, badge: String, modifier: Modifier, onClick: () -> Unit) {
     val c = TnTheme.colors
+    // Watched percent from the resume store (live online/offline history) — falls back to the seed value.
+    val watched = (ep.url?.let { WatchProgressStore.percent(it) } ?: 0).takeIf { it > 0 } ?: ep.progress
     Row(
         modifier.clip(RoundedCornerShape(TnRadii.md)).background(if (isCurrent) c.roseTint else c.surface)
             .border(1.dp, if (isCurrent) c.rose else c.line, RoundedCornerShape(TnRadii.md))
@@ -573,7 +588,10 @@ private fun EpCard(ep: Episode, isCurrent: Boolean, modifier: Modifier, onClick:
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Box(Modifier.width(132.dp).aspectRatio(16f / 9f).clip(RoundedCornerShape(TnRadii.sm))) {
-            Art(ep.art, "EP ${ep.num}", Modifier.fillMaxSize())
+            // Per-episode thumbnail when the source gave one; else a 16:9 crop of the series cover —
+            // a real image, never the bare gradient placeholder. (When both are null, Art resolves
+            // by title via Jikan/CoverProvider.)
+            Art(ep.art, "EP ${ep.num}", Modifier.fillMaxSize(), coverTitle = seriesTitle, coverUrl = ep.thumb ?: seriesCover)
             Box(Modifier.align(Alignment.TopStart).padding(6.dp)) {
                 Text("EP ${ep.num}", color = Color.White.copy(0.9f), fontSize = 9.sp, fontWeight = FontWeight.ExtraBold)
             }
@@ -583,15 +601,15 @@ private fun EpCard(ep: Episode, isCurrent: Boolean, modifier: Modifier, onClick:
             Box(Modifier.align(Alignment.Center).size(30.dp).clip(CircleShape).background(Color.Black.copy(0.45f)), contentAlignment = Alignment.Center) {
                 TnIcon("play", size = 14.dp, tint = Color.White, filled = true)
             }
-            if (ep.progress > 0) {
+            if (watched > 0) {
                 Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().height(3.dp).background(Color.White.copy(0.25f))) {
-                    Box(Modifier.fillMaxWidth(min(100, ep.progress) / 100f).fillMaxHeight().background(c.rose))
+                    Box(Modifier.fillMaxWidth(min(100, watched) / 100f).fillMaxHeight().background(c.rose))
                 }
             }
         }
         Column(Modifier.weight(1f)) {
             if (isCurrent) {
-                Text(if (ep.progress >= 100) "● Selesai" else "● Sedang diputar", color = c.rose, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                Text(if (watched >= 100) "● Selesai" else "● Sedang diputar", color = c.rose, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(2.dp))
             }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -600,6 +618,42 @@ private fun EpCard(ep: Episode, isCurrent: Boolean, modifier: Modifier, onClick:
             }
             Spacer(Modifier.height(3.dp))
             Text(ep.desc, color = c.muted, fontSize = 11.sp, lineHeight = 15.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        }
+        // Trailing per-episode download control (no need to open the player first).
+        DownloadButton(ep, seriesTitle, ep.thumb ?: seriesCover, badge, onPlay = onClick)
+    }
+}
+
+/** Per-episode download affordance: tap to download (background), shows progress, then plays offline. */
+@Composable
+private fun DownloadButton(ep: Episode, seriesTitle: String, poster: String?, badge: String, onPlay: () -> Unit) {
+    val c = TnTheme.colors
+    val url = ep.url ?: return
+    val state = DownloadCenter.uiState(url)
+    val pct = DownloadCenter.percentOf(url)
+    Box(
+        Modifier.size(34.dp).clip(CircleShape)
+            .background(if (state == DlUiState.COMPLETED) c.roseTint else c.surface)
+            .border(1.dp, if (state == DlUiState.COMPLETED) c.rose else c.line, CircleShape)
+            .clickable {
+                when (state) {
+                    DlUiState.NONE, DlUiState.FAILED ->
+                        DownloadCenter.startDownload(DlMeta(url, seriesTitle, "Episode ${ep.num}", poster, badge))
+                    DlUiState.COMPLETED -> onPlay()
+                    DlUiState.DOWNLOADING, DlUiState.QUEUED -> DownloadCenter.remove(url)
+                    DlUiState.RESOLVING -> {}
+                }
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        when (state) {
+            DlUiState.NONE -> TnIcon("download", size = 17.dp, tint = c.ink2)
+            DlUiState.RESOLVING, DlUiState.QUEUED ->
+                CircularProgressIndicator(Modifier.size(18.dp), color = c.rose, strokeWidth = 2.dp)
+            DlUiState.DOWNLOADING ->
+                CircularProgressIndicator(progress = { (pct / 100f).coerceIn(0f, 1f) }, modifier = Modifier.size(18.dp), color = c.rose, strokeWidth = 2.dp)
+            DlUiState.COMPLETED -> TnIcon("check", size = 17.dp, tint = c.rose)
+            DlUiState.FAILED -> TnIcon("refresh", size = 17.dp, tint = c.rose)
         }
     }
 }

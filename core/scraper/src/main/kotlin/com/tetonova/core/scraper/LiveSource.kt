@@ -9,6 +9,9 @@ import java.net.URLEncoder
 object LiveSource {
 
     suspend fun list(url: String): List<LiveItem> {
+        // Oploverz is a bespoke Next.js site the generic parser can't read — serve its "Rilis Terbaru"
+        // rail from its JSON API instead (see [OploverzSource]).
+        if (OploverzSource.isOploverz(url)) return runCatching { OploverzSource.latest() }.getOrDefault(emptyList())
         val html = LiveClient.getHtml(url) ?: return emptyList()
         return LiveParser.parseList(html, url)
     }
@@ -16,6 +19,9 @@ object LiveSource {
     /** Scrape the playable server/mirror list from an episode watch page (for the player's
      *  "Source video" picker). Empty on any failure. */
     suspend fun servers(url: String): List<VideoServer> {
+        // Oploverz exposes an episode's watch embeds (filedon/dailymotion/4meplayer/blogger) via its
+        // JSON API, keyed by series slug + episode number — no page scraping needed.
+        if (OploverzSource.isOploverz(url)) return runCatching { OploverzSource.servers(url) }.getOrDefault(emptyList())
         // Kuramanime injects its player <source> tags via JS *after* the CF challenge clears, so the
         // WebView must keep polling until they appear (flare/byparr hand back the bare page too early).
         // Every other source just needs a non-challenge page.
@@ -34,10 +40,19 @@ object LiveSource {
         if (OtakudesuSource.isOtakudesu(html)) {
             OtakudesuSource.servers(html, url).let { if (it.isNotEmpty()) return it }
         }
+        // NontonAnimeID (kotakanime2) gates its mirrors behind a player_ajax POST that needs an Origin
+        // header; resolve them into native-host servers our extractor can crack. Falls through to the
+        // generic parser (which still finds the inline default iframe) when that yields nothing.
+        if (NontonAnimeIDSource.isNontonAnimeID(html)) {
+            NontonAnimeIDSource.servers(html, url).let { if (it.isNotEmpty()) return it }
+        }
         return LiveParser.parseServers(html)
     }
 
     suspend fun detail(url: String): LiveDetail? {
+        // Oploverz: series metadata + the full episode list come straight from its JSON API (the
+        // synopsis/episodes the detail screen needs), addressed by slug — bypass the HTML parser.
+        if (OploverzSource.isOploverz(url)) return runCatching { OploverzSource.detail(url) }.getOrNull()
         // A page is "usable" if it yielded a synopsis OR an episode list — NOT title, which many
         // themes (winbu/samehadaku/…) bury where our selectors miss it; the hero title comes from
         // the list card anyway (withLive keeps it when live.title is blank).
@@ -131,6 +146,8 @@ object LiveSource {
     suspend fun search(baseUrl: String, query: String): List<LiveItem> {
         val base = baseUrl.trim().trimEnd('/')
         if (base.isBlank() || query.isBlank()) return emptyList()
+        // Oploverz search runs against its JSON API (`/api/series?q=`), not WordPress `/?s=`.
+        if (OploverzSource.isOploverz(base)) return runCatching { OploverzSource.search(query) }.getOrDefault(emptyList())
         val url = "$base/?s=" + URLEncoder.encode(query, "UTF-8")
         val html = LiveClient.getHtml(url) ?: return emptyList()
         return LiveParser.parseList(html, url)

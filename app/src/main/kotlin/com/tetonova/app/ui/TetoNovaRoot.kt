@@ -31,6 +31,7 @@ import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
@@ -89,11 +90,23 @@ fun TetoNovaRoot(windowSizeClass: WindowSizeClass) {
             when (val scr = state.screen) {
                 is Screen.Detail -> {
                     BackHandler { state.back() }
-                    DetailScreen(arg = scr.arg, onBack = { state.back() }, onOpenDetail = state::openDetail, onOpenPlayer = state::openPlayer)
+                    DetailScreen(arg = scr.arg, resumeEpisode = state.resumeEpisodeFor(scr.arg), onBack = { state.back() }, onOpenDetail = state::openDetail, onOpenPlayer = state::openPlayer)
                 }
                 is Screen.Player -> {
                     BackHandler { state.closePlayer() }
-                    PlayerScreen(arg = scr.arg, onBack = { state.closePlayer() })
+                    val a = scr.arg
+                    // Next episode = the lowest episode number above the current one (order-independent:
+                    // source lists may be ascending OR descending). Re-keying on the url restarts the
+                    // player cleanly per episode (fresh ExoPlayer + source resolution).
+                    val next = a.episodeNum?.let { cur -> a.playlist.filter { it.num > cur }.minByOrNull { it.num } }
+                    key(a.url) {
+                        PlayerScreen(
+                            arg = a,
+                            hasNext = next != null,
+                            onNext = { next?.let { state.openPlayer(a.copy(url = it.url, episodeLabel = it.label, episodeNum = it.num)) } },
+                            onBack = { state.closePlayer() },
+                        )
+                    }
                 }
                 is Screen.Report -> {
                     BackHandler { state.openSettings() }
@@ -152,7 +165,7 @@ private fun TabContent(state: AppState, dest: NavDest) {
         )
         NavDest.SEARCH -> SearchScreen(onOpenDetail = state::openDetail)
         NavDest.FORUM -> ForumScreen()
-        NavDest.DOWNLOADS -> DownloadsScreen(onOpenDetail = state::openDetail)
+        NavDest.DOWNLOADS -> DownloadsScreen(onOpenDetail = state::openDetail, onOpenPlayer = state::openPlayer)
         NavDest.EXTENSIONS -> ExtensionsScreen()
         NavDest.PROFILE -> ProfileScreen(state = state)
     }

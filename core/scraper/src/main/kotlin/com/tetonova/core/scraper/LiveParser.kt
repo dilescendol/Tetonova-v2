@@ -31,7 +31,7 @@ data class LiveDetail(
     val country: String? = null,
 )
 
-data class LiveEpisode(val num: Int, val title: String, val url: String)
+data class LiveEpisode(val num: Int, val title: String, val url: String, val thumb: String? = null)
 
 /** One playable mirror/server scraped from a watch page. [embedUrl] is the host iframe URL
  *  (ok.ru / dailymotion / filelions / …) — played in a WebView, since these are embeds, not
@@ -294,11 +294,15 @@ object LiveParser {
         // `a.ep-button` is kuramanime's on-page episode nav — its watch pages list every episode.
         val known = doc.select(
             ".eplister ul li a, .eplister li a, ul.daftar li a, #daftarepisode li a, " +
-                ".episodelist li a, .bxcl li a, .lstepsiode li a, .meta-episodes a[href], a.ep-button[href]",
+                ".episodelist li a, .bxcl li a, .lstepsiode li a, .meta-episodes a[href], a.ep-button[href], " +
+                // NontonAnimeID (kotakanime2): the full "Daftar Episode" list. Without this, only the
+                // anime card's `.meta-episodes` first+last shortcut links match (so a 12-ep show shows
+                // just E1 + E12); the dominant-num distinct() below dedups the overlap.
+                ".episode-list-items a[href]",
         )
         val useGeneric = popover == null && known.size < 2
         val anchors = popover ?: if (useGeneric) doc.select("a[href]") else known
-        data class Cand(val urlNum: Int?, val end: Int?, val labelNum: Int?, val slug: String, val title: String, val url: String)
+        data class Cand(val urlNum: Int?, val end: Int?, val labelNum: Int?, val slug: String, val title: String, val url: String, val thumb: String?)
         val cands = anchors.mapNotNull { a ->
             val url = a.absUrl("href").ifBlank { return@mapNotNull null }
             // Episode number primarily from the canonical URL slug (`.epl-num` labels carry typos —
@@ -330,7 +334,10 @@ object LiveParser {
                 .replace(Regex("-(?:episode|chapter)-\\d+.*$", RegexOption.IGNORE_CASE), "")
                 .replace(Regex("-sub-indo.*$", RegexOption.IGNORE_CASE), "")
             val title = a.selectFirst(".epl-title")?.text()?.trim()?.ifBlank { null } ?: "Episode $num"
-            Cand(urlNum, rangeEnd, labelNum, slug, title, url)
+            // Per-episode thumbnail when the source's list markup carries one (most themes don't —
+            // just numbered links — so this is usually null and the UI falls back to the series cover).
+            val thumb = a.selectFirst("img")?.let(::imgSrc) ?: a.closest("li")?.selectFirst("img")?.let(::imgSrc)
+            Cand(urlNum, rangeEnd, labelNum, slug, title, url, thumb)
         }
         if (cands.isEmpty()) return emptyList()
         // Dominant-slug filtering is only for the GENERIC scan (drops cross-show "recommended"
@@ -349,7 +356,7 @@ object LiveParser {
             // each linking to that one shared page — exactly how the site groups them. Guard against a
             // bogus end (a date/season suffix) by only accepting a small forward range.
             val end = c.end?.takeIf { it in (n + 1)..(n + 8) } ?: n
-            (n..end).map { e -> LiveEpisode(e, c.title, c.url) }
+            (n..end).map { e -> LiveEpisode(e, c.title, c.url, c.thumb) }
         }.distinctBy { it.num }.sortedBy { it.num }
     }
 

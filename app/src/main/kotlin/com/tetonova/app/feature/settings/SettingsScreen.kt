@@ -105,6 +105,7 @@ fun SettingsScreen(state: AppState, onBack: () -> Unit) {
         SectionCard("Langganan & API", "Akses 40+ source lewat API provider", "sparkle") { SubscriptionPanel() }
         SectionCard("Tampilan", "Tema, warna aksen, dan kepadatan UI", "palette") { AppearanceSection(state) }
         SectionCard("Pemutaran & Data", "Kualitas stream dan perilaku player", "play") { PlaybackSection(state) }
+        SectionCard("Penyimpanan & Unduhan", "Kualitas unduhan & file offline", "download") { DownloadsSettingsSection(state) }
         SectionCard("Konten", "Filter & preferensi bahasa", "eye") { ContentSection(state) }
         SectionCard("Notifikasi", "Apa yang ingin kamu dapat", "bell") { NotifSection(state) }
         SectionCard("Cadangan & Sinkron", "Backup library lokal kamu", "cloud") { BackupSection(state) }
@@ -246,7 +247,7 @@ private fun PlaybackSection(state: AppState) {
     Divider()
     SettingRow("play", "Auto next episode", "Lanjut otomatis ke episode berikutnya.") { TnToggle(state.autoNext) { state.autoNext = it } }
     Divider()
-    SettingRow("zap", "Skip opening", "Lewati intro & ending otomatis kalau terdeteksi.") { TnToggle(state.skipOp) { state.skipOp = it } }
+    SettingRow("zap", "Skip opening", "Lewati intro & ending otomatis untuk anime (donghua tetap manual).") { TnToggle(state.skipOp) { state.skipOp = it } }
 }
 
 @Composable
@@ -263,6 +264,33 @@ private fun NotifSection(state: AppState) {
     SettingRow("comment", "Balasan forum", "Saat seseorang membalas thread atau komentar kamu.") { TnToggle(state.notifForum) { state.notifForum = it } }
     Divider()
     SettingRow("shield", "Push lokal saja", "Gunakan worker lokal, tanpa push stack eksternal.") { TnToggle(state.pushLocal) { state.pushLocal = it } }
+}
+
+@Composable
+private fun DownloadsSettingsSection(state: AppState) {
+    val context = LocalContext.current
+    var used by remember { mutableStateOf(com.tetonova.app.data.download.DownloadCenter.storageBytes()) }
+    SettingRow("layers", "Kualitas unduhan", "Batas resolusi yang dipakai untuk semua unduhan.", controlBelow = true) {
+        SegSelect(state.downloadQuality, listOf("auto" to "Auto", "1080" to "1080p", "720" to "720p", "480" to "480p")) { state.downloadQuality = it }
+    }
+    Divider()
+    SettingRow("globe", "Hanya via Wi-Fi", "Tunda unduhan saat memakai data seluler.") {
+        TnToggle(state.downloadWifiOnly) { v -> state.downloadWifiOnly = v; com.tetonova.app.data.download.DownloadCenter.applyWifiOnly(v) }
+    }
+    Divider()
+    SettingRow("trash", "Penyimpanan terpakai", "${fmtSize(used)} tersimpan offline di perangkat.") {
+        TnGhostButton(text = "Hapus semua", icon = "trash", onClick = {
+            com.tetonova.app.data.download.DownloadCenter.removeAll()
+            used = 0L
+            Toast.makeText(context, "Semua unduhan dihapus", Toast.LENGTH_SHORT).show()
+        })
+    }
+}
+
+private fun fmtSize(bytes: Long): String {
+    if (bytes <= 0L) return "0 MB"
+    val mb = bytes / (1024.0 * 1024.0)
+    return if (mb >= 1024) "%.1f GB".format(mb / 1024) else "%.0f MB".format(mb)
 }
 
 @Composable

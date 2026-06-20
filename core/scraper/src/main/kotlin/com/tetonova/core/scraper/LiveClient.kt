@@ -152,9 +152,9 @@ object LiveClient {
      * threshold, so the caller supplies [isValid] to recognise a real response. Returns the body (raw
      * JSON on the direct path; FlareSolverr wraps it in the rendered page on the solver path), or null.
      */
-    suspend fun postBypass(url: String, form: String, referer: String? = null, isValid: (String) -> Boolean): String? =
+    suspend fun postBypass(url: String, form: String, referer: String? = null, origin: String? = null, isValid: (String) -> Boolean): String? =
         withContext(Dispatchers.IO) {
-            runCatching { postDirect(url, form, referer) }.getOrNull()?.let { if (isValid(it)) return@withContext it }
+            runCatching { postDirect(url, form, referer, origin) }.getOrNull()?.let { if (isValid(it)) return@withContext it }
             if (flareEndpoint.isNotBlank()) {
                 postViaFlare(flareEndpoint, url, form)?.let { if (isValid(it)) return@withContext it }
                 cfEndpoint()?.let { cf -> postViaFlare(cf, url, form)?.let { if (isValid(it)) return@withContext it } }
@@ -162,11 +162,14 @@ object LiveClient {
             null
         }
 
-    private fun postDirect(url: String, form: String, referer: String?): String? {
+    private fun postDirect(url: String, form: String, referer: String?, origin: String? = null): String? {
         val req = Request.Builder().url(url)
             .header("User-Agent", UA)
             .header("X-Requested-With", "XMLHttpRequest")
             .apply { referer?.let { header("Referer", it) } }
+            // Some admin-ajax handlers (NontonAnimeID's kotakanime2 player) reject the request without a
+            // same-site Origin — the browser's fetch() sends it, so we replay it when the caller asks.
+            .apply { origin?.let { header("Origin", it) } }
             .post(form.toRequestBody("application/x-www-form-urlencoded".toMediaType()))
             .build()
         direct.newCall(req).execute().use { resp ->

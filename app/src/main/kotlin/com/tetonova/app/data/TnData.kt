@@ -32,6 +32,9 @@ import java.util.Locale
 /** A Home row: custom panel label + the source it came from + that source's posters. */
 data class HomeSection(val label: String, val sourceId: String, val url: String, val posters: List<PosterItem>)
 
+/** A search result group: one extension (source) + the posters it returned for the query. */
+data class SearchGroup(val sourceId: String, val displayName: String, val posters: List<PosterItem>)
+
 /** A Home source-filter chip. `id == null` is the "Semua" (all sources) chip. */
 data class HomeSourceChip(val id: String?, val label: String)
 
@@ -77,6 +80,17 @@ object TnData {
     var helpCenter by mutableStateOf<HelpCenter?>(null)
         private set
 
+    /** Top search terms (last 7 days, cross-user) from the panel; chips on Search. Empty until fetched. */
+    var popularSearches by mutableStateOf<List<String>>(emptyList())
+        private set
+
+    /** Most-opened content this week (cross-user) from the panel; the Search "Trending minggu ini" rail. */
+    var trendingPosters by mutableStateOf<List<PosterItem>>(emptyList())
+        private set
+
+    /** Anonymous per-install id, used to auth/dedup telemetry the same way as the report flow. */
+    private val installId: String get() = SettingsStore.installId()
+
     /** Snapshot-state counter so panel-dependent UI recomposes after a fetch. */
     var panelVersion by mutableStateOf(0)
         private set
@@ -97,6 +111,26 @@ object TnData {
             LiveClient.flareToken = it.flareSolverrToken
         }
         if (resp.sources.isNotEmpty() || resp.supportMe != null) panelVersion++
+        refreshTrending()
+    }
+
+    /** Pull the cross-user popular searches + trending content from the panel (best-effort). */
+    private suspend fun refreshTrending() {
+        if (panelBase.isBlank()) return
+        val api = TrendingApi(panelBase)
+        api.fetchSearches()?.takeIf { it.isNotEmpty() }?.let { popularSearches = it }
+        api.fetchContent()?.takeIf { it.isNotEmpty() }?.let { items ->
+            trendingPosters = items.map { t ->
+                PosterItem(
+                    title = t.title,
+                    sub = "",
+                    art = artOf(t.url ?: t.title),
+                    badge = t.badge?.ifBlank { null },
+                    cover = t.cover?.ifBlank { null },
+                    url = t.url?.ifBlank { null },
+                )
+            }
+        }
     }
 
     private fun enabledPanelSources() = panelSources.filter { it.enabled }
@@ -133,7 +167,10 @@ object TnData {
     /** Cache-first per-source search: panel cache when proxy_enabled, else live scrape. */
     private suspend fun searchSource(src: SourceOverride, query: String): List<LiveItem> {
         if (src.proxyEnabled && !src.proxyPaths?.search.isNullOrBlank()) {
-            catalogApi()?.search(src, query)?.let { return it }
+            // Treat an EMPTY cache hit as a miss: the panel's generic scraper can't read bespoke
+            // sources (e.g. oploverz's Next.js JSON API) and returns `{"items":[]}` with HTTP 200,
+            // which would otherwise suppress the on-device live scrape that *can* search them.
+            catalogApi()?.search(src, query)?.takeIf { it.isNotEmpty() }?.let { return it }
         }
         return runCatching { LiveSource.search(src.apiBaseUrl, query) }.getOrDefault(emptyList())
     }
@@ -187,21 +224,22 @@ object TnData {
         if (!sourceCatalogRequested.add(src.sourceId)) return
         liveScope.launch {
             val sections = runCatching { catalogApi()?.home(src) }.getOrNull()
-            var filled = 0
+            val filledUrls = HashSet<String>()
             sections?.forEach { section ->
                 val items = section.second
                 if (items.isNotEmpty()) {
                     liveSections[section.first] = items.take(20).map { item -> liveToPoster(item, src.sourceId) }
-                    filled++
+                    filledUrls += section.first
                 }
             }
-            if (filled == 0) {
-                // cache miss/empty → fall back to live per-URL scraping for each of this source's rails
-                sourceCatalogRequested.remove(src.sourceId) // allow a later retry
-                val urls = (src.homeLinks?.showAll.orEmpty() + src.homeLinks?.showOnClick.orEmpty())
-                    .map { it.url }.filter { it.isNotBlank() }.distinct()
-                urls.forEach { u -> if (liveRequested.add(u)) liveScope.launch { fillSectionLive(u, src.sourceId) } }
-            }
+            // Cover EVERY rail, not just when the cache is wholly empty: a partial warm (e.g. only the
+            // Hentai category cached) used to leave the other rails on the stale bundled catalog. Live-
+            // scrape on-device any rail the cache didn't fill; a total miss re-arms the cache retry.
+            val railUrls = (src.homeLinks?.showAll.orEmpty() + src.homeLinks?.showOnClick.orEmpty())
+                .map { it.url }.filter { it.isNotBlank() }.distinct()
+            val missing = railUrls.filter { it !in filledUrls }
+            if (missing.size == railUrls.size) sourceCatalogRequested.remove(src.sourceId) // total miss → allow retry
+            missing.forEach { u -> if (liveRequested.add(u)) liveScope.launch { fillSectionLive(u, src.sourceId) } }
         }
     }
 
@@ -229,12 +267,14 @@ object TnData {
 
     // ---------------- live search (across every enabled source, streamed + deduped) ----------------
 
-    /** Reactive result list — results from each source are appended as they arrive. */
-    val liveSearchHits = mutableStateListOf<PosterItem>()
+    /** Reactive result groups — one per extension, appended as each source returns. */
+    val liveSearchGroups = mutableStateListOf<SearchGroup>()
     var liveSearchLoading by mutableStateOf(false)
         private set
     private var liveSearchQuery = ""
     private var liveSearchJob: Job? = null
+    /** Search terms already reported to the panel this session (avoid re-posting the same query). */
+    private val reportedSearchTerms = Collections.synchronizedSet(HashSet<String>())
 
     /**
      * Resolve a live source-page URL for [title] by searching every enabled source in parallel and
@@ -264,16 +304,21 @@ object TnData {
         }
     }
 
-    /** Run a fresh live search across all enabled sources (no-op if the query is unchanged). */
+    /**
+     * Run a fresh live search across all enabled sources (no-op if the query is unchanged).
+     * Results are grouped **per extension** (each source keeps its own posters — no cross-source
+     * dedup), so the UI can render one horizontal row per source. Only within a single source are
+     * duplicate titles collapsed.
+     */
     fun startLiveSearch(query: String) {
         val q = query.trim()
         if (q == liveSearchQuery) return
         liveSearchQuery = q
         liveSearchJob?.cancel()
-        liveSearchHits.clear()
+        liveSearchGroups.clear()
         if (q.length < 2 || !hasPanel) { liveSearchLoading = false; return }
+        reportSearchTerm(q)
         val sources = enabledPanelSources()
-        val seen = Collections.synchronizedSet(HashSet<String>())
         // Sites that don't honour `/?s=` just echo their homepage; keep only titles that actually
         // match the query so the results stay relevant instead of leaking unrelated "latest" cards.
         val needle = q.lowercase(Locale.ROOT)
@@ -285,12 +330,17 @@ object TnData {
                     sources.forEach { src ->
                         launch {
                             val hits = searchSource(src, q)
+                            val seen = HashSet<String>() // dedup WITHIN this source only
                             val posters = hits.mapNotNull { item ->
                                 val tl = item.title.lowercase(Locale.ROOT)
                                 val relevant = tl.contains(needle) || (tokens.isNotEmpty() && tokens.all { tl.contains(it) })
                                 if (relevant && seen.add(tl)) liveToPoster(item, src.sourceId) else null
                             }
-                            if (posters.isNotEmpty()) liveSearchHits.addAll(posters)
+                            if (posters.isNotEmpty()) {
+                                liveSearchGroups.add(
+                                    SearchGroup(src.sourceId, src.displayName.ifBlank { src.sourceId }, posters)
+                                )
+                            }
                         }
                     }
                 }
@@ -298,6 +348,19 @@ object TnData {
                 liveSearchLoading = false
             }
         }
+    }
+
+    /** Report a committed search term to the panel (best-effort, once per distinct term per session). */
+    private fun reportSearchTerm(term: String) {
+        if (!hasPanel || telemetryToken.isBlank()) return
+        if (!reportedSearchTerms.add(term.lowercase(Locale.ROOT))) return
+        liveScope.launch { TrendingApi(panelBase).reportSearch(term, telemetryToken, installId) }
+    }
+
+    /** Report an opened title to the panel so it can feed the cross-user "Trending minggu ini" rail. */
+    fun reportOpen(title: String, url: String?, cover: String?, badge: String?, sourceId: String? = null) {
+        if (!hasPanel || telemetryToken.isBlank() || url.isNullOrBlank()) return
+        liveScope.launch { TrendingApi(panelBase).reportOpen(title, url, cover, badge, sourceId, telemetryToken, installId) }
     }
 
     // ---------------- Extensions screen ----------------

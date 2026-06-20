@@ -9,6 +9,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
 import org.jsoup.parser.Parser
+import java.util.Base64
 import java.util.concurrent.TimeUnit
 
 /** A directly-playable stream variant resolved from an embed host (label = "720p"/"Auto", url = mp4/m3u8). */
@@ -62,6 +63,7 @@ object StreamExtractor {
         when {
             // Already a direct, playable stream (kuramadrive's per-resolution .mp4) — pass it through.
             isDirectVideo(u) -> ExtractResult(listOf(StreamVariant("Auto", u)))
+            "kotakanimeid.link/video-embed" in u -> kotakanime(u, referer)
             "ok.ru" in u || "odnoklassniki" in u -> ExtractResult(okru(u), originHeaders(u))
             // Dailymotion verifies the embedder: fetch metadata AS the real embedder (anixcafe) to get a
             // valid token, then play the manifest with the dailymotion.com referer (mimics the iframe).
@@ -72,6 +74,7 @@ object StreamExtractor {
             "rumble.com" in u -> ExtractResult(rumble(u), originHeaders(u))
             isDoodHost(u) -> dood(u)
             "filedon" in u -> ExtractResult(filedon(u, referer)) // presigned R2 URL → no headers
+            "pixeldrain.com" in u -> ExtractResult(listOf(StreamVariant("Auto", pixeldrainDirect(u)))) // range-served file → no headers
             "desustream" in u -> desustream(u, referer) // googlevideo plays raw → no headers
             else -> generic(u, referer).let { ExtractResult(it, if (it.isEmpty()) emptyMap() else originHeaders(u)) }
         }
@@ -201,13 +204,23 @@ object StreamExtractor {
         return listOf(StreamVariant("Auto", m3u8))
     }
 
+    // ---- pixeldrain: the share URL (/u/<id>) maps to the direct file endpoint (/api/file/<id>),
+    //      which is range-served (HTTP 206) with no auth/headers — ExoPlayer streams it straight. ----
+    private fun pixeldrainDirect(url: String): String {
+        val id = Regex("pixeldrain\\.com/(?:u|api/file)/([^/?#]+)").find(url)?.groupValues?.get(1) ?: return url
+        return "https://pixeldrain.com/api/file/$id"
+    }
+
     // ---- filedon.co: a presigned Cloudflare-R2 .mp4 in a JSON `"url":"…"` field. Entity-escaped
     //      (&quot;) and with \/-escaped slashes; the presigned query self-authenticates so no headers. ----
     private suspend fun filedon(embedUrl: String, referer: String): List<StreamVariant> {
         val html = fetch(embedUrl, referer.ifBlank { embedUrl }) ?: LiveClient.getHtml(embedUrl) ?: return emptyList()
         val text = org.jsoup.parser.Parser.unescapeEntities(html, false)
-        val mp4 = Regex(""""(https?:[^"]+?\.mp4[^"]*)"""").find(text)?.groupValues?.get(1) ?: return emptyList()
-        return listOf(StreamVariant("Auto", mp4.replace("\\/", "/")))
+        // Filedon serves the file in its native container — often `.mkv` (e.g. oploverz 1080p), not just
+        // `.mp4`. Media3 plays Matroska/WebM directly, so accept those too instead of dropping to the
+        // ad-laden Filedon web player.
+        val direct = Regex(""""(https?:[^"]+?\.(?:mp4|mkv|webm)[^"]*)"""").find(text)?.groupValues?.get(1) ?: return emptyList()
+        return listOf(StreamVariant("Auto", direct.replace("\\/", "/")))
     }
 
     // ---- desustream.info: otakudesu's own player. The `ondesu/new/hd` player serves a direct
@@ -224,6 +237,29 @@ object StreamExtractor {
             altHtml?.let { googleVideoFrom(it) }?.let { return ExtractResult(listOf(StreamVariant("Auto", it))) }
         }
         return ExtractResult(emptyList())
+    }
+
+    // ---- NontonAnimeID native player (s1/s2.kotakanimeid.link/video-embed): the embed inlines a
+    //      `(function(){var KEY=[…];var CT=atob("…");/* plain[i]=CT[i]^KEY[i%len] */ (0,eval)(decoded)})()`
+    //      — a repeating-XOR (NOT AES; the key sits inline next to the ciphertext, name randomized per
+    //      embed). The decoded JS is a jwplayer.setup whose `file` is the real stream: a direct
+    //      googlevideo mp4, a kotakanimeid .mp4, or an HLS hop `…/go/dl/?url=<b64>` that 302s to a
+    //      master m3u8 (followed automatically). googlevideo plays raw (a Referer makes it 403); the
+    //      kotakanimeid CDN files want the embed host's Referer/Origin. ----
+    private suspend fun kotakanime(embedUrl: String, referer: String): ExtractResult {
+        val html = fetch(embedUrl, referer.ifBlank { embedUrl }) ?: LiveClient.getHtml(embedUrl)
+            ?: return ExtractResult(emptyList())
+        val m = Regex("""var\s+\w+=\[([\d,]+)];\s*var\s+\w+=atob\("([^"]+)"\)""").find(html)
+            ?: return ExtractResult(emptyList())
+        val key = m.groupValues[1].split(",").mapNotNull { it.trim().toIntOrNull() }
+        val ct = runCatching { Base64.getMimeDecoder().decode(m.groupValues[2]) }.getOrNull()
+        if (key.isEmpty() || ct == null) return ExtractResult(emptyList())
+        val decoded = String(ByteArray(ct.size) { ((ct[it].toInt() and 0xFF) xor key[it % key.size]).toByte() })
+        val file = Regex(""""file":"([^"]+)"""").find(decoded)?.groupValues?.get(1)?.replace("\\/", "/")
+            ?: return ExtractResult(emptyList())
+        val label = Regex(""""label":"([^"]+)"""").find(decoded)?.groupValues?.get(1)?.takeIf { it.isNotBlank() } ?: "Auto"
+        val headers = if ("googlevideo.com" in file) emptyMap() else originHeaders(embedUrl)
+        return ExtractResult(listOf(StreamVariant(label, file)), headers)
     }
 
     private fun googleVideoFrom(html: String): String? =

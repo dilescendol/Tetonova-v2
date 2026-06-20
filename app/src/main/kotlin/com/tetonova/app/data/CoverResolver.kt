@@ -59,21 +59,38 @@ object CoverResolver {
     suspend fun resolve(title: String): String? = info(title)?.coverUrl
 
     suspend fun info(title: String): AnimeInfo? {
-        val key = normalize(title)
-        if (key.isBlank()) return null
+        val base = normalize(title)
+        if (base.isBlank()) return null
+        val season = seasonOf(title)
+        val key = "$base|s$season"   // season-aware: "...|s1" and "...|s4" cache (and resolve) separately
         infoCache[key]?.let { return it }
         if (infoMiss.contains(key)) return null
         val deferred = infoInflight.getOrPut(key) {
             scope.async {
-                var r = fetchInfo(key)
+                var r = fetchSeasonAware(base, season)
                 // Retry without the subtitle ("Mashle: Magic and Muscles" -> "Mashle").
-                if (r == null && key.contains(':')) r = fetchInfo(key.substringBefore(':').trim())
+                if (r == null && base.contains(':')) r = fetchSeasonAware(base.substringBefore(':').trim(), season)
                 if (r != null) infoCache[key] = r else infoMiss.add(key)
                 infoInflight.remove(key)
                 r
             }
         }
         return deferred.await()
+    }
+
+    /** Match the base (season-1) title, then walk MAL "Sequel" relations to the requested season so
+     *  e.g. "...S4" resolves to the S4 entry (its own malId/metadata), not season 1. Best-effort: if
+     *  the sequel chain ends early, the furthest season reached is used. */
+    private suspend fun fetchSeasonAware(query: String, season: Int): AnimeInfo? {
+        var info = fetchInfo(query) ?: return null
+        var hops = season - 1
+        while (hops > 0) {
+            val nextId = fetchSequelId(info.malId) ?: break
+            val next = fetchAnimeById(nextId) ?: break
+            info = next
+            hops--
+        }
+        return info
     }
 
     suspend fun characters(malId: Int): List<CharacterInfo> {
@@ -101,6 +118,47 @@ object CoverResolver {
                 val data = JSONObject(body).optJSONArray("data")
                 if (data == null || data.length() == 0) return@use null
                 parseAnime(data.getJSONObject(0))
+            }
+        }
+    }.getOrNull()
+
+    /** First "Sequel" anime entry's MAL id for [malId] (the next season), or null. */
+    private suspend fun fetchSequelId(malId: Int): Int? = runCatching {
+        throttle()
+        withContext(Dispatchers.IO) {
+            val url = "https://api.jikan.moe/v4/anime/$malId/relations"
+            client.newCall(Request.Builder().url(url).get().build()).execute().use { resp ->
+                if (!resp.isSuccessful) return@use null
+                val body = resp.body?.string()
+                if (body.isNullOrBlank()) return@use null
+                val data = JSONObject(body).optJSONArray("data") ?: return@use null
+                for (i in 0 until data.length()) {
+                    val rel = data.optJSONObject(i) ?: continue
+                    if (!rel.optString("relation").equals("Sequel", true)) continue
+                    val entries = rel.optJSONArray("entry") ?: continue
+                    for (j in 0 until entries.length()) {
+                        val e = entries.optJSONObject(j) ?: continue
+                        if (e.optString("type").equals("anime", true)) {
+                            return@use e.optInt("mal_id").takeIf { it > 0 }
+                        }
+                    }
+                }
+                null
+            }
+        }
+    }.getOrNull()
+
+    /** Full anime record by MAL id (the `/anime/{id}` data object parses like a search result). */
+    private suspend fun fetchAnimeById(malId: Int): AnimeInfo? = runCatching {
+        throttle()
+        withContext(Dispatchers.IO) {
+            val url = "https://api.jikan.moe/v4/anime/$malId"
+            client.newCall(Request.Builder().url(url).get().build()).execute().use { resp ->
+                if (!resp.isSuccessful) return@use null
+                val body = resp.body?.string()
+                if (body.isNullOrBlank()) return@use null
+                val data = JSONObject(body).optJSONObject("data") ?: return@use null
+                parseAnime(data)
             }
         }
     }.getOrNull()
@@ -157,9 +215,21 @@ object CoverResolver {
     }
 
     private fun normalize(title: String): String = title
+        .replace(Regex("\\b\\d+(?:st|nd|rd|th)\\s+Season\\b", RegexOption.IGNORE_CASE), "")
         .replace(Regex("\\b(Season|S)\\s*\\d+\\b", RegexOption.IGNORE_CASE), "")
         .replace(Regex("\\b(Episode|Ep)\\s*\\d+.*$", RegexOption.IGNORE_CASE), "")
         .replace(Regex("[\\(\\[].*?[\\)\\]]"), "")
         .replace(Regex("\\s+"), " ")
         .trim()
+
+    /** Season number from a title ("...S4" / "Season 4" / "4th Season"); default 1. */
+    private fun seasonOf(title: String): Int {
+        Regex("\\b(\\d+)(?:st|nd|rd|th)\\s+Season\\b", RegexOption.IGNORE_CASE).find(title)?.let {
+            return it.groupValues[1].toIntOrNull() ?: 1
+        }
+        Regex("\\b(?:Season|S)\\s*(\\d+)\\b", RegexOption.IGNORE_CASE).find(title)?.let {
+            return it.groupValues[1].toIntOrNull() ?: 1
+        }
+        return 1
+    }
 }

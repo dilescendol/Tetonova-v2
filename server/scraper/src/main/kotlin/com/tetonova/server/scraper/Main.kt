@@ -178,12 +178,19 @@ private object SourceMap {
             val id = s.optString("sourceId").lowercase()
             if (id.isBlank()) continue
             val base = s.optString("apiBaseUrl").ifBlank { s.optString("webBaseUrl") }
+            // Warm EVERY rail the source can display, not just "Semua" mode: a source's per-chip rails
+            // (showOnClick — e.g. nekopoi's 2D Animation / 3D Hentai / JAV) must be cached too, else the
+            // app finds those rails uncached and falls back to its stale bundled catalog. The cache is
+            // per-source and mode-agnostic, so it should hold both showAll and showOnClick URLs.
             val links = ArrayList<Pair<String, String>>()
-            s.optJSONObject("homeLinks")?.optJSONArray("showAll")?.let { sa ->
-                for (j in 0 until sa.length()) {
-                    val l = sa.getJSONObject(j)
+            val seen = HashSet<String>()
+            val homeLinks = s.optJSONObject("homeLinks")
+            for (group in listOf("showAll", "showOnClick")) {
+                val arr = homeLinks?.optJSONArray(group) ?: continue
+                for (j in 0 until arr.length()) {
+                    val l = arr.getJSONObject(j)
                     val u = l.optString("url")
-                    if (u.isNotBlank()) links.add(l.optString("label").ifBlank { "Latest" } to u)
+                    if (u.isNotBlank() && seen.add(u)) links.add(l.optString("label").ifBlank { "Latest" } to u)
                 }
             }
             m[id] = Src(base, links)

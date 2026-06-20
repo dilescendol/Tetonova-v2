@@ -64,6 +64,7 @@ import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
@@ -74,7 +75,12 @@ import com.tetonova.core.scraper.LiveSource
 import com.tetonova.core.scraper.StreamExtractor
 import com.tetonova.core.scraper.StreamVariant
 import com.tetonova.core.scraper.VideoServer
+import com.tetonova.app.data.SettingsStore
+import com.tetonova.app.data.SkipResolver
+import com.tetonova.app.data.SkipTimes
+import com.tetonova.app.data.WatchProgressStore
 import com.tetonova.app.data.WebViewGate
+import com.tetonova.app.data.download.DownloadCenter
 import com.tetonova.app.ui.PlayerArg
 import kotlinx.coroutines.delay
 import java.util.concurrent.atomic.AtomicBoolean
@@ -86,9 +92,12 @@ import java.util.concurrent.atomic.AtomicBoolean
  * WebView embed. Top bar (back · title · Source) is the same regardless of source.
  */
 @Composable
-fun PlayerScreen(arg: PlayerArg, onBack: () -> Unit) {
+fun PlayerScreen(arg: PlayerArg, onBack: () -> Unit, hasNext: Boolean = false, onNext: () -> Unit = {}) {
     val context = LocalContext.current
     val referer = arg.url.orEmpty()
+    // If this episode is already downloaded, play it straight from the offline cache (no network,
+    // no server resolution) — the same ExoStage, just fed a cache-backed data source.
+    val offlineVariant = remember(arg.url) { DownloadCenter.offlineVariant(arg.url) }
 
     // Force landscape while playing. MainActivity has configChanges=orientation|screenSize so this does
     // NOT recreate the activity. Restore on exit. (Immersive is handled by the sticky effect below.)
@@ -131,6 +140,7 @@ fun PlayerScreen(arg: PlayerArg, onBack: () -> Unit) {
 
     LaunchedEffect(arg.url, retryTick) {
         loading = true
+        if (offlineVariant != null) { loading = false; return@LaunchedEffect } // offline: no server scrape
         failed.clear()
         // Every playable server, FASTEST-FIRST (pre-resolved direct streams → clean players → embeds),
         // so auto-pick plays the quickest source and failover walks the rest in that order.
@@ -148,6 +158,7 @@ fun PlayerScreen(arg: PlayerArg, onBack: () -> Unit) {
         list = list.sortedWith(compareBy({ speedRank(it) }, { it.name }))
         servers = list
         selected = list.firstOrNull() // auto-pick the fastest source
+        android.util.Log.i("TnPlayer", "servers (fastest-first): ${list.map { it.name }}; auto-pick '${list.firstOrNull()?.name}'")
         loading = false
         // NOTE: kuramadrive's player token is aggressively rate-limited, so we deliberately do NOT
         // auto-enumerate the other servers here — that loaded kuramadrive a 2nd time per open and burned
@@ -163,19 +174,32 @@ fun PlayerScreen(arg: PlayerArg, onBack: () -> Unit) {
     // Auto-failover: mark the current server failed and jump to the next-fastest untried one. Returns
     // false when none remain (caller then drops to the WebView fallback for the last server).
     fun onServerFailed(): Boolean {
+        val failedName = selected?.name
         selected?.let { if (keyOf(it) !in failed) failed.add(keyOf(it)) }
         val next = servers.firstOrNull { keyOf(it) !in failed }
         if (next != null) selected = next
+        android.util.Log.i("TnPlayer", "server '$failedName' failed → ${next?.name ?: "none (WebView fallback)"}")
         return next != null
     }
     // Manual pick: try the chosen source; if it can't play it still auto-switches to the next that can.
     fun onPickServer(s: VideoServer) { failed.remove(keyOf(s)); selected = s }
 
     val current = selected
-    when {
+    if (offlineVariant != null) {
+        // Downloaded → play from cache through ExoStage with a synthetic "Tersimpan" server.
+        val offServer = remember(arg.url) { VideoServer("Tersimpan", arg.url.orEmpty()) }
+        ExoStage(
+            variants = listOf(offlineVariant),
+            headers = DownloadCenter.headersFor(arg.url),
+            arg = arg, server = offServer, servers = listOf(offServer),
+            onPickServer = {}, onBack = onBack, onExternal = ::openExternal, onError = {},
+            hasNext = hasNext, onNext = onNext,
+            dataSourceFactory = DownloadCenter.cacheFactory(),
+        )
+    } else when {
         loading -> LoadingBox("Mencari source…")
         current == null -> NoSourceBox(onRetry = { retryTick++ }, onExternal = ::openExternal, onBack = onBack)
-        else -> ServerPlayer(current, arg, servers, referer, ::onPickServer, ::onServerFailed, onBack, ::openExternal)
+        else -> ServerPlayer(current, arg, servers, referer, ::onPickServer, ::onServerFailed, onBack, ::openExternal, hasNext, onNext)
     }
 }
 
@@ -190,6 +214,8 @@ private fun ServerPlayer(
     onServerFailed: () -> Boolean,
     onBack: () -> Unit,
     onExternal: () -> Unit,
+    hasNext: Boolean = false,
+    onNext: () -> Unit = {},
 ) {
     // Hosts whose token streams 404/403 ExoPlayer (browser-context anti-leech) but play fine in a
     // WebView — JWPlayer (videoplayer.vip) and Dailymotion. Play them in the WebView with the host UI
@@ -200,13 +226,14 @@ private fun ServerPlayer(
         else -> null
     }
     if (webPlayer != null) {
-        WebPlayerStage(webPlayer, server.embedUrl, arg.title, arg.episodeLabel, servers, server, onPickServer, onBack, onExternal)
+        WebPlayerStage(webPlayer, server.embedUrl, arg.title, arg.episodeLabel, servers, server, onPickServer, onServerFailed, onBack, onExternal)
         return
     }
     var phase by remember(server) { mutableStateOf<Phase>(Phase.Extracting) }
     LaunchedEffect(server) {
         // 1) static extractor (ok.ru/dailymotion/rumble/filemoon) → 2) WebView sniffer → 3) WebView embed.
         val res = runCatching { StreamExtractor.extract(server, referer) }.getOrDefault(ExtractResult(emptyList()))
+        android.util.Log.i("TnPlayer", "extract '${server.name}' (${server.embedUrl.take(64)}) → ${res.variants.size} variants ${res.variants.map { it.label }}${if (res.variants.isEmpty()) " → sniff" else ""}")
         phase = if (res.variants.isNotEmpty()) Phase.Exo(res.variants, res.headers) else Phase.Sniffing
     }
     // A server that won't play (sniff failed / playback error / too slow) hands off to the next-fastest
@@ -219,7 +246,7 @@ private fun ServerPlayer(
             onSniffed = { url, h -> phase = Phase.Exo(listOf(StreamVariant("Auto", url)), h) },
             onFail = onFail,
         )
-        is Phase.Exo -> ExoStage(p.variants, p.headers, arg, server, servers, onPickServer, onBack, onExternal, onError = onFail)
+        is Phase.Exo -> ExoStage(p.variants, p.headers, arg, server, servers, onPickServer, onBack, onExternal, onError = onFail, hasNext = hasNext, onNext = onNext)
         Phase.Web -> WebStage(server, arg, servers, referer, onPickServer, onBack, onExternal)
     }
 }
@@ -377,14 +404,40 @@ private val AD_HOSTS = listOf(
     "exceedbronzetooth", "protrafficinspector", "255md", "dtscout", "dtscdn", "onaudience", "histats",
     "crwdcntrl", "adex", "doubleclick", "googlesyndication", "kettledrooping", "spendsdetachment",
     "zoologyfibre", "popads", "popcash", "propeller", "adsterra", "hilltopads",
+    // popunder / push / native-ad networks behind the gambling interstitials on 4meplayer/blogger embeds
+    "monetag", "onclick", "clickadu", "admaven", "juicyads", "exoclick", "trafficjunky", "mgid",
+    "adskeeper", "adcash", "richads", "galaksion", "adnxs", "taboola", "outbrain", "revcontent",
+    // common betting brands that get injected as overlay iframes
+    "1xbet", "melbet", "mostbet", "betvisa", "baji", "babu88", "marvelbet", "jeetbuzz", "crickex",
 )
 private fun isAdHost(host: String): Boolean = host.lowercase().let { h -> AD_HOSTS.any { it in h } }
+
+/** Empty 200 used to swallow a blocked ad request without erroring the page. */
+private fun emptyResponse() = WebResourceResponse("text/plain", "utf-8", java.io.ByteArrayInputStream(ByteArray(0)))
+
+/**
+ * JS injected into ad-heavy embeds (4meplayer/blogger) to strip injected betting overlays — the
+ * full-screen "BONUS" modal and the floating draggable widget. Removal is tied to an ad URL signal
+ * (a betting/ad link or iframe), so it never touches the real `<video>`/player. Re-runs on a timer +
+ * MutationObserver because these ad scripts re-inject after a delay.
+ */
+private const val STRIP_ADS_JS =
+    "(function(){if(window.__tnAdClean)return;window.__tnAdClean=1;" +
+        "var RE=/(bet|casino|slot|jackpot|bonus|1xbet|melbet|mostbet|baji|babu88|jeetbuzz|crickex|marvelbet|lottery|gambl|aviator)/i;" +
+        "function box(el){var n=el;for(var i=0;i<6&&n&&n!==document.body;i++){var s;try{s=getComputedStyle(n);}catch(e){break;}if(s&&(s.position==='fixed'||s.position==='absolute'))return n;n=n.parentElement;}return el;}" +
+        "function clean(){try{" +
+        "document.querySelectorAll('a[href]').forEach(function(a){if(RE.test(a.getAttribute('href')||'')){box(a).remove();}});" +
+        "document.querySelectorAll('iframe[src]').forEach(function(f){if(RE.test(f.getAttribute('src')||'')){box(f).remove();}});" +
+        "}catch(e){}}" +
+        "clean();setInterval(clean,800);" +
+        "try{new MutationObserver(clean).observe(document.documentElement,{childList:true,subtree:true});}catch(e){}})();"
 
 private fun looksLikeStream(u: String): Boolean {
     val low = u.lowercase()
     val path = low.substringBefore('?')
     // Extensions OR path markers (videoplayer.vip serves HLS at /hls/<token> with no .m3u8 suffix).
     return path.endsWith(".m3u8") || path.endsWith(".mp4") || path.endsWith(".mpd") ||
+        path.endsWith(".mkv") || path.endsWith(".webm") ||
         ".m3u8" in low || "/hls/" in path || "/manifest" in path
 }
 
@@ -483,6 +536,10 @@ private fun ExoStage(
     onBack: () -> Unit,
     onExternal: () -> Unit,
     onError: () -> Unit,
+    hasNext: Boolean = false,
+    onNext: () -> Unit = {},
+    /** Non-null for offline playback: a cache-backed factory so the downloaded stream plays with no network. */
+    dataSourceFactory: DataSource.Factory? = null,
 ) {
     val context = LocalContext.current
     // Default to the highest resolution (4K→1080→720→480→360), robust to label variants (4K/UHD/FHD/HD).
@@ -498,7 +555,7 @@ private fun ExoStage(
             .setUserAgent(ua)
             .setDefaultRequestProperties(props.filterKeys { !it.equals("User-Agent", true) })
         ExoPlayer.Builder(context)
-            .setMediaSourceFactory(DefaultMediaSourceFactory(httpFactory))
+            .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory ?: httpFactory))
             .setTrackSelector(trackSelector)
             .build().apply { playWhenReady = true }
     }
@@ -531,12 +588,26 @@ private fun ExoStage(
     var position by remember { mutableLongStateOf(0L) }
     var duration by remember { mutableLongStateOf(0L) }
     var controls by remember { mutableStateOf(true) }
+    var menuOpen by remember { mutableStateOf(false) } // Source/Resolusi dropdown open → pause auto-hide
+    // AniSkip OP/ED timestamps. Only fetched for matched anime (malId>0, not donghua); stays null
+    // otherwise → the manual heuristic chip below. `skip_op` governs whether a present span auto-seeks.
+    var skip by remember(arg.url) { mutableStateOf<SkipTimes?>(null) }
+    var opSkipped by remember(arg.url) { mutableStateOf(false) }
+    var edSkipped by remember(arg.url) { mutableStateOf(false) }
+    val autoSkipOn = remember { SettingsStore.getBool("skip_op", false) }
+    val skipEligible = arg.malId > 0 && arg.episodeNum != null && !arg.badge.equals("Donghua", true)
+    // Auto-next: on STATE_ENDED show a 5s countdown overlay, then advance (cancelable).
+    val autoNextOn = remember { SettingsStore.getBool("auto_next", true) }
+    var ended by remember(arg.url) { mutableStateOf(false) }
+    var nextIn by remember(arg.url) { mutableStateOf(-1) } // >0 = countdown active
+    var cancelNext by remember(arg.url) { mutableStateOf(false) }
 
     DisposableEffect(Unit) {
         val l = object : Player.Listener {
             override fun onPlaybackStateChanged(s: Int) {
                 buffering = s == Player.STATE_BUFFERING
                 if (s == Player.STATE_READY) duration = exo.duration.coerceAtLeast(0L)
+                if (s == Player.STATE_ENDED) { ended = true; WatchProgressStore.markFinished(arg.url, exo.duration) }
             }
             override fun onIsPlayingChanged(p: Boolean) { playing = p }
             override fun onTracksChanged(tracks: Tracks) {
@@ -552,7 +623,12 @@ private fun ExoStage(
             override fun onPlayerError(e: androidx.media3.common.PlaybackException) { onError() }
         }
         exo.addListener(l)
-        onDispose { exo.removeListener(l); exo.release() }
+        onDispose {
+            // Remember where we left off (online + offline) so reopening resumes here.
+            val pos = exo.currentPosition; val dur = exo.duration
+            if (dur > 0L && pos > 0L) WatchProgressStore.save(arg.url, pos, dur)
+            exo.removeListener(l); exo.release()
+        }
     }
     // (Re)load when the chosen quality changes, preserving position.
     LaunchedEffect(quality) {
@@ -564,12 +640,47 @@ private fun ExoStage(
         exo.prepare()
         if (pos > 0) exo.seekTo(pos)
     }
+    // Resume "lanjut tonton": once the duration is known, jump to the saved position (online or
+    // offline). Initial load only — a mid-watch quality change preserves position via the effect above.
+    var resumed by remember(arg.url) { mutableStateOf(false) }
+    LaunchedEffect(duration > 0L) {
+        if (duration > 0L && !resumed) {
+            resumed = true
+            val r = WatchProgressStore.resumePositionMs(arg.url)
+            if (r in 1 until duration) exo.seekTo(r)
+        }
+    }
+    // Once the episode length is known, fetch real OP/ED timestamps (anime w/ a MAL id only).
+    LaunchedEffect(skipEligible, duration > 0L) {
+        if (skipEligible && skip == null && duration > 0L) {
+            skip = SkipResolver.fetch(arg.malId, arg.episodeNum!!, (duration / 1000).toInt())
+        }
+    }
     LaunchedEffect(Unit) {
+        var saveTick = 0
         while (true) {
             position = exo.currentPosition.coerceAtLeast(0L)
             val d = exo.duration; if (d > 0L) duration = d
+            // Auto-skip OP/ED when enabled and real timestamps exist — once per span.
+            if (autoSkipOn) skip?.let { s ->
+                s.op?.let { if (!opSkipped && position in it.startMs until it.endMs) { opSkipped = true; exo.seekTo(it.endMs) } }
+                s.ed?.let { if (!edSkipped && position in it.startMs until it.endMs) { edSkipped = true; exo.seekTo(if (duration > 0L) it.endMs.coerceAtMost(duration - 1000L) else it.endMs) } }
+            }
+            // Persist watch position ~every 5s so reopening resumes (online + offline).
+            if (++saveTick % 10 == 0 && duration > 0L && position > 0L) WatchProgressStore.save(arg.url, position, duration)
             delay(500)
         }
+    }
+    // End of episode → 5s countdown → next episode (cancelable). Only when enabled + a next exists.
+    LaunchedEffect(ended) {
+        if (!ended || !hasNext || !autoNextOn) return@LaunchedEffect
+        for (n in 5 downTo 1) {
+            if (cancelNext) { nextIn = -1; return@LaunchedEffect }
+            nextIn = n
+            delay(1000)
+        }
+        nextIn = -1
+        if (!cancelNext) onNext()
     }
     // Watchdog ("terlalu lama"): no first frame within the budget = dead/too-slow stream → hand off to
     // the next source via onError (the failover). Re-armed on each Resolusi change.
@@ -577,7 +688,7 @@ private fun ExoStage(
         delay(12_000)
         if (exo.currentPosition <= 0L && !playing) onError()
     }
-    LaunchedEffect(controls, playing) { if (controls && playing) { delay(4000); controls = false } }
+    LaunchedEffect(controls, playing, menuOpen) { if (controls && playing && !menuOpen) { delay(4000); controls = false } }
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         AndroidView(
@@ -598,36 +709,38 @@ private fun ExoStage(
             },
         )
         if (buffering) CircularProgressIndicator(Modifier.align(Alignment.Center), color = Color.White)
-        // Manual OP/ED skip — no timestamp data for donghua, so a button shows in the likely
-        // intro/ending windows and jumps ahead (intro +85s, ending → near the end).
-        // Re-tappable through the first ~3 min (intro = anichin card + sponsor ad + OP, length varies),
-        // each tap +85s; fine-tune with the seekbar / double-tap ±10s.
-        val skipIntro = position in 5_000L..180_000L
-        val skipEnding = duration > 0L && position > duration - 150_000L
-        if (skipIntro || skipEnding) {
-            Box(
-                Modifier.align(Alignment.BottomEnd).padding(end = 16.dp, bottom = 56.dp)
-                    .clip(RoundedCornerShape(50)).background(Color.White.copy(0.9f))
-                    .clickable { if (skipIntro) exo.seekTo(position + 85_000L) else exo.seekTo((duration - 2_000L).coerceAtLeast(0L)) }
-                    .padding(horizontal = 14.dp, vertical = 8.dp),
-            ) {
-                Text(if (skipIntro) "Lewati Intro ⏭" else "Lewati Ending ⏭", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+        // OP/ED skip. With real AniSkip timestamps (anime) it's automatic when `skip_op` is on; when
+        // off, an accurate manual chip shows while inside a span. Without timestamps (donghua / no MAL
+        // match) fall back to the heuristic window chip (intro +85s, ending → near the end) — always
+        // manual; each tap re-skips, fine-tune with the seekbar / double-tap ±10s.
+        val s = skip
+        if (s != null) {
+            if (!autoSkipOn) {
+                val inOp = s.op?.let { position in it.startMs until it.endMs } == true
+                val inEd = s.ed?.let { position in it.startMs until it.endMs } == true
+                if (inOp) SkipChip("Lewati Intro ⏭") { exo.seekTo(s.op!!.endMs) }
+                else if (inEd) SkipChip("Lewati Ending ⏭") { exo.seekTo(if (duration > 0L) s.ed!!.endMs.coerceAtMost(duration - 1000L) else s.ed!!.endMs) }
             }
+        } else {
+            val skipIntro = position in 5_000L..180_000L
+            val skipEnding = duration > 0L && position > duration - 150_000L
+            if (skipIntro) SkipChip("Lewati Intro ⏭") { exo.seekTo(position + 85_000L) }
+            else if (skipEnding) SkipChip("Lewati Ending ⏭") { exo.seekTo((duration - 2_000L).coerceAtLeast(0L)) }
         }
         if (controls) {
             Box(Modifier.fillMaxSize().background(Color.Black.copy(0.35f)))
             TopBar(arg.title, arg.episodeLabel, onBack) {
-                SourcePill(servers, server, onPickServer, onExternal)
+                SourcePill(servers, server, onPickServer, onExternal, onOpenChange = { menuOpen = it })
                 if (variants.size > 1) {
                     // Per-quality stream URLs (e.g. ok.ru, Rumble mp4 ladder).
                     Spacer(Modifier.width(8.dp))
-                    Pill("Resolusi", quality.label, variants, { it.label }, { it.label == quality.label }) { quality = it }
+                    Pill("Resolusi", quality.label, variants, { it.label }, { it.label == quality.label }, onOpenChange = { menuOpen = it }) { quality = it }
                 } else if (trackHeights.size > 1) {
                     // Single adaptive HLS stream — pick from the manifest's variant heights (+ Auto).
                     Spacer(Modifier.width(8.dp))
                     val opts = listOf<Int?>(null) + trackHeights
                     Pill("Resolusi", selHeight?.let { "${it}p" } ?: "Auto", opts,
-                        itemLabel = { it?.let { h -> "${h}p" } ?: "Auto" }, selected = { it == selHeight }) { autoReso = false; applyHeight(it) }
+                        itemLabel = { it?.let { h -> "${h}p" } ?: "Auto" }, selected = { it == selHeight }, onOpenChange = { menuOpen = it }) { autoReso = false; applyHeight(it) }
                 }
             }
             // center play / pause
@@ -656,6 +769,39 @@ private fun ExoStage(
                 Text(fmtTime(duration), color = Color.White, fontSize = 12.sp)
             }
         }
+        // Auto-next countdown overlay (after the episode ends; cancelable).
+        if (nextIn > 0) {
+            Box(Modifier.fillMaxSize().background(Color.Black.copy(0.6f)), contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("Episode berikutnya dalam ${nextIn}s", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    Spacer(Modifier.height(14.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Box(
+                            Modifier.clip(RoundedCornerShape(50)).background(Color.White.copy(0.18f))
+                                .clickable { cancelNext = true; nextIn = -1 }.padding(horizontal = 18.dp, vertical = 10.dp),
+                        ) { Text("Batal", color = Color.White, fontSize = 13.sp) }
+                        Box(
+                            Modifier.clip(RoundedCornerShape(50)).background(Color.White)
+                                .clickable { onNext() }.padding(horizontal = 18.dp, vertical = 10.dp),
+                        ) { Text("Tonton sekarang ⏭", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 13.sp) }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** The rounded "Lewati Intro/Ending" pill, bottom-end. Used for both the AniSkip-driven manual skip
+ *  and the heuristic fallback. */
+@Composable
+private fun BoxScope.SkipChip(label: String, onClick: () -> Unit) {
+    Box(
+        Modifier.align(Alignment.BottomEnd).padding(end = 16.dp, bottom = 56.dp)
+            .clip(RoundedCornerShape(50)).background(Color.White.copy(0.9f))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 8.dp),
+    ) {
+        Text(label, color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 12.sp)
     }
 }
 
@@ -675,7 +821,8 @@ private fun WebStage(
 ) {
     var barVisible by remember { mutableStateOf(true) }
     var fullscreen by remember { mutableStateOf(false) }
-    LaunchedEffect(barVisible, fullscreen) { if (barVisible && !fullscreen) { delay(4000); barVisible = false } }
+    var menuOpen by remember { mutableStateOf(false) }
+    LaunchedEffect(barVisible, fullscreen, menuOpen) { if (barVisible && !fullscreen && !menuOpen) { delay(4000); barVisible = false } }
     LaunchedEffect(fullscreen) { if (fullscreen) barVisible = false }
     val allowHost = remember(server.embedUrl) {
         runCatching { coreDomain(java.net.URI(server.embedUrl).host.orEmpty()) }.getOrDefault("")
@@ -704,7 +851,7 @@ private fun WebStage(
         }
         if (!fullscreen) {
             if (barVisible) {
-                TopBar(arg.title, arg.episodeLabel, onBack) { SourcePill(servers, server, onPickServer, onExternal) }
+                TopBar(arg.title, arg.episodeLabel, onBack) { SourcePill(servers, server, onPickServer, onExternal, onOpenChange = { menuOpen = it }) }
             } else {
                 Box(Modifier.align(Alignment.TopStart).fillMaxWidth().height(36.dp).clickable { barVisible = true })
             }
@@ -730,6 +877,7 @@ private fun WebPlayerStage(
     servers: List<VideoServer>,
     current: VideoServer,
     onPickServer: (VideoServer) -> Unit,
+    onServerFailed: () -> Boolean,
     onBack: () -> Unit,
     onExternal: () -> Unit,
 ) {
@@ -741,7 +889,24 @@ private fun WebPlayerStage(
     var fullscreen by remember { mutableStateOf(false) }
     var qualities by remember { mutableStateOf<List<String>>(emptyList()) }
     var qualityIdx by remember { mutableStateOf(0) }
-    var started by remember { mutableStateOf(false) }
+    var started by remember(embedUrl) { mutableStateOf(false) }
+    // No more servers to try AND this one never started — show a terminal state instead of an endless
+    // "Menyiapkan video…" spinner.
+    var dead by remember(embedUrl) { mutableStateOf(false) }
+    var reload by remember(embedUrl) { mutableStateOf(0) }
+
+    // Watchdog: JWPlayer/Dailymotion can fail to play (e.g. JW error 232404 — dead/geo-blocked playlist)
+    // with no JS error we can observe, so a time budget guards the load. If no frame has rolled, hand off
+    // to the next server (same failover as ExoStage/SniffStage); when none remain, stop spinning and let
+    // the user open externally / go back instead of hanging forever.
+    LaunchedEffect(embedUrl, reload) {
+        delay(20_000)
+        if (!started && !dead) { if (!onServerFailed()) dead = true }
+    }
+    if (dead) {
+        NoSourceBox(onRetry = { started = false; dead = false; reload++ }, onExternal = onExternal, onBack = onBack)
+        return
+    }
 
     // Poll the host's state (and keep its UI hidden) ~every 700ms.
     LaunchedEffect(web) {
@@ -770,7 +935,7 @@ private fun WebPlayerStage(
     fun toggle() = js(player.toggle)
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
-        key(embedUrl) {
+        key(embedUrl, reload) {
             AndroidView(
                 factory = { ctx ->
                     WebView(ctx).apply {
@@ -895,8 +1060,9 @@ private fun shortServerName(name: String): String =
 
 /** Source-server picker pill + dropdown (with an "open externally" tail). */
 @Composable
-private fun SourcePill(servers: List<VideoServer>, current: VideoServer, onPick: (VideoServer) -> Unit, onExternal: () -> Unit) {
+private fun SourcePill(servers: List<VideoServer>, current: VideoServer, onPick: (VideoServer) -> Unit, onExternal: () -> Unit, onOpenChange: (Boolean) -> Unit = {}) {
     var open by remember { mutableStateOf(false) }
+    LaunchedEffect(open) { onOpenChange(open) } // let the player pause its controls auto-hide while open
     Box {
         PillRow("Source", shortServerName(current.name)) { open = true }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }, properties = PopupProperties(focusable = false)) {
@@ -911,8 +1077,9 @@ private fun SourcePill(servers: List<VideoServer>, current: VideoServer, onPick:
 
 /** Generic labelled picker pill (used for Resolusi). */
 @Composable
-private fun <T> Pill(label: String, value: String, items: List<T>, itemLabel: (T) -> String, selected: (T) -> Boolean, onPick: (T) -> Unit) {
+private fun <T> Pill(label: String, value: String, items: List<T>, itemLabel: (T) -> String, selected: (T) -> Boolean, onOpenChange: (Boolean) -> Unit = {}, onPick: (T) -> Unit) {
     var open by remember { mutableStateOf(false) }
+    LaunchedEffect(open) { onOpenChange(open) } // let the player pause its controls auto-hide while open
     Box {
         PillRow(label, value) { open = true }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }, properties = PopupProperties(focusable = false)) {
@@ -1002,12 +1169,17 @@ private fun coreDomain(host: String): String =
  * click — we keep the user on the player). Stream requests are sub-resource/XHR, so unaffected.
  */
 private fun playerWebViewClient(allowHost: String) = object : WebViewClient() {
+    override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
+        if (isAdHost(request.url.host.orEmpty())) return emptyResponse()
+        return null
+    }
     override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
         val host = request.url.host.orEmpty()
         if (request.isForMainFrame && allowHost.isNotEmpty() && !host.endsWith(allowHost)) return true // block
         return false
     }
     override fun onPageFinished(view: WebView, url: String?) {
+        view.evaluateJavascript(STRIP_ADS_JS, null)
         view.evaluateJavascript(
             "(function(){try{var v=document.querySelector('video');" +
                 "if(v){v.muted=false;var p=v.play&&v.play();if(p&&p.catch){p.catch(function(){v.muted=true;v.play&&v.play();});}}" +
@@ -1028,7 +1200,11 @@ private fun speedRank(s: VideoServer): Int {
     val name = s.name.lowercase()
     return when {
         s.variants.isNotEmpty() -> 0
-        "desustream" in host || "filedon" in host || "googlevideo" in host || host.substringBefore('?').endsWith(".mp4") -> 1
+        // NontonAnimeID's native servers carry the embed-page URL here; it XOR-decodes to a direct
+        // googlevideo/.mp4/.m3u8 stream, so rank it with the other pre-resolved direct streams (not the
+        // "else" bucket, where it would lose the default pick to a third-party ok.ru mirror).
+        "desustream" in host || "filedon" in host || "googlevideo" in host ||
+            "kotakanimeid.link/video-embed" in host || host.substringBefore('?').endsWith(".mp4") -> 1
         isJwPlayerHost(s.embedUrl) || "ok.ru" in host || "okru" in name -> 2
         "filemoon" in host || "filelions" in host || "vidhide" in host || "lulustream" in host || "rumble" in host -> 3
         isDailymotionHost(s.embedUrl) || "[ads]" in name -> 5
