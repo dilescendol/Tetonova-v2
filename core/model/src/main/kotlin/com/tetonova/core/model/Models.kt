@@ -75,6 +75,8 @@ data class ForumThread(
     val thumb: Boolean = false,
     /** Real comments posted on this thread (the forum has no backend; this is the source of truth). */
     val comments: List<ForumReply> = emptyList(),
+    /** Author's cultivation realm (server-derived from level) — the forum level marker. */
+    val realm: String? = null,
 )
 data class ForumReply(
     val id: Int,
@@ -84,6 +86,8 @@ data class ForumReply(
     val votes: Int,
     val text: String,
     val nested: Boolean,
+    /** Author's cultivation realm (server-derived) — shown beside the comment author. */
+    val realm: String? = null,
 )
 
 /** Profile. */

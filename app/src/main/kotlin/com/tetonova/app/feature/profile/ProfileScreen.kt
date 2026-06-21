@@ -1,6 +1,12 @@
 package com.tetonova.app.feature.profile
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -21,10 +27,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -38,6 +46,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalContext
+import coil.compose.AsyncImage
+import com.tetonova.app.data.RealmTier
 import com.tetonova.app.data.TnData
 import com.tetonova.app.ui.AppState
 import com.tetonova.app.ui.DetailArg
@@ -62,24 +72,78 @@ import com.tetonova.core.model.RewardItem
 import com.tetonova.core.model.RewardState
 import com.tetonova.core.model.SampleData
 import com.tetonova.core.model.StatItem
+import kotlinx.coroutines.delay
 
 @Composable
 fun ProfileScreen(state: AppState) {
-    PageScroll(topInset = true) {
-        ProfileHero(signedIn = state.signedIn)
-        SectionHead(title = "Statistik nonton", sub = "30 hari terakhir")
-        StatGrid()
-        CollapseSection(title = "Reward Track", sub = "Naik level untuk membuka") { RewardTrack() }
-        CollapseSection(title = "Pencapaian", sub = "4 dari 6 terbuka") { BadgeWall() }
-        SectionHead(
-            title = "Library Lane",
-            sub = "Riwayat, ikutan & unduhan",
-            action = { TnGhostButton(text = "Buka Full Library", icon = "chevR") },
-        )
-        Library(onOpenDetail = state::openDetail)
-        SectionHead(title = "Akun & Aplikasi", sub = "Kelola akun, dukungan, dan pengaturan")
-        AccountFooter(state)
-        Spacer(Modifier.height(24.dp))
+    val ctx = LocalContext.current
+    // Pull fresh XP/level/streak/realm + achievements when Profile opens (best-effort).
+    LaunchedEffect(Unit) {
+        runCatching { TnData.refreshUserXp() }
+        runCatching { TnData.refreshAchievements() }
+    }
+    // Breakthrough: a realm crossing triggers the full "Tribulasi" overlay; a plain level-up just toasts.
+    var tribulation by remember { mutableStateOf<TnData.BreakthroughEvent?>(null) }
+    val breakthrough = TnData.breakthrough
+    LaunchedEffect(breakthrough) {
+        breakthrough?.let {
+            if (it.realmChanged) tribulation = it
+            else android.widget.Toast.makeText(ctx, "⚡ Naik level — ${it.realmName}", android.widget.Toast.LENGTH_LONG).show()
+            TnData.breakthrough = null
+        }
+    }
+    Box(Modifier.fillMaxSize()) {
+        PageScroll(topInset = true) {
+            ProfileHero(signedIn = state.signedIn)
+            SectionHead(title = "Statistik nonton", sub = "30 hari terakhir")
+            StatGrid()
+            CollapseSection(title = "Jalan Kultivasi", sub = "Naik level untuk membuka realm") { RewardTrack() }
+            val ach = TnData.achievements
+            val achSub = if (ach.isEmpty()) "Kumpulkan pencapaianmu" else "${ach.count { it.unlocked }} dari ${ach.size} terbuka"
+            CollapseSection(title = "Pencapaian", sub = achSub) { BadgeWall() }
+            SectionHead(
+                title = "Library Lane",
+                sub = "Riwayat, ikutan & unduhan",
+                action = { TnGhostButton(text = "Buka Full Library", icon = "chevR") },
+            )
+            Library(onOpenDetail = state::openDetail)
+            SectionHead(title = "Akun & Aplikasi", sub = "Kelola akun, dukungan, dan pengaturan")
+            AccountFooter(state)
+            Spacer(Modifier.height(24.dp))
+        }
+        tribulation?.let { TribulationOverlay(it) { tribulation = null } }
+    }
+}
+
+/** Full-screen lightning "Tribulasi" celebration shown when the user crosses into a new realm. */
+@Composable
+private fun TribulationOverlay(event: TnData.BreakthroughEvent, onDone: () -> Unit) {
+    val c = TnTheme.colors
+    val appear = remember { Animatable(0.6f) }
+    LaunchedEffect(Unit) { appear.animateTo(1f, tween(450)) }
+    LaunchedEffect(Unit) { delay(3000); onDone() }
+    val flash = rememberInfiniteTransition(label = "tribulasi")
+    val bolt by flash.animateFloat(
+        initialValue = 0.25f, targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(230), RepeatMode.Reverse), label = "bolt",
+    )
+    Box(
+        Modifier.fillMaxSize().background(Color.Black.copy(0.85f)).clickable { onDone() },
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+            modifier = Modifier.graphicsLayer { scaleX = appear.value; scaleY = appear.value; alpha = appear.value },
+        ) {
+            Text("⚡", fontSize = 72.sp, modifier = Modifier.graphicsLayer { alpha = bolt })
+            Text("TEROBOSAN!", color = Color.White, fontWeight = FontWeight.ExtraBold, fontSize = 32.sp)
+            Box(
+                Modifier.clip(RoundedCornerShape(TnRadii.pill)).tnGradient(gradColors(0)).padding(horizontal = 16.dp, vertical = 7.dp),
+            ) { Text(event.realmName, color = Color.White, fontWeight = FontWeight.ExtraBold, fontSize = 15.sp) }
+            Text("Tribulasi dilalui · Lv.${event.level}", color = Color.White.copy(0.85f), fontSize = 13.sp)
+            Text("⚡  ⚡  ⚡", color = c.rose, fontSize = 26.sp, modifier = Modifier.graphicsLayer { alpha = bolt })
+        }
     }
 }
 
@@ -87,6 +151,18 @@ fun ProfileScreen(state: AppState) {
 @Composable
 private fun ProfileHero(signedIn: Boolean) {
     val banner = TnBanners.first { it.id == "grape" }
+    // Live cultivation identity (falls back to a fresh Manusia Fana / Lv.1 cultivator when offline).
+    val xp = TnData.userXp
+    val realm = xp?.realm
+    val level = xp?.level ?: 1
+    val realmName = realm?.displayName ?: "Manusia Fana"
+    val streak = xp?.streakDays ?: 0
+    val into = xp?.xpIntoLevel ?: 0
+    val need = xp?.xpForNextLevel ?: 0
+    val frac = if (need > 0) (into.toFloat() / need).coerceIn(0f, 1f) else 1f
+    // Equipped frame (chosen from any reached realm) overrides the current realm's frame.
+    val frameRealmId = xp?.equippedFrame?.ifBlank { null } ?: realm?.realmId
+    val frameUrl = frameRealmId?.let { id -> TnData.realms.firstOrNull { it.realmId == id }?.frameUrl }
     Box(
         Modifier
             .fillMaxWidth()
@@ -99,7 +175,7 @@ private fun ProfileHero(signedIn: Boolean) {
         }
         Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                LevelRing(letter = "R")
+                LevelRing(letter = "R", level = level, frameUrl = frameUrl)
                 Column {
                     Text("Selamat datang kembali · @rafzhx", color = Color.White.copy(0.82f), fontSize = 12.sp)
                     Text("Rafa Nova", color = Color.White, fontWeight = FontWeight.ExtraBold, fontSize = 24.sp)
@@ -109,16 +185,19 @@ private fun ProfileHero(signedIn: Boolean) {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 HeroPill("cloud", if (signedIn) "Sinkron aktif" else "Masuk untuk sinkron")
                 HeroPill("sparkle", "Premium · 40 source", filled = true)
-                HeroPill("flame2", "37 hari streak")
+                HeroPill("flame2", if (streak > 0) "$streak hari streak" else "Mulai streak")
+                val freezes = xp?.streakFreezes ?: 0
+                if (freezes > 0) HeroPill("shield", "$freezes Pil Penjaga Qi", filled = true)
                 HeroPill("star", "Top 5% kontributor")
             }
+            // Cultivation realm + breakthrough progress (was a hardcoded Lv./XP line).
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("Lv.5 · 920 / 1.180 XP", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                    Text("Hadiah berikutnya: Rose Frame ✨", color = Color.White.copy(0.85f), fontSize = 11.sp)
+                    Text("$realmName · Lv.$level", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Text(if (need > 0) "$into / $need XP menuju terobosan" else "Realm puncak tercapai", color = Color.White.copy(0.85f), fontSize = 11.sp)
                 }
                 Box(Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(TnRadii.pill)).background(Color.White.copy(0.22f))) {
-                    Box(Modifier.fillMaxWidth(0.78f).fillMaxHeight().clip(RoundedCornerShape(TnRadii.pill)).background(Color.White))
+                    Box(Modifier.fillMaxWidth(frac).fillMaxHeight().clip(RoundedCornerShape(TnRadii.pill)).background(Color.White))
                 }
             }
         }
@@ -126,7 +205,7 @@ private fun ProfileHero(signedIn: Boolean) {
 }
 
 @Composable
-private fun LevelRing(letter: String) {
+private fun LevelRing(letter: String, level: Int = 1, frameUrl: String? = null) {
     val frame = TnFrames.first { it.id == "rose" }
     Box(contentAlignment = Alignment.Center) {
         Box(Modifier.size(84.dp).clip(CircleShape).background(frame.ring), contentAlignment = Alignment.Center) {
@@ -134,10 +213,14 @@ private fun LevelRing(letter: String) {
                 Text(letter, color = Color.White, fontWeight = FontWeight.ExtraBold, fontSize = 30.sp)
             }
         }
+        // The current realm's frame cosmetic (when uploaded) wraps the avatar; else the rose ring above.
+        if (frameUrl != null) {
+            AsyncImage(model = frameUrl, contentDescription = null, modifier = Modifier.size(92.dp))
+        }
         Box(
             Modifier.align(Alignment.BottomCenter).graphicsLayer(translationY = 10f)
                 .clip(RoundedCornerShape(TnRadii.pill)).background(TnTheme.colors.rose).padding(horizontal = 8.dp, vertical = 2.dp),
-        ) { Text("Lv.5", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.ExtraBold) }
+        ) { Text("Lv.$level", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.ExtraBold) }
     }
 }
 
@@ -157,9 +240,24 @@ private fun StatGrid() {
     // 4 tiles in one row stays tight on a phone, so sizes follow the design's phone
     // scale (value 18sp, delta 9.5sp, 9dp side padding) — otherwise a value + 3-char
     // delta like "1.3k +24" overflows and clips. See device.css `.stat` phone rules.
+    val xp = TnData.userXp
+    val s = xp?.stats30d
+    val stats = if (s != null) listOf(
+        StatItem("Jam nonton", fmtHours(s.watchHours), null, "play", 0),
+        StatItem("Episode", s.episodes.toString(), null, "eye", 6),
+        StatItem("Hari streak", xp.streakDays.toString(), null, "flame2", 4),
+        StatItem("Episode selesai", s.episodesCompleted.toString(), null, "check", 2),
+    ) else SampleData.stats
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        SampleData.stats.forEach { s -> StatTile(s, Modifier.weight(1f)) }
+        stats.forEach { s2 -> StatTile(s2, Modifier.weight(1f)) }
     }
+}
+
+/** Compact hour label for the stat tile: whole hours once past 10h, one decimal below. */
+private fun fmtHours(h: Double): String = when {
+    h <= 0.0 -> "0"
+    h >= 10.0 -> "${h.toInt()}h"
+    else -> String.format(java.util.Locale.US, "%.1fh", h)
 }
 
 @Composable
@@ -201,14 +299,65 @@ private fun CollapseSection(title: String, sub: String, content: @Composable () 
 
 @Composable
 private fun RewardTrack() {
+    val ladder = TnData.realms
+    if (ladder.isEmpty()) {
+        // Realm ladder not loaded yet (offline / first run) → keep the bundled sample track.
+        LazyRow(modifier = Modifier.bleedEnd(20.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            items(SampleData.rewards.size) { i -> RewardNode(SampleData.rewards[i]) }
+        }
+        return
+    }
+    val xp = TnData.userXp
+    val level = xp?.level ?: 1
+    val equippedId = xp?.equippedFrame?.ifBlank { null } ?: xp?.realm?.realmId
+    val listState = rememberLazyListState()
+    val currentIdx = ladder.indexOfFirst { level in it.minLevel..it.maxLevel }.coerceAtLeast(0)
+    // Auto-scroll the path to the cultivator's current realm.
+    LaunchedEffect(currentIdx, ladder.size) { runCatching { listState.animateScrollToItem(currentIdx) } }
+    LazyRow(state = listState, modifier = Modifier.bleedEnd(20.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        items(ladder.size) { i ->
+            val r = ladder[i]
+            val state = when {
+                level in r.minLevel..r.maxLevel -> RewardState.NEXT      // current realm
+                level > r.maxLevel -> RewardState.CLAIMED                 // passed
+                else -> RewardState.LOCKED                                // not yet reached
+            }
+            RealmNode(r, state, grad = i % 8, equipped = r.realmId == equippedId, onClick = {
+                if (state != RewardState.LOCKED) TnData.equipFrame(r.realmId) // wear a reached realm's frame
+            })
+        }
+    }
+}
+
+@Composable
+private fun RealmNode(r: RealmTier, state: RewardState, grad: Int, equipped: Boolean, onClick: () -> Unit) {
     val c = TnTheme.colors
-    LazyRow(
-        modifier = Modifier.bleedEnd(20.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    val locked = state == RewardState.LOCKED
+    Column(
+        Modifier.width(120.dp).clip(RoundedCornerShape(TnRadii.md)).background(c.surface)
+            .border(if (equipped) 2.dp else 1.dp, if (equipped) c.rose else c.line, RoundedCornerShape(TnRadii.md))
+            .then(if (!locked) Modifier.clickable { onClick() } else Modifier)
+            .padding(14.dp),
+        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        items(SampleData.rewards.size) { i ->
-            val r = SampleData.rewards[i]
-            RewardNode(r)
+        Box(
+            Modifier.size(46.dp).clip(RoundedCornerShape(TnRadii.sm)).then(if (locked) Modifier.background(c.surface3) else Modifier.tnGradient(gradColors(grad))),
+            contentAlignment = Alignment.Center,
+        ) {
+            // The realm's badge emblem (cosmetic) when uploaded; else a gradient tile + sparkle/lock icon.
+            if (r.badgeUrl != null && !locked) AsyncImage(model = r.badgeUrl, contentDescription = null, modifier = Modifier.size(34.dp))
+            else TnIcon(if (locked) "lock" else "sparkle", size = 23.dp, tint = if (locked) c.faint else Color.White)
+        }
+        Text("Lv.${r.minLevel}", color = c.muted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+        Text(r.displayId, color = c.ink, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+        val (bg, fg, label) = when {
+            equipped -> Triple(c.rose, Color.White, "Dipakai")
+            state == RewardState.CLAIMED -> Triple(c.roseSoft, c.roseDeep, "Tercapai")
+            state == RewardState.NEXT -> Triple(c.rose, Color.White, "Sekarang")
+            else -> Triple(c.surface3, c.muted, "Terkunci")
+        }
+        Box(Modifier.clip(RoundedCornerShape(TnRadii.pill)).background(bg).padding(horizontal = 9.dp, vertical = 3.dp)) {
+            Text(label, color = fg, fontSize = 10.sp, fontWeight = FontWeight.Bold)
         }
     }
 }
@@ -240,11 +389,20 @@ private fun RewardNode(r: RewardItem) {
 
 @Composable
 private fun BadgeWall() {
+    val ach = TnData.achievements
+    // Hidden + still-locked achievements show as "???"; everything else binds live.
+    val items = if (ach.isEmpty()) SampleData.badges else ach.map { a ->
+        BadgeItem(
+            name = if (a.hidden && !a.unlocked) "???" else a.name,
+            desc = if (a.hidden && !a.unlocked) "Rahasia" else a.desc,
+            icon = a.icon, grad = a.grad, locked = !a.unlocked,
+        )
+    }
     LazyRow(
         modifier = Modifier.bleedEnd(20.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        items(SampleData.badges.size) { i -> BadgeTile(SampleData.badges[i], Modifier.width(120.dp)) }
+        items(items.size) { i -> BadgeTile(items[i], Modifier.width(120.dp)) }
     }
 }
 

@@ -75,9 +75,11 @@ import com.tetonova.core.scraper.LiveSource
 import com.tetonova.core.scraper.StreamExtractor
 import com.tetonova.core.scraper.StreamVariant
 import com.tetonova.core.scraper.VideoServer
+import com.tetonova.app.data.Heartbeat
 import com.tetonova.app.data.SettingsStore
 import com.tetonova.app.data.SkipResolver
 import com.tetonova.app.data.SkipTimes
+import com.tetonova.app.data.TnData
 import com.tetonova.app.data.WatchProgressStore
 import com.tetonova.app.data.WebViewGate
 import com.tetonova.app.data.download.DownloadCenter
@@ -542,6 +544,24 @@ private fun ExoStage(
     dataSourceFactory: DataSource.Factory? = null,
 ) {
     val context = LocalContext.current
+    // ── Watch telemetry: collect playback heartbeats → server XP engine (cultivation / Jalan Kultivasi).
+    // The server validates the deltas (skip/idle/background filtered), gates XP at 70% real watch time,
+    // and caps per item — see WatchSessionRepository. Plain mutableListOf (not snapshot state): mutated
+    // only from the IO poll loop, never read by composition.
+    val sessionId = remember(arg.url) { java.util.UUID.randomUUID().toString() }
+    val sessionStartRt = remember(arg.url) { android.os.SystemClock.elapsedRealtime() }
+    val heartbeats = remember(arg.url) { mutableListOf<Heartbeat>() }
+    var lastInteractionAt by remember(arg.url) { mutableLongStateOf(System.currentTimeMillis()) }
+    val watchSourceId = remember(arg.url) { TnData.sourceIdForUrl(arg.url.orEmpty()) }
+    val watchEpisodeId = remember(arg.url) { TnData.episodeIdForUrl(arg.url.orEmpty()) }
+    fun flushHeartbeats() {
+        if (heartbeats.size < 2) return
+        TnData.reportWatchSession(sessionId, watchEpisodeId, watchSourceId, heartbeats.toList())
+        val last = heartbeats.last()
+        heartbeats.clear()
+        heartbeats.add(last) // keep the last beat so the next batch's cross-flush realtime delta still counts
+    }
+
     // Default to the highest resolution (4K→1080→720→480→360), robust to label variants (4K/UHD/FHD/HD).
     var quality by remember(variants) { mutableStateOf(variants.maxByOrNull { resoHeight(it.label) } ?: variants.first()) }
     val trackSelector = remember { DefaultTrackSelector(context) }
@@ -627,6 +647,7 @@ private fun ExoStage(
             // Remember where we left off (online + offline) so reopening resumes here.
             val pos = exo.currentPosition; val dur = exo.duration
             if (dur > 0L && pos > 0L) WatchProgressStore.save(arg.url, pos, dur)
+            flushHeartbeats() // send the tail of this watch session before tearing down
             exo.removeListener(l); exo.release()
         }
     }
@@ -668,6 +689,22 @@ private fun ExoStage(
             }
             // Persist watch position ~every 5s so reopening resumes (online + offline).
             if (++saveTick % 10 == 0 && duration > 0L && position > 0L) WatchProgressStore.save(arg.url, position, duration)
+            // Emit a watch-telemetry heartbeat ~every 5s; flush the batch to the panel ~every 30s.
+            if (saveTick % 10 == 0 && position > 0L) {
+                heartbeats.add(
+                    Heartbeat(
+                        capturedAt = System.currentTimeMillis(),
+                        playheadMs = position,
+                        realtimeElapsedMs = android.os.SystemClock.elapsedRealtime() - sessionStartRt,
+                        playbackRate = exo.playbackParameters.speed.toDouble(),
+                        isForeground = true,
+                        lastInteractionMs = lastInteractionAt,
+                        episodeDurationMs = duration.coerceAtLeast(0L),
+                    )
+                )
+                if (heartbeats.size > 100) heartbeats.subList(0, heartbeats.size - 100).clear()
+            }
+            if (saveTick % 60 == 0) flushHeartbeats()
             delay(500)
         }
     }
@@ -695,7 +732,7 @@ private fun ExoStage(
             factory = { PlayerView(it).apply { player = exo; useController = false; setShutterBackgroundColor(android.graphics.Color.BLACK) } },
             modifier = Modifier.fillMaxSize().pointerInput(Unit) {
                 detectTapGestures(
-                    onTap = { controls = !controls },
+                    onTap = { controls = !controls; lastInteractionAt = System.currentTimeMillis() },
                     onDoubleTap = { off ->
                         val w = size.width
                         when {
@@ -704,24 +741,17 @@ private fun ExoStage(
                             else -> exo.playWhenReady = !exo.playWhenReady
                         }
                         controls = true
+                        lastInteractionAt = System.currentTimeMillis()
                     },
                 )
             },
         )
         if (buffering) CircularProgressIndicator(Modifier.align(Alignment.Center), color = Color.White)
-        // OP/ED skip. With real AniSkip timestamps (anime) it's automatic when `skip_op` is on; when
-        // off, an accurate manual chip shows while inside a span. Without timestamps (donghua / no MAL
-        // match) fall back to the heuristic window chip (intro +85s, ending → near the end) — always
-        // manual; each tap re-skips, fine-tune with the seekbar / double-tap ±10s.
-        val s = skip
-        if (s != null) {
-            if (!autoSkipOn) {
-                val inOp = s.op?.let { position in it.startMs until it.endMs } == true
-                val inEd = s.ed?.let { position in it.startMs until it.endMs } == true
-                if (inOp) SkipChip("Lewati Intro ⏭") { exo.seekTo(s.op!!.endMs) }
-                else if (inEd) SkipChip("Lewati Ending ⏭") { exo.seekTo(if (duration > 0L) s.ed!!.endMs.coerceAtMost(duration - 1000L) else s.ed!!.endMs) }
-            }
-        } else {
+        // OP/ED skip is gated ENTIRELY on the "Skip opening" toggle (`autoSkipOn`): OFF → no chip and
+        // no auto-skip at all. ON → anime with AniSkip data auto-seeks (handled in the poll loop, no
+        // chip needed); donghua / anime without data show a manual heuristic chip (intro +85s, ending →
+        // near the end), re-tappable; fine-tune with the seekbar / double-tap ±10s.
+        if (autoSkipOn && skip == null) {
             val skipIntro = position in 5_000L..180_000L
             val skipEnding = duration > 0L && position > duration - 150_000L
             if (skipIntro) SkipChip("Lewati Intro ⏭") { exo.seekTo(position + 85_000L) }
@@ -762,7 +792,7 @@ private fun ExoStage(
                 Text(fmtTime(position), color = Color.White, fontSize = 12.sp)
                 Slider(
                     value = if (duration > 0) (position.toFloat() / duration).coerceIn(0f, 1f) else 0f,
-                    onValueChange = { f -> if (duration > 0) { val p = (f * duration).toLong(); position = p; exo.seekTo(p) } },
+                    onValueChange = { f -> if (duration > 0) { val p = (f * duration).toLong(); position = p; exo.seekTo(p); lastInteractionAt = System.currentTimeMillis() } },
                     modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
                     colors = SliderDefaults.colors(thumbColor = Color.White, activeTrackColor = Color.White, inactiveTrackColor = Color.White.copy(0.3f)),
                 )

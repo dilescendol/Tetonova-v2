@@ -23,12 +23,15 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -43,7 +46,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.tetonova.app.data.ForumStore
+import com.tetonova.app.data.FPost
+import com.tetonova.app.data.FThread
+import com.tetonova.app.data.TnData
 import com.tetonova.app.ui.PageScroll
 import com.tetonova.app.ui.TnPrimaryButton
 import com.tetonova.app.ui.bleedEnd
@@ -57,55 +62,95 @@ import com.tetonova.core.designsystem.theme.HeroGradientColors
 import com.tetonova.core.designsystem.theme.TnRadii
 import com.tetonova.core.designsystem.theme.TnTheme
 import com.tetonova.core.designsystem.tnGradient
+import com.tetonova.core.model.ForumCategory
 import com.tetonova.core.model.ForumReply
 import com.tetonova.core.model.ForumThread
-import com.tetonova.core.model.SampleData
 import com.tetonova.core.model.TagChip
+import kotlinx.coroutines.launch
 
-/** The signed-in account. The forum is single-user/local today, but deletes are gated on this so
- *  that — once it goes multi-user — you can only remove your OWN threads/comments, never someone
- *  else's. Replace with the real session identity when auth lands. */
+/** Self-declared display name for posts/votes (no real login yet — matches the Profile @handle). */
 private const val CURRENT_USER = "rafzhx"
+
+/** Forum categories — must match the panel's accepted set (PublicApi::isForumCategory). */
+private val FORUM_CATS = listOf(
+    ForumCategory("all", "Semua", "globe"),
+    ForumCategory("umum", "Umum", "comment"),
+    ForumCategory("tanya", "Tanya", "help"),
+    ForumCategory("request-source", "Request", "sparkle"),
+    ForumCategory("bug", "Bug", "shield"),
+    ForumCategory("off-topic", "Off-topic", "star"),
+    ForumCategory("appeal", "Banding", "info"),
+)
 
 @Composable
 fun ForumScreen() {
-    // Real, user-created threads only — loaded from local storage; no synthetic/sample content.
-    var threads by remember { mutableStateOf(ForumStore.load()) }
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    // Threads now come from the panel forum API (shared, server-authoritative). XP is awarded
+    // server-side on clean posts/replies/upvotes; we refresh the cultivation XP after each action.
+    var threads by remember { mutableStateOf<List<ForumThread>>(emptyList()) }
+    var loading by remember { mutableStateOf(true) }
     var openThread by remember { mutableStateOf<ForumThread?>(null) }
     var composing by remember { mutableStateOf(false) }
     var sort by remember { mutableStateOf("new") }
     var category by remember { mutableStateOf("all") }
-    val votes = remember { mutableStateOf(setOf<Int>()) }
+    val voted = remember { mutableStateOf(setOf<Int>()) }
 
-    // Persist every change so posts & comments survive restarts (this store IS the forum's data).
-    fun persist(list: List<ForumThread>) { threads = list; ForumStore.save(list) }
+    val installId = TnData.deviceInstallId
+    val level = TnData.userXp?.level ?: 1
+    val xpInto = TnData.userXp?.xpIntoLevel ?: 0
+    fun panelSort() = when (sort) { "new" -> "newest"; "top" -> "top"; else -> "hot" }
+
+    suspend fun reload() {
+        loading = true
+        threads = TnData.forumApi()?.listThreads(panelSort(), category, installId)?.map { it.toModel() } ?: emptyList()
+        loading = false
+    }
+    LaunchedEffect(sort, category) { reload() }
+
+    // Vote (toggle): up → clear. Upvotes credit the thread AUTHOR's XP server-side; the optimistic
+    // toggle gives instant feedback, the real tally lands on the next reload.
+    fun doVote(t: ForumThread) {
+        val already = voted.value.contains(t.id)
+        scope.launch {
+            val r = TnData.forumApi()?.vote(t.id, installId, CURRENT_USER, if (already) "clear" else "up", level, xpInto)
+            if (r?.success == true) voted.value = voted.value.toggle(t.id)
+            else r?.message?.let { Toast.makeText(ctx, it, Toast.LENGTH_SHORT).show() }
+        }
+    }
 
     val thread = openThread
     if (thread != null) {
         BackHandler { openThread = null }
         ThreadDetail(
             thread = thread,
-            voted = votes.value.contains(thread.id),
-            onVote = { votes.value = votes.value.toggle(thread.id) },
+            voted = voted.value.contains(thread.id),
+            onVote = { doVote(thread) },
             onBack = { openThread = null },
             onReply = { text ->
-                val reply = ForumReply(
-                    id = (thread.comments.maxOfOrNull { it.id } ?: 0) + 1,
-                    user = CURRENT_USER, role = "op", time = "Baru saja", votes = 0, text = text, nested = false,
-                )
-                val updated = thread.copy(comments = thread.comments + reply, replies = thread.comments.size + 1)
-                persist(threads.map { if (it.id == updated.id) updated else it })
-                openThread = updated
+                scope.launch {
+                    val r = TnData.forumApi()?.createPost(thread.id, installId, CURRENT_USER, text, level, xpInto)
+                    r?.message?.let { Toast.makeText(ctx, it, Toast.LENGTH_SHORT).show() }
+                    if (r?.success == true) {
+                        TnData.refreshUserXp()
+                        TnData.forumApi()?.getThread(thread.id, installId)?.let { (t, posts) -> openThread = t.toModel(posts) }
+                    }
+                }
             },
             onDelete = {
-                persist(threads.filterNot { it.id == thread.id })
-                openThread = null
+                scope.launch {
+                    val r = TnData.forumApi()?.deleteThread(thread.id, installId)
+                    if (r?.success == true) { openThread = null; reload() }
+                    else Toast.makeText(ctx, r?.message ?: "Gagal menghapus", Toast.LENGTH_SHORT).show()
+                }
             },
             onDeleteComment = { replyId ->
-                val left = thread.comments.filterNot { it.id == replyId }
-                val updated = thread.copy(comments = left, replies = left.size)
-                persist(threads.map { if (it.id == updated.id) updated else it })
-                openThread = updated
+                scope.launch {
+                    val r = TnData.forumApi()?.deletePost(replyId, installId)
+                    if (r?.success == true) {
+                        TnData.forumApi()?.getThread(thread.id, installId)?.let { (t, posts) -> openThread = t.toModel(posts) }
+                    } else Toast.makeText(ctx, r?.message ?: "Gagal menghapus", Toast.LENGTH_SHORT).show()
+                }
             },
         )
         return
@@ -115,35 +160,29 @@ fun ForumScreen() {
         NewThreadScreen(
             onClose = { composing = false },
             onPost = { title, body, cat, tags ->
-                val new = ForumThread(
-                    id = (threads.maxOfOrNull { it.id } ?: 0) + 1,
-                    pinned = false, cat = cat, title = title, excerpt = body,
-                    user = CURRENT_USER, role = "op", time = "Baru saja",
-                    votes = 0, replies = 0, views = "0", tags = tags, art = 0, thumb = false,
-                )
-                persist(listOf(new) + threads)
-                category = "all"   // visible regardless of the active category filter
-                sort = "new"
-                composing = false
+                scope.launch {
+                    val r = TnData.forumApi()?.createThread(installId, CURRENT_USER, title, body, cat, tags.map { it.label }, level, xpInto)
+                    when {
+                        r == null -> Toast.makeText(ctx, "Panel tidak tersedia", Toast.LENGTH_SHORT).show()
+                        r.success -> {
+                            Toast.makeText(ctx, r.message ?: "Thread diposting", Toast.LENGTH_SHORT).show()
+                            TnData.refreshUserXp()
+                            composing = false; category = "all"; sort = "new"; reload()
+                        }
+                        else -> Toast.makeText(ctx, r.message ?: "Gagal posting", Toast.LENGTH_LONG).show()
+                    }
+                }
             },
         )
         return
     }
 
-    val filtered = threads.filter { category == "all" || it.cat == category }
-    val pinned = filtered.filter { it.pinned }
-    val rest = filtered.filter { !it.pinned }.let {
-        when (sort) {
-            "top" -> it.sortedByDescending { t -> t.votes }
-            "new" -> it.sortedByDescending { t -> t.id }
-            else -> it.sortedByDescending { t -> t.votes + t.replies * 3 }
-        }
-    }
-    val ordered = pinned + rest
+    val pinned = threads.filter { it.pinned }
+    val ordered = pinned + threads.filter { !it.pinned } // server already sorts; pinned float to top
 
     Box(Modifier.fillMaxWidth()) {
         PageScroll {
-            ForumHero(threadCount = threads.size, commentCount = threads.sumOf { it.comments.size })
+            ForumHero(threadCount = threads.size, commentCount = threads.sumOf { it.replies })
             Spacer(Modifier.height(12.dp))
             Segmented(
                 options = listOf("hot" to "Hot", "new" to "Terbaru", "top" to "Top"),
@@ -156,18 +195,24 @@ fun ForumScreen() {
                 modifier = Modifier.bleedEnd(20.dp),
                 horizontalArrangement = Arrangement.spacedBy(9.dp),
             ) {
-                items(SampleData.forumCategories.size) { i ->
-                    val cat = SampleData.forumCategories[i]
+                items(FORUM_CATS.size) { i ->
+                    val cat = FORUM_CATS[i]
                     TnChip(text = cat.label, selected = category == cat.id, leadingIcon = cat.icon, onClick = { category = cat.id })
                 }
             }
             Spacer(Modifier.height(12.dp))
-            if (ordered.isEmpty()) {
-                ForumEmpty()
-            } else {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            when {
+                loading -> Box(Modifier.fillMaxWidth().padding(40.dp), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = TnTheme.colors.rose)
+                }
+                ordered.isEmpty() -> ForumEmpty()
+                else -> Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     ordered.forEach { t ->
-                        ThreadCard(t, voted = votes.value.contains(t.id), onVote = { votes.value = votes.value.toggle(t.id) }, onOpen = { openThread = t })
+                        ThreadCard(t, voted = voted.value.contains(t.id), onVote = { doVote(t) }, onOpen = {
+                            scope.launch {
+                                openThread = TnData.forumApi()?.getThread(t.id, installId)?.let { (ft, posts) -> ft.toModel(posts) } ?: t
+                            }
+                        })
                     }
                 }
             }
@@ -184,6 +229,39 @@ fun ForumScreen() {
 
 private fun Set<Int>.toggle(id: Int) = if (contains(id)) this - id else this + id
 
+/** Map a panel thread (+ optional loaded posts) to the UI model. */
+private fun FThread.toModel(posts: List<FPost> = emptyList()) = ForumThread(
+    id = id, pinned = isPinned, cat = category, title = title,
+    excerpt = content ?: "", user = authorName.ifBlank { "anon" },
+    role = null, time = relTime(createdAt), votes = upvotes - downvotes,
+    replies = replyCount, views = "", tags = tags.map { TagChip(it) }, art = 0, thumb = false,
+    comments = posts.map { it.toReply() }, realm = authorRealm.ifBlank { null },
+)
+
+private fun FPost.toReply() = ForumReply(
+    id = id, user = authorName.ifBlank { "anon" }, role = null,
+    time = relTime(createdAt), votes = 0, text = content, nested = parentPostId != null,
+    realm = authorRealm.ifBlank { null },
+)
+
+/** Relative time from a UTC "yyyy-MM-dd HH:mm:ss" (or ISO) timestamp. */
+private fun relTime(raw: String): String {
+    if (raw.isBlank()) return ""
+    val ms = runCatching {
+        val fmt = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.US)
+        fmt.timeZone = java.util.TimeZone.getTimeZone("UTC")
+        fmt.parse(raw.replace('T', ' ').take(19))?.time
+    }.getOrNull() ?: return ""
+    val diff = (System.currentTimeMillis() - ms).coerceAtLeast(0L)
+    val min = diff / 60000
+    return when {
+        min < 1 -> "Baru saja"
+        min < 60 -> "$min menit lalu"
+        min < 1440 -> "${min / 60} jam lalu"
+        else -> "${min / 1440} hari lalu"
+    }
+}
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun NewThreadScreen(
@@ -194,7 +272,7 @@ private fun NewThreadScreen(
     val context = LocalContext.current
     var title by remember { mutableStateOf("") }
     var body by remember { mutableStateOf("") }
-    var cat by remember { mutableStateOf("discussion") }
+    var cat by remember { mutableStateOf("umum") }
     var picked by remember { mutableStateOf(setOf<String>()) }
     val tagPresets = remember {
         listOf(
@@ -202,7 +280,7 @@ private fun NewThreadScreen(
             TagChip("Cultivation"), TagChip("Fan Art", "grape"), TagChip("Bantuan", "coral"), TagChip("Diskusi"),
         )
     }
-    val cats = remember { SampleData.forumCategories.filter { it.id != "all" } }
+    val cats = remember { FORUM_CATS.filter { it.id != "all" } }
 
     PageScroll {
         Spacer(Modifier.height(8.dp))
@@ -468,6 +546,20 @@ private fun FootStat(icon: String, value: String) {
     }
 }
 
+/** Small cultivation-realm marker shown beside a forum author's name. */
+@Composable
+private fun RealmChip(realm: String?) {
+    if (realm.isNullOrBlank()) return
+    val c = TnTheme.colors
+    Row(
+        Modifier.clip(RoundedCornerShape(TnRadii.pill)).background(c.roseTint).padding(horizontal = 7.dp, vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp),
+    ) {
+        TnIcon("sparkle", size = 10.dp, tint = c.roseDeep, filled = true)
+        Text(realm, color = c.roseDeep, fontSize = 10.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1)
+    }
+}
+
 @Composable
 fun RoleBadge(role: String?) {
     val c = TnTheme.colors
@@ -550,6 +642,7 @@ private fun ThreadDetail(
                     RoleBadge(thread.role)
                     Text("· ${thread.time}", color = c.muted, fontSize = 11.sp)
                 }
+                if (!thread.realm.isNullOrBlank()) { Spacer(Modifier.height(8.dp)); RealmChip(thread.realm) }
                 Spacer(Modifier.height(12.dp))
                 Text(thread.title, color = c.ink, fontWeight = FontWeight.ExtraBold, fontSize = 22.sp)
                 if (thread.tags.isNotEmpty()) {
@@ -617,6 +710,7 @@ private fun ThreadDetail(
                                     RoleBadge(r.role)
                                     Text("· ${r.time}", color = c.muted, fontSize = 11.sp)
                                 }
+                                if (!r.realm.isNullOrBlank()) { Spacer(Modifier.height(3.dp)); RealmChip(r.realm) }
                                 Spacer(Modifier.height(4.dp))
                                 Text(r.text, color = c.ink2, fontSize = 13.5.sp)
                             }

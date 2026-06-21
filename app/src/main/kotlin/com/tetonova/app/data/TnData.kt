@@ -95,6 +95,39 @@ object TnData {
     var panelVersion by mutableStateOf(0)
         private set
 
+    // ---------------- cultivation XP / realm (watch telemetry → server XP engine) ----------------
+
+    /** The user's live XP/level/streak/realm + 30-day stats from the panel (null until fetched). */
+    var userXp by mutableStateOf<UserXp?>(null)
+        private set
+
+    /** The cultivation realm ladder for the "Jalan Kultivasi" track (empty until fetched). */
+    var realms by mutableStateOf<List<RealmTier>>(emptyList())
+        private set
+
+    /** One-shot level-up event for the breakthrough toast; the UI reads it then clears it to null. */
+    var breakthrough by mutableStateOf<BreakthroughEvent?>(null)
+
+    data class BreakthroughEvent(val level: Int, val realmName: String, val realmChanged: Boolean)
+
+    /** Cultivation achievements (Pencapaian); server evaluates + persists unlocks on fetch. */
+    var achievements by mutableStateOf<List<Achievement>>(emptyList())
+        private set
+
+    /** Refresh achievements (best-effort) — called when Profile opens (eval is on-read server-side). */
+    suspend fun refreshAchievements() {
+        if (panelBase.isBlank() || telemetryToken.isBlank()) return
+        UserApi(panelBase).fetchAchievements(installId, telemetryToken)?.let { achievements = it }
+    }
+
+    /** Equip a reached realm's frame on the avatar, then refresh XP so the hero reflects it. */
+    fun equipFrame(realmId: String) {
+        if (panelBase.isBlank() || telemetryToken.isBlank()) return
+        liveScope.launch {
+            if (UserApi(panelBase).equipFrame(installId, realmId, telemetryToken)) refreshUserXp()
+        }
+    }
+
     suspend fun refreshFromPanel(panelUrl: String) {
         panelBase = panelUrl.trim().trimEnd('/')
         val resp = SourceApi(panelUrl).fetch()
@@ -112,7 +145,54 @@ object TnData {
         }
         if (resp.sources.isNotEmpty() || resp.supportMe != null) panelVersion++
         refreshTrending()
+        if (realms.isEmpty()) UserApi(panelBase).fetchRealms()?.takeIf { it.isNotEmpty() }?.let { realms = it }
+        refreshUserXp()
     }
+
+    /** Pull the user's XP/level/streak/realm; fires a breakthrough event when the level rises. */
+    suspend fun refreshUserXp() {
+        if (panelBase.isBlank() || telemetryToken.isBlank()) return
+        val xp = UserApi(panelBase).fetchXp(installId, telemetryToken) ?: return
+        val prev = userXp
+        userXp = xp
+        if (prev != null && xp.level > prev.level) {
+            breakthrough = BreakthroughEvent(
+                level = xp.level,
+                realmName = xp.realm?.displayName ?: "Level ${xp.level}",
+                realmChanged = xp.realm?.realmId != prev.realm?.realmId,
+            )
+        }
+    }
+
+    /** Upload a watch session's heartbeats, then refresh XP so the Profile reflects the new progress. */
+    fun reportWatchSession(sessionId: String, episodeId: String, sourceId: String, heartbeats: List<Heartbeat>) {
+        if (!hasPanel || telemetryToken.isBlank() || heartbeats.size < 2) return
+        liveScope.launch {
+            UserApi(panelBase).postWatchSession(installId, sessionId, episodeId, sourceId, heartbeats, telemetryToken)
+            refreshUserXp()
+        }
+    }
+
+    /** Forum client bound to the current panel base, or null when no panel is configured. */
+    fun forumApi(): ForumApi? = panelBase.takeIf { it.isNotBlank() }?.let { ForumApi(it) }
+
+    /** Anonymous per-install id, exposed for forum self-declared identity. */
+    val deviceInstallId: String get() = installId
+
+    /** Stable, sanitized source id for a watch URL — the panel source if known, else the host. */
+    fun sourceIdForUrl(url: String): String =
+        slugId(sourceForUrl(url)?.sourceId ?: hostOf(url) ?: "web", 120)
+
+    /** Stable, sanitized per-episode id for a watch URL (host + last path segment). */
+    fun episodeIdForUrl(url: String): String {
+        val host = hostOf(url) ?: "web"
+        val seg = runCatching { java.net.URI(url).path }.getOrNull().orEmpty()
+            .split('/').lastOrNull { it.isNotBlank() }.orEmpty()
+        return slugId("$host-$seg", 120)
+    }
+
+    private fun slugId(s: String, max: Int): String =
+        s.lowercase(Locale.ROOT).replace(Regex("[^a-z0-9._:-]+"), "-").trim('-').take(max).ifBlank { "x" }
 
     /** Pull the cross-user popular searches + trending content from the panel (best-effort). */
     private suspend fun refreshTrending() {

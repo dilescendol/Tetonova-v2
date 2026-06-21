@@ -6,7 +6,7 @@ import org.json.JSONObject
  * "Lanjut tonton" — the last playback position per episode, so reopening an episode resumes instead
  * of restarting. Keyed by the episode's source URL ([com.tetonova.app.ui.PlayerArg.url]); works the
  * same for online streaming and downloaded/offline playback. Backed by [SettingsStore] (one JSON
- * blob) following the same pattern as [ForumStore] — there is no backend, this is the source of truth.
+ * blob) — local-first resume state with no backend; this store is its source of truth.
  *
  * Bounded to [MAX] most-recent entries (LRU by `updatedAt`) so it can't grow without bound.
  */
