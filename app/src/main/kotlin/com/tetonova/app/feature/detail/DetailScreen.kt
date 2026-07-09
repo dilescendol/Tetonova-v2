@@ -54,6 +54,8 @@ import coil.compose.AsyncImage
 import com.tetonova.app.data.AnimeInfo
 import com.tetonova.app.data.CharacterInfo
 import com.tetonova.app.data.CoverResolver
+import com.tetonova.app.data.FollowedStore
+import com.tetonova.app.data.HistoryStore
 import com.tetonova.core.scraper.LiveDetail
 import com.tetonova.app.data.MovieInfo
 import com.tetonova.app.data.OmdbResolver
@@ -116,7 +118,7 @@ private fun DetailData.withOmdb(m: MovieInfo?): DetailData {
 private fun DetailData.withLive(live: LiveDetail?): DetailData {
     if (live == null) return this
     val eps = live.episodes.map { e ->
-        Episode(id = "e${e.num}", num = e.num, name = "Episode ${e.num}", dur = "± 24m", desc = "",
+        Episode(id = "e${e.num}", num = e.num, name = e.title.ifBlank { "Episode ${e.num}" }, dur = "± 24m", desc = "",
             progress = 0, art = (art + e.num) % 8, url = e.url, thumb = e.thumb)
     }
     // Donghua (Chinese animation) per the source's origin country / genre. MAL's episode count for a
@@ -147,6 +149,45 @@ private fun liveStatusId(raw: String): String = when {
     raw.contains("ongoing", true) || raw.contains("airing", true) || raw.contains("berlangsung", true) -> "Ongoing"
     raw.contains("completed", true) || raw.contains("tamat", true) || raw.contains("finished", true) -> "Completed"
     else -> raw
+}
+
+private fun episodeLabel(ep: Episode): String {
+    val raw = ep.name.trim()
+    if (raw.isBlank()) return "Episode ${ep.num}"
+    compactSpecialEpisodeLabel(raw)?.let { return it }
+    val sourceNoise = Regex("\\b(?:episode|eps?|ep|e|chapter|subtitle|sub\\s*indo|subbed|bahasa\\s+indonesia)\\b", RegexOption.IGNORE_CASE)
+    val episodeCode = Regex("^\\s*(?:e|ep)\\s*0*\\d+\\s*$", RegexOption.IGNORE_CASE)
+    return if (sourceNoise.containsMatchIn(raw) || episodeCode.matches(raw) || raw.length > 48) {
+        "Episode ${ep.num}"
+    } else {
+        raw
+    }
+}
+
+private fun compactSpecialEpisodeLabel(raw: String): String? {
+    val match = Regex("\\b(OVA|ONA|Special)\\s*0*(\\d{1,3})?\\b", RegexOption.IGNORE_CASE).find(raw) ?: return null
+    val kind = when (match.groupValues[1].lowercase()) {
+        "ova" -> "OVA"
+        "ona" -> "ONA"
+        else -> "Special"
+    }
+    val num = match.groupValues.getOrNull(2)?.toIntOrNull()
+    return if (num != null) "$kind $num" else kind
+}
+
+private fun episodeBadgeLabel(ep: Episode): String {
+    val label = episodeLabel(ep)
+    return if (label.contains("OVA", true) || label.contains("Special", true) || label.contains("ONA", true)) label else "EP ${ep.num}"
+}
+
+private fun episodePrefixLabel(ep: Episode): String {
+    val label = episodeLabel(ep)
+    return when {
+        label.contains("OVA", true) -> "OVA"
+        label.contains("Special", true) -> "SP"
+        label.contains("ONA", true) -> "ONA"
+        else -> "E${ep.num}"
+    }
 }
 
 /** Overlay MyAnimeList facts (status/episodes/rating/year/studio/genres) when we found a match.
@@ -202,6 +243,23 @@ private fun makeEps(d: DetailData): Pair<List<Episode>, Int> {
     return emptyList<Episode>() to 0
 }
 
+/**
+ * Single-video categories (JAV / JAV Cosplay / Uncensored, and 3D / Live2D one-shots on nekopoi) are
+ * ONE film, not a series — so the detail must not fake an episodic frame ("1 Episode", a "Tonton
+ * Episode 1" button, an Episode tab that then shows "belum tersedia"). Category-pure by design: a
+ * MOVIE badge or a category genre marks it single-video; regular (2D) Hentai keeps the episode UI.
+ */
+private fun DetailData.isSingleVideo(): Boolean {
+    if (badge.equals("Movie", true) || badge.equals("JAV", true)) return true
+    // Nekopoi standalone pages (JAV / 3D / L2D one-shots) are ONE video: a nekopoi URL that is neither
+    // a `/hentai/{slug}/` series nor an `-episode-N` page. This is the reliable signal — genre-based
+    // detection alone breaks when a bogus MAL match overwrites the real JAV/3D genres.
+    val u = url?.lowercase().orEmpty()
+    if (u.startsWith("http") && "nekopoi" in u && "/hentai/" !in u && "-episode-" !in u) return true
+    val singleCats = setOf("jav", "jav cosplay", "uncensored", "3d", "l2d", "live2d")
+    return genres.any { it.trim().lowercase() in singleCats }
+}
+
 private val ROSE = Color(0xFFEE7099)
 
 /** Live-scrape state for the detail page: distinguishes "still fetching" from "fetched, nothing
@@ -216,15 +274,18 @@ fun DetailScreen(arg: DetailArg, resumeEpisode: Int?, onBack: () -> Unit, onOpen
     val c = TnTheme.colors
     val context = LocalContext.current
     val base = remember(arg) { enrich(arg) }
+    // Nekopoi is adult (JAV / hentai / 3D): its titles fuzzy-match the WRONG MAL/OMDb entry (e.g. a
+    // JAV matched some anime → bogus "Avant Garde / Romance / 1963" metadata), so scrape web-only.
+    val adultSource = arg.url?.contains("nekopoi", ignoreCase = true) == true
     // Overlay MyAnimeList facts for anime/donghua. Movies & dramas (pusatfilm/oppadrama) aren't on
     // MAL — skip it so their detail metadata comes from the web instead of a wrong fuzzy match.
     val webOnly = arg.badge.equals("Movie", true) || arg.badge.equals("Drama", true) || arg.badge.equals("Series", true)
     val mal by produceState<AnimeInfo?>(null, arg.title) {
-        value = if (webOnly) null else runCatching { CoverResolver.info(arg.title) }.getOrNull()
+        value = if (webOnly || adultSource) null else runCatching { CoverResolver.info(arg.title) }.getOrNull()
     }
     // Movies & dramas pull their metadata (plot/rating/year/genres/cast/poster) from OMDb (IMDB).
     val omdb by produceState<MovieInfo?>(null, arg.title) {
-        value = if (webOnly) runCatching { OmdbResolver.info(arg.title) }.getOrNull() else null
+        value = if (webOnly && !adultSource) runCatching { OmdbResolver.info(arg.title) }.getOrNull() else null
     }
     // Scrape the source's own detail page (synopsis, status, genres, episodes, cover). Prefer the URL
     // the card carried; if it has none (a recommendation / bundled-catalog item), resolve one by
@@ -239,16 +300,19 @@ fun DetailScreen(arg: DetailArg, resumeEpisode: Int?, onBack: () -> Unit, onOpen
     val liveLoading = liveLoad is LiveLoad.Loading
     val d = remember(base, mal, omdb, live) { base.withMal(mal).withOmdb(omdb).withLive(live) }
     val (eps, curIdx) = remember(d) { makeEps(d) }
+    // Single-video (JAV / 3D / L2D): present movie-style — no Episode tab, "Tonton" not "Tonton
+    // Episode 1", play targets the film's own page directly.
+    val single = remember(d) { d.isSingleVideo() }
     // Episode list handed to the player so it can auto-advance (carries badge/malId for OP/ED skip).
-    val playlist = remember(eps) { eps.map { EpRef(it.num, "Episode ${it.num}", it.url) } }
+    val playlist = remember(eps) { eps.map { EpRef(it.num, episodeLabel(it), it.url) } }
     // Resume on the episode last played (returning from the player) when it exists in this list;
     // otherwise the progress-derived position, else the first episode.
     var current by remember(d) {
         mutableStateOf(resumeEpisode?.takeIf { rn -> eps.any { it.num == rn } } ?: eps.getOrNull(curIdx)?.num ?: 1)
     }
-    var tab by remember(d) { mutableStateOf("ep") }
-    var inList by remember(d) { mutableStateOf(false) }
-    var liked by remember(d) { mutableStateOf(false) }
+    var tab by remember(d) { mutableStateOf(if (single) "info" else "ep") }
+    // "Tambah ke daftar" (Followed) — persisted in FollowedStore so it really populates the Library.
+    var inList by remember(d) { mutableStateOf(FollowedStore.isFollowed(d.url)) }
     var sortAsc by remember(d) { mutableStateOf(true) }
 
     fun toast(msg: String) = Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
@@ -262,18 +326,34 @@ fun DetailScreen(arg: DetailArg, resumeEpisode: Int?, onBack: () -> Unit, onOpen
         val send = Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, text) }
         runCatching { context.startActivity(Intent.createChooser(send, "Bagikan")) }.onFailure { toast("Nggak bisa berbagi") }
     }
+    // Start playback AND log "Riwayat" history — a title counts as watched once the user actually
+    // plays it (not merely opening Detail). Keyed by the series page so all episodes map to one entry.
+    fun watch(p: PlayerArg) {
+        val key = d.url?.takeIf { it.startsWith("http") } ?: p.url?.takeIf { it.startsWith("http") }
+        if (key != null) HistoryStore.record(d.title, key, d.cover, d.badge, arg.sub, epUrl = p.url)
+        onOpenPlayer(p)
+    }
 
     BoxWithConstraints(Modifier.fillMaxSize().background(c.bg)) {
         val wide = maxWidth >= 600.dp
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
             Hero(
-                d, current, inList, liked, wide, onBack,
-                onToggleList = { inList = !inList; toast(if (inList) "Ditambahkan ke daftar" else "Dihapus dari daftar") },
-                onToggleLike = { liked = !liked; toast(if (liked) "Disukai" else "Suka dibatalkan") },
+                d, current, inList, wide, single, onBack,
+                onToggleList = {
+                    inList = !inList
+                    if (inList) FollowedStore.add(d.title, d.url, d.cover, d.badge, arg.sub)
+                    else FollowedStore.remove(d.url)
+                    toast(if (inList) "Ditambahkan ke daftar" else "Dihapus dari daftar")
+                },
                 onPlay = {
                     val ep = eps.firstOrNull { it.num == current }
-                    onOpenPlayer(PlayerArg(d.title, ep?.url ?: d.url, ep?.let { "Episode ${it.num}" }, ep?.num ?: current,
-                        badge = d.badge, malId = d.malId, playlist = playlist))
+                    // Single-video (JAV/3D/L2D): play the lone video with NO episode label/number/playlist,
+                    // so the player shows just the title (not a stray "Episode N" from a phantom marker).
+                    watch(PlayerArg(d.title, ep?.url ?: d.url,
+                        if (single) null else ep?.let { episodeLabel(it) },
+                        if (single) null else (ep?.num ?: current),
+                        badge = d.badge, malId = d.malId, playlist = if (single) emptyList() else playlist,
+                        vertical = TnData.isShortSource(ep?.url ?: d.url)))
                 },
                 onShare = { share() },
             )
@@ -286,13 +366,16 @@ fun DetailScreen(arg: DetailArg, resumeEpisode: Int?, onBack: () -> Unit, onOpen
                 Column(Modifier.fillMaxWidth().widthIn(max = MAX_W).padding(horizontal = if (wide) 28.dp else 20.dp)) {
                     Spacer(Modifier.height(18.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
-                        DetailTab("Episode", tab == "ep") { tab = "ep" }
+                        // Single-video titles have no episode list — hide the Episode tab so the
+                        // detail never shows an empty "belum tersedia" list for a lone film.
+                        if (!single) DetailTab("Episode", tab == "ep") { tab = "ep" }
                         DetailTab("Detail", tab == "info") { tab = "info" }
                     }
                     Spacer(Modifier.height(18.dp))
-                    if (tab == "ep") EpisodeTab(eps, current, sortAsc, wide, liveLoading, { sortAsc = !sortAsc }, { current = it },
-                        { ep -> current = ep.num; onOpenPlayer(PlayerArg(d.title, ep.url, "Episode ${ep.num}", ep.num,
-                            badge = d.badge, malId = d.malId, playlist = playlist)) }, onOpenDetail, d.title, d.cover, d.badge)
+                    if (!single && tab == "ep") EpisodeTab(eps, current, sortAsc, wide, liveLoading, { sortAsc = !sortAsc }, { current = it },
+                        { ep -> current = ep.num; watch(PlayerArg(d.title, ep.url, episodeLabel(ep), ep.num,
+                            badge = d.badge, malId = d.malId, playlist = playlist,
+                            vertical = TnData.isShortSource(ep.url))) }, onOpenDetail, d.title, d.url, d.cover, d.badge)
                     else AboutTab(d, liveLoading)
                     Spacer(Modifier.height(32.dp))
                 }
@@ -303,8 +386,8 @@ fun DetailScreen(arg: DetailArg, resumeEpisode: Int?, onBack: () -> Unit, onOpen
 
 @Composable
 private fun Hero(
-    d: DetailData, current: Int, inList: Boolean, liked: Boolean, wide: Boolean,
-    onBack: () -> Unit, onToggleList: () -> Unit, onToggleLike: () -> Unit, onPlay: () -> Unit, onShare: () -> Unit,
+    d: DetailData, current: Int, inList: Boolean, wide: Boolean, single: Boolean,
+    onBack: () -> Unit, onToggleList: () -> Unit, onPlay: () -> Unit, onShare: () -> Unit,
 ) {
     Box(Modifier.fillMaxWidth().heightIn(min = if (wide) 420.dp else 540.dp)) {
         // dark blurred-ish backdrop (cover or gradient) + heavy scrim
@@ -348,13 +431,13 @@ private fun Hero(
                 Modifier.align(Alignment.BottomCenter).fillMaxWidth().widthIn(max = MAX_W).padding(start = 28.dp, end = 28.dp, top = 20.dp, bottom = 32.dp),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(28.dp),
             ) {
-                Box(Modifier.weight(1f)) { HeroInfo(d, current, inList, liked, onToggleList, onToggleLike, onPlay, onShare) }
+                Box(Modifier.weight(1f)) { HeroInfo(d, current, inList, single, onToggleList, onPlay, onShare) }
                 Box(Modifier.width(210.dp).aspectRatio(2f / 3f).clip(RoundedCornerShape(TnRadii.lg))) {
                     Art(d.art, d.title, Modifier.fillMaxSize(), coverTitle = d.title, coverUrl = d.cover)
                 }
             }
         } else {
-            Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 44.dp)) { HeroInfo(d, current, inList, liked, onToggleList, onToggleLike, onPlay, onShare) }
+            Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 44.dp)) { HeroInfo(d, current, inList, single, onToggleList, onPlay, onShare) }
         }
     }
 }
@@ -362,10 +445,14 @@ private fun Hero(
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun HeroInfo(
-    d: DetailData, current: Int, inList: Boolean, liked: Boolean,
-    onToggleList: () -> Unit, onToggleLike: () -> Unit, onPlay: () -> Unit, onShare: () -> Unit,
+    d: DetailData, current: Int, inList: Boolean, single: Boolean,
+    onToggleList: () -> Unit, onPlay: () -> Unit, onShare: () -> Unit,
 ) {
     val contLabel = if (d.prog in 1..99) "Lanjutkan" else "Tonton"
+    // Single-video: the button is just "Tonton"/"Lanjutkan" (the title IS the video); a series keeps
+    // the per-episode label.
+    val playLabel = if (single) contLabel
+        else "$contLabel " + (d.episodesLive.firstOrNull { it.num == current }?.let(::episodeLabel) ?: "Episode $current")
     // Long titles shrink a notch so they stay fully visible (up to 3 lines) instead of truncating.
     val titleSize = if (d.title.length > 24) 30.sp else 36.sp
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -379,7 +466,8 @@ private fun HeroInfo(
                 }
             }
             if (d.year.isNotBlank()) { if (d.rating.isNotBlank()) Dot(); Text(d.year, color = Color(0xFFB79AA4), fontSize = 13.sp) }
-            if (d.epCount > 0) {
+            // Episode count is meaningless for a single video — omit it (genres already show the type).
+            if (!single && d.epCount > 0) {
                 if (d.rating.isNotBlank() || d.year.isNotBlank()) Dot()
                 Text("${d.epCount} Episode", color = Color(0xFFB79AA4), fontSize = 13.sp)
             }
@@ -397,16 +485,28 @@ private fun HeroInfo(
         if (d.syn.isNotBlank()) {
             Text(d.syn, color = Color(0xFFB79AA4), fontSize = 13.sp, lineHeight = 19.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(
-                Modifier.clip(RoundedCornerShape(TnRadii.pill)).tnGradient(RoseGradientColors).clickable { onPlay() }.padding(horizontal = 20.dp, vertical = 13.dp),
+                Modifier
+                    .weight(1f, fill = false)
+                    .widthIn(max = 260.dp)
+                    .clip(RoundedCornerShape(TnRadii.pill))
+                    .tnGradient(RoseGradientColors)
+                    .clickable { onPlay() }
+                    .padding(horizontal = 20.dp, vertical = 13.dp),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 TnIcon("play", size = 18.dp, tint = Color.White, filled = true)
-                Text("$contLabel Episode $current", color = Color.White, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp)
+                Text(
+                    playLabel,
+                    color = Color.White,
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = 14.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
             HeroIcon(if (inList) "check" else "plus", on = inList, onClick = onToggleList)
-            HeroIcon("heart", on = liked, filled = liked, onClick = onToggleLike)
             HeroIcon("send", on = false, onClick = onShare)
         }
     }
@@ -444,7 +544,7 @@ private fun DetailTab(label: String, on: Boolean, onClick: () -> Unit) {
 private fun EpisodeTab(
     eps: List<Episode>, current: Int, sortAsc: Boolean, wide: Boolean, liveLoading: Boolean,
     onSort: () -> Unit, onSelect: (Int) -> Unit, onPlayEpisode: (Episode) -> Unit,
-    onOpenDetail: (DetailArg) -> Unit, currentTitle: String, cover: String?, badge: String,
+    onOpenDetail: (DetailArg) -> Unit, currentTitle: String, detailUrl: String?, cover: String?, badge: String,
 ) {
     val c = TnTheme.colors
     val columns = if (wide) 2 else 1
@@ -529,7 +629,7 @@ private fun EpisodeTab(
         Spacer(Modifier.height(8.dp))
         Text("Rekomendasi Serupa", color = c.ink, fontWeight = FontWeight.ExtraBold, fontSize = 18.sp)
         Spacer(Modifier.height(12.dp))
-        val reco = remember(currentTitle) { TnData.recommendations(currentTitle, 6) }
+        val reco = TnData.recommendations(currentTitle, 6, detailUrl)
         val pad = if (wide) 28.dp else 20.dp
         LazyRow(
             modifier = Modifier.bleedEnd(pad),
@@ -539,7 +639,7 @@ private fun EpisodeTab(
                 val p = reco[i]
                 Column(Modifier.width(124.dp).clickable { onOpenDetail(p.toDetailArg()) }) {
                     Box(Modifier.fillMaxWidth().aspectRatio(2f / 3f).clip(RoundedCornerShape(TnRadii.md))) {
-                        Art(p.art, p.title.substringBefore(' '), Modifier.fillMaxSize(), coverTitle = p.title)
+                        Art(p.art, p.title.substringBefore(' '), Modifier.fillMaxSize(), coverTitle = p.title, coverUrl = p.cover)
                         p.badge?.let {
                             Box(Modifier.align(Alignment.TopEnd).padding(6.dp).clip(RoundedCornerShape(TnRadii.pill)).background(Color.Black.copy(0.5f)).padding(horizontal = 8.dp, vertical = 3.dp)) {
                                 Text(it, color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.ExtraBold)
@@ -587,13 +687,14 @@ private fun EpCard(ep: Episode, isCurrent: Boolean, seriesCover: String?, series
             .clickable { onClick() }.padding(8.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        val badgeLabel = episodeBadgeLabel(ep)
         Box(Modifier.width(132.dp).aspectRatio(16f / 9f).clip(RoundedCornerShape(TnRadii.sm))) {
             // Per-episode thumbnail when the source gave one; else a 16:9 crop of the series cover —
             // a real image, never the bare gradient placeholder. (When both are null, Art resolves
             // by title via Jikan/CoverProvider.)
-            Art(ep.art, "EP ${ep.num}", Modifier.fillMaxSize(), coverTitle = seriesTitle, coverUrl = ep.thumb ?: seriesCover)
+            Art(ep.art, badgeLabel, Modifier.fillMaxSize(), coverTitle = seriesTitle, coverUrl = ep.thumb ?: seriesCover)
             Box(Modifier.align(Alignment.TopStart).padding(6.dp)) {
-                Text("EP ${ep.num}", color = Color.White.copy(0.9f), fontSize = 9.sp, fontWeight = FontWeight.ExtraBold)
+                Text(badgeLabel, color = Color.White.copy(0.9f), fontSize = 9.sp, fontWeight = FontWeight.ExtraBold)
             }
             Box(Modifier.align(Alignment.BottomEnd).padding(6.dp).clip(RoundedCornerShape(6.dp)).background(Color.Black.copy(0.6f)).padding(horizontal = 6.dp, vertical = 2.dp)) {
                 Text(ep.dur, color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold)
@@ -613,8 +714,8 @@ private fun EpCard(ep: Episode, isCurrent: Boolean, seriesCover: String?, series
                 Spacer(Modifier.height(2.dp))
             }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("E${ep.num}", color = c.rose, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold)
-                Text(ep.name, color = c.ink, fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(episodePrefixLabel(ep), color = c.rose, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold)
+                Text(episodeLabel(ep), color = c.ink, fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             Spacer(Modifier.height(3.dp))
             Text(ep.desc, color = c.muted, fontSize = 11.sp, lineHeight = 15.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -638,7 +739,7 @@ private fun DownloadButton(ep: Episode, seriesTitle: String, poster: String?, ba
             .clickable {
                 when (state) {
                     DlUiState.NONE, DlUiState.FAILED ->
-                        DownloadCenter.startDownload(DlMeta(url, seriesTitle, "Episode ${ep.num}", poster, badge))
+                        DownloadCenter.startDownload(DlMeta(url, seriesTitle, episodeLabel(ep), poster, badge))
                     DlUiState.COMPLETED -> onPlay()
                     DlUiState.DOWNLOADING, DlUiState.QUEUED -> DownloadCenter.remove(url)
                     DlUiState.RESOLVING -> {}

@@ -1,5 +1,6 @@
 package com.tetonova.core.scraper
 
+import org.jsoup.Jsoup
 import java.net.URLEncoder
 
 /**
@@ -8,17 +9,98 @@ import java.net.URLEncoder
  */
 object LiveSource {
 
+    fun configureAccessCodes(codesByBaseUrl: Map<String, String>) {
+        LiveRuntimeConfig.setAccessCodes(codesByBaseUrl)
+    }
+
+    /** True when a watch/detail URL belongs to a vertical short-drama source (portrait micro-episodes:
+     *  DramaBox / FreeReels / FlexTv / ReelShort / GoodBos short-drama APIs). The player uses this to lock portrait orientation;
+     *  the real video aspect ratio confirms/corrects it once the first frame's dimensions are known. */
+    fun isShortDrama(url: String): Boolean =
+        DramaBoxSource.isDramaBox(url) || FreeReelsSource.isFreeReels(url) ||
+            FlexTvSource.isFlexTv(url) || ReelShortSource.isReelShort(url) ||
+            BiliTvSource.isBiliTv(url) || DotDramaSource.isDotDrama(url) ||
+            DramaWaveSource.isDramaWave(url) || DramaBiteSource.isDramaBite(url) ||
+            MeloloSource.isMelolo(url) || FlickReelsSource.isFlickReels(url) ||
+            GoodShortSource.isGoodShort(url) || FunDramaSource.isFunDrama(url) ||
+            IDramaSource.isIDrama(url)
+
+    /** True when [baseUrl] has a dedicated `search()` endpoint (JSON API) — i.e. any host that
+     *  [search] dispatches to *before* the generic WordPress `/?s=` fallback. Such sources search
+     *  server-side, so their hits are already relevant and callers must NOT re-filter them by title
+     *  (short-drama titles are often localized and won't literally contain the typed query). */
+    fun hasNativeSearch(baseUrl: String): Boolean {
+        val b = baseUrl.trim().trimEnd('/')
+        return DramaWaveSource.isDramaWave(b) || DramaBiteSource.isDramaBite(b) ||
+            BiliTvSource.isBiliTv(b) || DotDramaSource.isDotDrama(b) ||
+            DramaBoxSource.isDramaBox(b) || FreeReelsSource.isFreeReels(b) ||
+            FlexTvSource.isFlexTv(b) || ReelShortSource.isReelShort(b) ||
+            MeloloSource.isMelolo(b) || FlickReelsSource.isFlickReels(b) ||
+            GoodShortSource.isGoodShort(b) || FunDramaSource.isFunDrama(b) ||
+            IDramaSource.isIDrama(b) ||
+            OploverzSource.isOploverz(b)
+    }
+
     suspend fun list(url: String): List<LiveItem> {
+        if (MeloloSource.isMelolo(url)) return runCatching { MeloloSource.list(url) }.getOrDefault(emptyList())
+        if (FlickReelsSource.isFlickReels(url)) return runCatching { FlickReelsSource.list(url) }.getOrDefault(emptyList())
+        if (DramaWaveSource.isDramaWave(url)) return runCatching { DramaWaveSource.list(url) }.getOrDefault(emptyList())
+        if (DramaBiteSource.isDramaBite(url)) return runCatching { DramaBiteSource.list(url) }.getOrDefault(emptyList())
+        if (GoodShortSource.isGoodShort(url)) return runCatching { GoodShortSource.list(url) }.getOrDefault(emptyList())
+        if (FunDramaSource.isFunDrama(url)) return runCatching { FunDramaSource.list(url) }.getOrDefault(emptyList())
+        if (IDramaSource.isIDrama(url)) return runCatching { IDramaSource.list(url) }.getOrDefault(emptyList())
+        if (BiliTvSource.isBiliTv(url)) return runCatching { BiliTvSource.list(url) }.getOrDefault(emptyList())
+        if (DotDramaSource.isDotDrama(url)) return runCatching { DotDramaSource.list(url) }.getOrDefault(emptyList())
+        if (DramaBoxSource.isDramaBox(url)) return runCatching { DramaBoxSource.list(url) }.getOrDefault(emptyList())
+        if (FreeReelsSource.isFreeReels(url)) return runCatching { FreeReelsSource.list(url) }.getOrDefault(emptyList())
+        if (FlexTvSource.isFlexTv(url)) return runCatching { FlexTvSource.list(url) }.getOrDefault(emptyList())
+        if (ReelShortSource.isReelShort(url)) return runCatching { ReelShortSource.list(url) }.getOrDefault(emptyList())
         // Oploverz is a bespoke Next.js site the generic parser can't read — serve its "Rilis Terbaru"
         // rail from its JSON API instead (see [OploverzSource]).
         if (OploverzSource.isOploverz(url)) return runCatching { OploverzSource.latest() }.getOrDefault(emptyList())
         val html = LiveClient.getHtml(url) ?: return emptyList()
-        return LiveParser.parseList(html, url)
+        return normalizeAnoboyList(url, LiveParser.parseList(html, url))
+    }
+
+    suspend fun listPage(url: String): LivePage {
+        if (MeloloSource.isMelolo(url)) return runCatching { MeloloSource.listPage(url) }.getOrDefault(LivePage(emptyList()))
+        if (FlickReelsSource.isFlickReels(url)) return runCatching { FlickReelsSource.listPage(url) }.getOrDefault(LivePage(emptyList()))
+        if (DramaWaveSource.isDramaWave(url)) return runCatching { DramaWaveSource.listPage(url) }.getOrDefault(LivePage(emptyList()))
+        if (DramaBiteSource.isDramaBite(url)) return runCatching { DramaBiteSource.listPage(url) }.getOrDefault(LivePage(emptyList()))
+        if (GoodShortSource.isGoodShort(url)) return runCatching { GoodShortSource.listPage(url) }.getOrDefault(LivePage(emptyList()))
+        if (FunDramaSource.isFunDrama(url)) return runCatching { FunDramaSource.listPage(url) }.getOrDefault(LivePage(emptyList()))
+        if (IDramaSource.isIDrama(url)) return runCatching { IDramaSource.listPage(url) }.getOrDefault(LivePage(emptyList()))
+        if (BiliTvSource.isBiliTv(url)) return runCatching { BiliTvSource.listPage(url) }.getOrDefault(LivePage(emptyList()))
+        if (DotDramaSource.isDotDrama(url)) return runCatching { DotDramaSource.listPage(url) }.getOrDefault(LivePage(emptyList()))
+        if (DramaBoxSource.isDramaBox(url)) return runCatching { DramaBoxSource.listPage(url) }.getOrDefault(LivePage(emptyList()))
+        if (FreeReelsSource.isFreeReels(url)) return runCatching { FreeReelsSource.listPage(url) }.getOrDefault(LivePage(emptyList()))
+        if (FlexTvSource.isFlexTv(url)) return runCatching { FlexTvSource.listPage(url) }.getOrDefault(LivePage(emptyList()))
+        if (ReelShortSource.isReelShort(url)) return runCatching { ReelShortSource.listPage(url) }.getOrDefault(LivePage(emptyList()))
+        if (OploverzSource.isOploverz(url)) return runCatching { OploverzSource.latestPage(url) }.getOrDefault(LivePage(emptyList()))
+        val html = LiveClient.getHtml(url) ?: return LivePage(emptyList())
+        return LivePage(
+            items = normalizeAnoboyList(url, LiveParser.parseList(html, url)),
+            nextUrl = LiveParser.parseNextPage(html, url),
+        )
     }
 
     /** Scrape the playable server/mirror list from an episode watch page (for the player's
      *  "Source video" picker). Empty on any failure. */
     suspend fun servers(url: String): List<VideoServer> {
+        System.out.println("[LiveSource.servers] called for URL: $url")
+        if (MeloloSource.isMelolo(url)) return runCatching { MeloloSource.servers(url) }.getOrDefault(emptyList())
+        if (FlickReelsSource.isFlickReels(url)) return runCatching { FlickReelsSource.servers(url) }.getOrDefault(emptyList())
+        if (DramaWaveSource.isDramaWave(url)) return runCatching { DramaWaveSource.servers(url) }.getOrDefault(emptyList())
+        if (DramaBiteSource.isDramaBite(url)) return runCatching { DramaBiteSource.servers(url) }.getOrDefault(emptyList())
+        if (GoodShortSource.isGoodShort(url)) return runCatching { GoodShortSource.servers(url) }.getOrDefault(emptyList())
+        if (FunDramaSource.isFunDrama(url)) return runCatching { FunDramaSource.servers(url) }.getOrDefault(emptyList())
+        if (IDramaSource.isIDrama(url)) return runCatching { IDramaSource.servers(url) }.getOrDefault(emptyList())
+        if (BiliTvSource.isBiliTv(url)) return runCatching { BiliTvSource.servers(url) }.getOrDefault(emptyList())
+        if (DotDramaSource.isDotDrama(url)) return runCatching { DotDramaSource.servers(url) }.getOrDefault(emptyList())
+        if (DramaBoxSource.isDramaBox(url)) return runCatching { DramaBoxSource.servers(url) }.getOrDefault(emptyList())
+        if (FreeReelsSource.isFreeReels(url)) return runCatching { FreeReelsSource.servers(url) }.getOrDefault(emptyList())
+        if (FlexTvSource.isFlexTv(url)) return runCatching { FlexTvSource.servers(url) }.getOrDefault(emptyList())
+        if (ReelShortSource.isReelShort(url)) return runCatching { ReelShortSource.servers(url) }.getOrDefault(emptyList())
         // Oploverz exposes an episode's watch embeds (filedon/dailymotion/4meplayer/blogger) via its
         // JSON API, keyed by series slug + episode number — no page scraping needed.
         if (OploverzSource.isOploverz(url)) return runCatching { OploverzSource.servers(url) }.getOrDefault(emptyList())
@@ -46,10 +128,49 @@ object LiveSource {
         if (NontonAnimeIDSource.isNontonAnimeID(html)) {
             NontonAnimeIDSource.servers(html, url).let { if (it.isNotEmpty()) return it }
         }
+        // Samehadaku: check if this is an index page and derive the watch URL
+        if (url.contains("samehadaku", ignoreCase = true)) {
+            if (url.contains("-index", ignoreCase = true) || (url.contains("/anime/") && !url.contains("-episode-") && !url.contains("-movie-"))) {
+                System.out.println("[LiveSource.servers] Samehadaku index page detected: $url")
+                val watchUrl = SamehadakuSource.deriveWatchUrl(url)
+                if (watchUrl != null) {
+                    System.out.println("[LiveSource.servers] Fetching derived watch URL: $watchUrl")
+                    val watchHtml = LiveClient.getHtml(watchUrl)
+                    if (watchHtml != null) {
+                        System.out.println("[LiveSource.servers] Watch HTML length: ${watchHtml.length}")
+                        if (SamehadakuSource.isSamehadaku(watchHtml, watchUrl)) {
+                            System.out.println("[LiveSource.servers] Watch page confirmed as Samehadaku, extracting servers...")
+                            val servers = SamehadakuSource.servers(watchHtml, watchUrl)
+                            if (servers.isNotEmpty()) {
+                                System.out.println("[LiveSource.servers] Found ${servers.size} servers from derived watch URL")
+                                return servers
+                            }
+                        }
+                    }
+                }
+            } else if (SamehadakuSource.isSamehadaku(html, url)) {
+                System.out.println("[LiveSource.servers] Detected Samehadaku watch page: $url")
+                SamehadakuSource.servers(html, url).let { if (it.isNotEmpty()) return it }
+            }
+        }
+        System.out.println("[LiveSource.servers] Falling through to LiveParser.parseServers")
         return LiveParser.parseServers(html)
     }
 
     suspend fun detail(url: String): LiveDetail? {
+        if (MeloloSource.isMelolo(url)) return runCatching { MeloloSource.detail(url) }.getOrNull()
+        if (FlickReelsSource.isFlickReels(url)) return runCatching { FlickReelsSource.detail(url) }.getOrNull()
+        if (DramaWaveSource.isDramaWave(url)) return runCatching { DramaWaveSource.detail(url) }.getOrNull()
+        if (DramaBiteSource.isDramaBite(url)) return runCatching { DramaBiteSource.detail(url) }.getOrNull()
+        if (GoodShortSource.isGoodShort(url)) return runCatching { GoodShortSource.detail(url) }.getOrNull()
+        if (FunDramaSource.isFunDrama(url)) return runCatching { FunDramaSource.detail(url) }.getOrNull()
+        if (IDramaSource.isIDrama(url)) return runCatching { IDramaSource.detail(url) }.getOrNull()
+        if (BiliTvSource.isBiliTv(url)) return runCatching { BiliTvSource.detail(url) }.getOrNull()
+        if (DotDramaSource.isDotDrama(url)) return runCatching { DotDramaSource.detail(url) }.getOrNull()
+        if (DramaBoxSource.isDramaBox(url)) return runCatching { DramaBoxSource.detail(url) }.getOrNull()
+        if (FreeReelsSource.isFreeReels(url)) return runCatching { FreeReelsSource.detail(url) }.getOrNull()
+        if (FlexTvSource.isFlexTv(url)) return runCatching { FlexTvSource.detail(url) }.getOrNull()
+        if (ReelShortSource.isReelShort(url)) return runCatching { ReelShortSource.detail(url) }.getOrNull()
         // Oploverz: series metadata + the full episode list come straight from its JSON API (the
         // synopsis/episodes the detail screen needs), addressed by slug — bypass the HTML parser.
         if (OploverzSource.isOploverz(url)) return runCatching { OploverzSource.detail(url) }.getOrNull()
@@ -74,13 +195,33 @@ object LiveSource {
 
         val html = LiveClient.getHtml(url) ?: return null
         val d = parsePaged(url, html)
+        // Old Anoboy title hubs expose separate [Download] and [Streaming] cards. Follow the
+        // streaming post before returning the hub/download parse, otherwise Detail shows 1 episode.
+        if (isAnoboy(url) && !url.contains("streaming", ignoreCase = true)) {
+            anoboyStreamingUrl(html, url)?.let { streamUrl ->
+                LiveClient.getHtml(streamUrl)?.let { sHtml ->
+                    val sd = parsePaged(streamUrl, sHtml)
+                    if (sd.episodes.size > d.episodes.size || usable(sd)) return sd
+                }
+            }
+        }
         // Cards on episode-based sites (AnimeSail/Anoboy) land on an episode page that lacks the
         // series synopsis + full episode list — follow the breadcrumb to the series page for those.
         val series = d.seriesUrl
-        if (series != null && series != url && (d.synopsis.isNullOrBlank() || d.episodes.isEmpty())) {
+        val needsSeries = d.synopsis.isNullOrBlank() ||
+            d.episodes.isEmpty() ||
+            (isNekopoi(url) && !url.contains("/hentai/", ignoreCase = true) && d.episodes.size <= 1)
+        if (series != null && series != url && needsSeries) {
             LiveClient.getHtml(series)?.let { sHtml ->
                 val sd = parsePaged(series, sHtml)
-                if (usable(sd)) return sd
+                if (usable(sd)) {
+                    // The series grid can lag the newest episode the user actually arrived on — nekopoi
+                    // lists it under a "preview-"/"new-release-" slug that isn't in the grid yet — so
+                    // union the current page's episode(s) in (series URLs win on overlap) instead of
+                    // replacing, so the latest episode never disappears after hydration.
+                    val merged = (sd.episodes + d.episodes).distinctBy { it.num }.sortedBy { it.num }
+                    return if (merged.size > sd.episodes.size) sd.copy(episodes = merged) else sd
+                }
             }
         }
         return d.takeIf(usable)
@@ -146,10 +287,117 @@ object LiveSource {
     suspend fun search(baseUrl: String, query: String): List<LiveItem> {
         val base = baseUrl.trim().trimEnd('/')
         if (base.isBlank() || query.isBlank()) return emptyList()
+        if (MeloloSource.isMelolo(base)) return runCatching { MeloloSource.search(base, query) }.getOrDefault(emptyList())
+        if (FlickReelsSource.isFlickReels(base)) return runCatching { FlickReelsSource.search(base, query) }.getOrDefault(emptyList())
+        if (DramaWaveSource.isDramaWave(base)) return runCatching { DramaWaveSource.search(base, query) }.getOrDefault(emptyList())
+        if (DramaBiteSource.isDramaBite(base)) return runCatching { DramaBiteSource.search(base, query) }.getOrDefault(emptyList())
+        if (GoodShortSource.isGoodShort(base)) return runCatching { GoodShortSource.search(base, query) }.getOrDefault(emptyList())
+        if (FunDramaSource.isFunDrama(base)) return runCatching { FunDramaSource.search(base, query) }.getOrDefault(emptyList())
+        if (IDramaSource.isIDrama(base)) return runCatching { IDramaSource.search(base, query) }.getOrDefault(emptyList())
+        if (BiliTvSource.isBiliTv(base)) return runCatching { BiliTvSource.search(base, query) }.getOrDefault(emptyList())
+        if (DotDramaSource.isDotDrama(base)) return runCatching { DotDramaSource.search(base, query) }.getOrDefault(emptyList())
+        if (DramaBoxSource.isDramaBox(base)) return runCatching { DramaBoxSource.search(base, query) }.getOrDefault(emptyList())
+        if (FreeReelsSource.isFreeReels(base)) return runCatching { FreeReelsSource.search(base, query) }.getOrDefault(emptyList())
+        if (FlexTvSource.isFlexTv(base)) return runCatching { FlexTvSource.search(base, query) }.getOrDefault(emptyList())
+        if (ReelShortSource.isReelShort(base)) return runCatching { ReelShortSource.search(base, query) }.getOrDefault(emptyList())
         // Oploverz search runs against its JSON API (`/api/series?q=`), not WordPress `/?s=`.
         if (OploverzSource.isOploverz(base)) return runCatching { OploverzSource.search(query) }.getOrDefault(emptyList())
         val url = "$base/?s=" + URLEncoder.encode(query, "UTF-8")
         val html = LiveClient.getHtml(url) ?: return emptyList()
-        return LiveParser.parseList(html, url)
+        return normalizeNekopoiList(base, normalizeAnoboyList(base, LiveParser.parseList(html, url)))
     }
+
+    /**
+     * Collapse nekopoi search results to ONE card per series. The site returns both a clean
+     * `/hentai/{slug}/` series card and several per-episode cards for the same title, so a search for
+     * "Enjo Kouhai" yields ~8 rows for one show and `resolveLiveUrl` lands on whichever episode came
+     * first. We keep the LATEST episode card as the representative URL — [detail]'s series hydration
+     * derives the series page from it AND merges that newest episode in, which the series card alone
+     * can't (its grid lags the newest "preview-"/"new-release-" episode) — then borrow the series
+     * card's clean title/cover for display. Single videos (JAV/3D/L2D — no `/hentai/` series and no
+     * `-episode-N`) are left untouched.
+     */
+    private fun normalizeNekopoiList(baseUrl: String, items: List<LiveItem>): List<LiveItem> {
+        if (!isNekopoi(baseUrl) || items.size < 2) return items
+        fun pathOf(url: String) = runCatching { java.net.URI(url).path.orEmpty().lowercase() }.getOrDefault("")
+        fun isSeriesCard(url: String) = Regex("^/hentai/[^/?#]+/?$").containsMatchIn(pathOf(url))
+        fun episodeNum(url: String) = Regex("-episode-(\\d+)").find(pathOf(url))?.groupValues?.get(1)?.toIntOrNull() ?: -1
+        fun seriesSlugOf(url: String): String? {
+            val path = pathOf(url)
+            Regex("^/hentai/([^/?#]+)/?$").find(path)?.let { return it.groupValues[1] }
+            val slug = path.trim('/').substringAfterLast('/')
+            if (!slug.contains("-episode-")) return null // single video, not a series episode
+            return slug.replace(Regex("-episode-\\d+.*$"), "")
+                .replace(Regex("^(?:preview|new-release|uncensored|premium|batch)-"), "")
+                .takeIf { it.isNotBlank() }
+        }
+        val rep = LinkedHashMap<String, LiveItem>()  // key -> representative card, first-seen order
+        val seriesCard = HashMap<String, LiveItem>() // key -> the clean /hentai/ card, when present
+        for (item in items) {
+            val slug = seriesSlugOf(item.url)
+            val key = slug ?: "single:${item.url}" // singles never merge
+            if (slug != null && isSeriesCard(item.url)) seriesCard[key] = item
+            val existing = rep[key]
+            // Prefer a real episode as the representative URL, and among episodes the newest (highest N).
+            if (existing == null || episodeNum(item.url) > episodeNum(existing.url)) rep[key] = item
+        }
+        return rep.map { (key, chosen) ->
+            val card = seriesCard[key] ?: return@map chosen
+            if (isSeriesCard(chosen.url)) chosen // only the series card existed — keep it as-is
+            else chosen.copy( // episode URL for full hydration, but the series card's clean identity
+                title = card.title.ifBlank { chosen.title },
+                cover = card.cover?.takeIf { it.isNotBlank() } ?: chosen.cover,
+            )
+        }
+    }
+
+    private fun normalizeAnoboyList(baseUrl: String, items: List<LiveItem>): List<LiveItem> {
+        if (!isAnoboy(baseUrl) || items.size < 2) return items
+        val out = LinkedHashMap<String, LiveItem>()
+        items.sortedByDescending(::anoboyStreamingRank).forEach { item ->
+            val key = anoboyTitleKey(item.title).ifBlank { item.url }
+            out.putIfAbsent(key, item.copy(title = cleanAnoboyTitle(item.title)))
+        }
+        return out.values.toList()
+    }
+
+    private fun anoboyStreamingRank(item: LiveItem): Int {
+        val hay = "${item.title} ${item.url}".lowercase()
+        return when {
+            "streaming" in hay -> 2
+            "download" in hay -> 0
+            else -> 1
+        }
+    }
+
+    private fun cleanAnoboyTitle(title: String): String = title
+        .replace(Regex("\\[(streaming|download)\\]", RegexOption.IGNORE_CASE), "")
+        .replace(Regex("\\bUP\\b.*$", RegexOption.IGNORE_CASE), "")
+        .replace(Regex("\\s+"), " ")
+        .trim()
+        .ifBlank { title.trim() }
+
+    private fun anoboyTitleKey(title: String): String = cleanAnoboyTitle(title)
+        .lowercase()
+        .replace(Regex("[^a-z0-9]+"), " ")
+        .replace(Regex("\\s+"), " ")
+        .trim()
+
+    private fun anoboyStreamingUrl(html: String, baseUrl: String): String? {
+        val current = baseUrl.trimEnd('/')
+        return Jsoup.parse(html, baseUrl).select("a[href]").firstNotNullOfOrNull { a ->
+            val href = a.absUrl("href").trim().trimEnd('/')
+            val hay = "${a.text()} $href".lowercase()
+            href.takeIf {
+                it.startsWith("http") &&
+                    it != current &&
+                    "streaming" in hay &&
+                    "download" !in hay
+            }
+        }
+    }
+
+    private fun isAnoboy(url: String): Boolean = "anoboy" in url.lowercase()
+
+    private fun isNekopoi(url: String): Boolean = "nekopoi" in url.lowercase()
 }
