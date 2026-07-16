@@ -1,8 +1,10 @@
 package com.tetonova.app.ui
 
+import android.app.Activity
 import android.app.UiModeManager
 import android.content.Context
 import android.content.res.Configuration
+import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -25,11 +27,16 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.border
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.windowsizeclass.WindowSizeClass
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -42,15 +49,20 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.view.WindowCompat
+import com.tetonova.app.feature.billing.QrisCheckoutScreen
 import com.tetonova.app.feature.detail.DetailScreen
 import com.tetonova.app.feature.downloads.DownloadsScreen
 import com.tetonova.app.feature.extensions.ExtensionsScreen
 import com.tetonova.app.feature.forum.ForumScreen
 import com.tetonova.app.feature.home.HomeScreen
+import com.tetonova.app.feature.landing.LandingScreen
+import com.tetonova.app.feature.library.FullLibraryScreen
 import com.tetonova.app.feature.player.PlayerScreen
 import com.tetonova.app.feature.profile.ProfileScreen
 import com.tetonova.app.feature.search.SearchScreen
@@ -63,13 +75,13 @@ import com.tetonova.core.designsystem.theme.TetoNovaTheme
 import com.tetonova.core.designsystem.theme.TnTheme
 import com.tetonova.core.model.NavDest
 
-private fun isTelevision(context: Context): Boolean {
+internal fun isTelevision(context: Context): Boolean {
     val ui = context.getSystemService(Context.UI_MODE_SERVICE) as? UiModeManager
     return ui?.currentModeType == Configuration.UI_MODE_TYPE_TELEVISION
 }
 
 @Composable
-fun TetoNovaRoot(windowSizeClass: WindowSizeClass) {
+fun TetoNovaRoot(windowSizeClass: WindowSizeClass, debugPlayerUrl: String? = null, deepLink: Uri? = null) {
     val state = rememberAppState()
     val context = LocalContext.current
     val isTv = remember { isTelevision(context) }
@@ -78,16 +90,48 @@ fun TetoNovaRoot(windowSizeClass: WindowSizeClass) {
     // One-shot merge of control-panel source overrides. No-ops when no panel URL is configured
     // or the host is unreachable, so the app keeps running on the bundled registry (local-first).
     LaunchedEffect(Unit) {
-        runCatching { com.tetonova.app.data.TnData.refreshFromPanel(com.tetonova.app.BuildConfig.TETONOVA_CONTROL_PANEL_URL) }
+        com.tetonova.app.data.TnData.warmPanel(com.tetonova.app.Secrets.controlPanelUrl)
+    }
+    LaunchedEffect(state.signedIn) {
+        if (state.signedIn) {
+            state.finishLanding()
+            com.tetonova.app.data.TnData.refreshSubscription()
+            com.tetonova.app.data.TnData.warmPanel(com.tetonova.app.Secrets.controlPanelUrl, force = true)
+        }
+    }
+    LaunchedEffect(debugPlayerUrl) {
+        if (!debugPlayerUrl.isNullOrBlank()) {
+            state.finishLanding()
+            state.openPlayer(PlayerArg(title = "Smoke Test", url = debugPlayerUrl, episodeLabel = "URL test", badge = "Anime"))
+        }
+    }
+    LaunchedEffect(deepLink?.toString()) {
+        detailArgFromDeepLink(deepLink)?.let {
+            state.finishLanding()
+            state.openDetail(it)
+        }
     }
 
     TetoNovaTheme(darkTheme = state.darkTheme, accent = state.accentColor) {
         val c = TnTheme.colors
+        SystemBarsEffect(darkTheme = state.darkTheme)
         // Retain the tab shell's UI state (Home scroll position, etc.) while Detail is on top, so
         // returning lands back on the exact rail/extension the user left — not scrolled to the top.
         val shellState = rememberSaveableStateHolder()
-        Box(Modifier.fillMaxSize().background(c.bg)) {
-            when (val scr = state.screen) {
+        val rootModifier = Modifier
+            .fillMaxSize()
+            .background(c.bg)
+            .let { if (state.screen is Screen.Player) it else it.windowInsetsPadding(WindowInsets.statusBars) }
+        // TV: swap the default (touch) ripple for a rose focus ring so D-pad users can see where they are —
+        // every plain `.clickable {}` in the app picks this up. Phone/tablet keep the ripple untouched.
+        // Rose (the app accent) reads on both the dark hero and the light episode list; white vanished there.
+        val tvIndication = remember(c.rose) { TvFocusIndication(c.rose) }
+        val focusIndication = if (isTv) tvIndication else LocalIndication.current
+        CompositionLocalProvider(LocalIndication provides focusIndication) {
+        Box(rootModifier) {
+            if (!state.signedIn && !state.landingDone) {
+                LandingScreen(wide = useRail)
+            } else when (val scr = state.screen) {
                 is Screen.Detail -> {
                     BackHandler { state.back() }
                     DetailScreen(arg = scr.arg, resumeEpisode = state.resumeEpisodeFor(scr.arg), onBack = { state.back() }, onOpenDetail = state::openDetail, onOpenPlayer = state::openPlayer)
@@ -99,11 +143,16 @@ fun TetoNovaRoot(windowSizeClass: WindowSizeClass) {
                     // source lists may be ascending OR descending). Re-keying on the url restarts the
                     // player cleanly per episode (fresh ExoPlayer + source resolution).
                     val next = a.episodeNum?.let { cur -> a.playlist.filter { it.num > cur }.minByOrNull { it.num } }
+                    // Prev episode = the highest episode number below the current one (same order-independent
+                    // logic as `next`, mirrored). Powers the new prev-episode control in the player.
+                    val prev = a.episodeNum?.let { cur -> a.playlist.filter { it.num < cur }.maxByOrNull { it.num } }
                     key(a.url) {
                         PlayerScreen(
                             arg = a,
                             hasNext = next != null,
                             onNext = { next?.let { state.openPlayer(a.copy(url = it.url, episodeLabel = it.label, episodeNum = it.num)) } },
+                            hasPrev = prev != null,
+                            onPrev = { prev?.let { state.openPlayer(a.copy(url = it.url, episodeLabel = it.label, episodeNum = it.num)) } },
                             onBack = { state.closePlayer() },
                         )
                     }
@@ -120,10 +169,38 @@ fun TetoNovaRoot(windowSizeClass: WindowSizeClass) {
                     BackHandler { state.openSettings() }
                     HelpScreen(onBack = { state.openSettings() })
                 }
+                is Screen.Qris -> {
+                    BackHandler { state.openSettings() }
+                    QrisCheckoutScreen(initial = scr.arg, onClose = { state.openSettings() })
+                }
+                is Screen.Library -> {
+                    BackHandler { state.back() }
+                    FullLibraryScreen(onBack = { state.back() }, onOpenDetail = state::openDetail)
+                }
                 else -> shellState.SaveableStateProvider("tab-shell") {
                     MainShell(state = state, useRail = useRail, tv = isTv)
                 }
             }
+        }
+        if (state.premiumPromptVisible) {
+            PremiumPrompt(
+                onSubscribe = { state.dismissPremiumPrompt(); state.openSettings() },
+                onDismiss = { state.dismissPremiumPrompt() },
+            )
+        }
+        }
+    }
+}
+
+@Composable
+private fun SystemBarsEffect(darkTheme: Boolean) {
+    val view = LocalView.current
+    if (view.isInEditMode) return
+    SideEffect {
+        val window = (view.context as? Activity)?.window ?: return@SideEffect
+        WindowCompat.getInsetsController(window, view).apply {
+            isAppearanceLightStatusBars = !darkTheme
+            isAppearanceLightNavigationBars = !darkTheme
         }
     }
 }
@@ -204,8 +281,6 @@ private fun NavRail(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        BrandDot(size = 40.dp)
-        Spacer(Modifier.height(12.dp))
         NavDest.entries.forEach { d ->
             NavRailItem(icon = d.icon, label = d.label, selected = d == current, tv = tv) { onSelect(d) }
         }
@@ -222,12 +297,13 @@ private fun NavRailItem(icon: String, label: String, selected: Boolean, tv: Bool
     var focused by remember { mutableStateOf(false) }
     val bg = if (selected) c.roseSoft else Color.Transparent
     val fg = if (selected) c.roseDeep else c.muted
+    val focusRing = if (tv && focused) c.rose else Color.Transparent
     Column(
         Modifier
             .width(76.dp)
             .clip(RoundedCornerShape(18.dp))
             .background(bg)
-            .then(if (tv && focused) Modifier.border(3.dp, c.rose, RoundedCornerShape(18.dp)) else Modifier)
+            .border(3.dp, focusRing, RoundedCornerShape(18.dp))
             .onFocusChanged { focused = it.isFocused }
             .clickable { onClick() }
             .padding(vertical = 11.dp),
@@ -286,4 +362,16 @@ fun BrandDot(size: Dp, modifier: Modifier = Modifier) {
     ) {
         TnIcon("sparkle", size = size * 0.42f, tint = Color.White, filled = true)
     }
+}
+
+/** Shown when a non-entitled user taps premium content (see AppState.isPremiumBlocked gate). */
+@Composable
+private fun PremiumPrompt(onSubscribe: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Konten Premium") },
+        text = { Text("Konten ini khusus pelanggan Premium. Silakan berlangganan dulu untuk menontonnya.") },
+        confirmButton = { TextButton(onClick = onSubscribe) { Text("Berlangganan") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Tutup") } },
+    )
 }

@@ -3,6 +3,7 @@ package com.tetonova.app.data
 import android.content.Context
 import android.content.SharedPreferences
 import java.util.UUID
+import java.util.Locale
 
 /**
  * Tiny synchronous persistence for user settings (theme, accent, playback/notif toggles…).
@@ -34,5 +35,16 @@ object SettingsStore {
         val fresh = UUID.randomUUID().toString()
         setStr("install_id", fresh)
         return fresh
+    }
+
+    /** Stable local fallback handle used until the account profile is fetched from the panel. */
+    fun profileUsernameFallback(): String {
+        val existing = getStr("profile_username_fallback", "")
+        if (Regex("^[a-z0-9_]{3,20}$").matches(existing)) return existing
+        val suffix = UUID.randomUUID().toString()
+            .replace("-", "")
+            .take(8)
+            .lowercase(Locale.ROOT)
+        return "nova$suffix".take(20).also { setStr("profile_username_fallback", it) }
     }
 }

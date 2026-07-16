@@ -51,6 +51,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import com.tetonova.app.Secrets
 import com.tetonova.app.data.AnimeInfo
 import com.tetonova.app.data.CharacterInfo
 import com.tetonova.app.data.CoverResolver
@@ -68,6 +69,7 @@ import com.tetonova.app.ui.DetailArg
 import com.tetonova.app.ui.EpRef
 import com.tetonova.app.ui.PlayerArg
 import com.tetonova.app.ui.bleedEnd
+import com.tetonova.app.ui.detailWebLink
 import com.tetonova.app.ui.toDetailArg
 import com.tetonova.core.designsystem.Art
 import com.tetonova.core.designsystem.TnIcon
@@ -119,7 +121,7 @@ private fun DetailData.withLive(live: LiveDetail?): DetailData {
     if (live == null) return this
     val eps = live.episodes.map { e ->
         Episode(id = "e${e.num}", num = e.num, name = e.title.ifBlank { "Episode ${e.num}" }, dur = "± 24m", desc = "",
-            progress = 0, art = (art + e.num) % 8, url = e.url, thumb = e.thumb)
+            progress = 0, art = (art + e.num) % 8, season = e.season, epInSeason = e.epInSeason, url = e.url, thumb = e.thumb)
     }
     // Donghua (Chinese animation) per the source's origin country / genre. MAL's episode count for a
     // long-running donghua is often stale or for a different cut (e.g. it claims 720 while the source
@@ -145,8 +147,18 @@ private fun DetailData.withLive(live: LiveDetail?): DetailData {
     )
 }
 
+private fun DetailData.withFallbackSynopsis(s: String?): DetailData =
+    if (!s.isNullOrBlank() && needsSynopsisFallback(syn)) copy(syn = s) else this
+
+private fun needsSynopsisFallback(s: String?): Boolean {
+    val text = s.orEmpty().trim()
+    if (text.isBlank()) return true
+    val l = text.lowercase()
+    return "watch streaming" in l || "download free" in l || "subtitle indonesia terbaru di" in l
+}
+
 private fun liveStatusId(raw: String): String = when {
-    raw.contains("ongoing", true) || raw.contains("airing", true) || raw.contains("berlangsung", true) -> "Ongoing"
+    raw.contains("ongoing", true) || raw.contains("airing", true) || raw.contains("berlangsung", true) || raw.contains("sedang tayang", true) -> "Ongoing"
     raw.contains("completed", true) || raw.contains("tamat", true) || raw.contains("finished", true) -> "Completed"
     else -> raw
 }
@@ -177,7 +189,9 @@ private fun compactSpecialEpisodeLabel(raw: String): String? {
 
 private fun episodeBadgeLabel(ep: Episode): String {
     val label = episodeLabel(ep)
-    return if (label.contains("OVA", true) || label.contains("Special", true) || label.contains("ONA", true)) label else "EP ${ep.num}"
+    // Multi-season sources (PusatFilm /tv/) carry a source-relative number; show that ("EP 5") instead
+    // of the flat global index ("EP 84") the season-accordion is built on.
+    return if (label.contains("OVA", true) || label.contains("Special", true) || label.contains("ONA", true)) label else "EP ${ep.epInSeason ?: ep.num}"
 }
 
 private fun episodePrefixLabel(ep: Episode): String {
@@ -186,7 +200,7 @@ private fun episodePrefixLabel(ep: Episode): String {
         label.contains("OVA", true) -> "OVA"
         label.contains("Special", true) -> "SP"
         label.contains("ONA", true) -> "ONA"
-        else -> "E${ep.num}"
+        else -> "E${ep.epInSeason ?: ep.num}"
     }
 }
 
@@ -250,6 +264,10 @@ private fun makeEps(d: DetailData): Pair<List<Episode>, Int> {
  * MOVIE badge or a category genre marks it single-video; regular (2D) Hentai keeps the episode UI.
  */
 private fun DetailData.isSingleVideo(): Boolean {
+    // A real scraped multi-episode list means it's a SERIES, not a lone film — even when the source
+    // files it under a "Movie" category (PusatFilm badges every /tv/ serial "Movie", and its /eps/
+    // pages carry the full season accordion). Trust the episode list over the badge.
+    if (episodesLive.size > 1) return false
     if (badge.equals("Movie", true) || badge.equals("JAV", true)) return true
     // Nekopoi standalone pages (JAV / 3D / L2D one-shots) are ONE video: a nekopoi URL that is neither
     // a `/hentai/{slug}/` series nor an `-episode-N` page. This is the reliable signal — genre-based
@@ -298,7 +316,13 @@ fun DetailScreen(arg: DetailArg, resumeEpisode: Int?, onBack: () -> Unit, onOpen
     }
     val live = (liveLoad as? LiveLoad.Done)?.detail
     val liveLoading = liveLoad is LiveLoad.Loading
-    val d = remember(base, mal, omdb, live) { base.withMal(mal).withOmdb(omdb).withLive(live) }
+    val fallbackSourceSyn = if (liveLoading) null else live?.synopsis?.takeIf { it.isNotBlank() } ?: base.syn
+    val fallbackSyn by produceState<String?>(null, liveLoading, fallbackSourceSyn, mal?.synopsis) {
+        value = if (!liveLoading && needsSynopsisFallback(fallbackSourceSyn)) {
+            runCatching { CoverResolver.translateSynopsisToId(mal?.synopsis) }.getOrNull()
+        } else null
+    }
+    val d = remember(base, mal, omdb, live, fallbackSyn) { base.withMal(mal).withOmdb(omdb).withLive(live).withFallbackSynopsis(fallbackSyn) }
     val (eps, curIdx) = remember(d) { makeEps(d) }
     // Single-video (JAV / 3D / L2D): present movie-style — no Episode tab, "Tonton" not "Tonton
     // Episode 1", play targets the film's own page directly.
@@ -322,7 +346,8 @@ fun DetailScreen(arg: DetailArg, resumeEpisode: Int?, onBack: () -> Unit, onOpen
             .onFailure { toast("Nggak bisa buka link") }
     }
     fun share() {
-        val text = buildString { append(d.title); d.url?.let { append("\n").append(it) }; append("\n— via TetoNova") }
+        val link = detailWebLink(Secrets.controlPanelUrl, d.title, d.url, d.cover, d.badge, d.sub, d.epCount, d.genres)
+        val text = buildString { append(d.title); append("\n").append(link); append("\n— via TetoNova") }
         val send = Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, text) }
         runCatching { context.startActivity(Intent.createChooser(send, "Bagikan")) }.onFailure { toast("Nggak bisa berbagi") }
     }
@@ -555,12 +580,26 @@ private fun EpisodeTab(
     // means a block can only ever hold episodes whose number lands in its 25-wide range, so nothing
     // escapes its proper range chip.
     val pageSize = 25
+    // PusatFilm /tv/ stacks multiple seasons on one page; group the pager by SEASON ("Season 1", …)
+    // instead of fixed 25-wide number ranges so the picker mirrors the site. Everything else (flat
+    // anime lists) keeps the numeric-block pager.
+    val bySeason = remember(eps) { eps.mapNotNull { it.season }.distinct().size > 1 }
     val blocks = remember(eps) {
-        eps.sortedBy { it.num }
-            .groupBy { (it.num - 1).coerceAtLeast(0) / pageSize }
-            .toSortedMap()
-            .values.toList()
+        if (bySeason) {
+            eps.sortedBy { it.num }
+                .groupBy { it.season ?: 0 }
+                .toSortedMap()
+                .values.toList()
+        } else {
+            eps.sortedBy { it.num }
+                .groupBy { (it.num - 1).coerceAtLeast(0) / pageSize }
+                .toSortedMap()
+                .values.toList()
+        }
     }
+    fun chipLabel(ch: List<Episode>): String =
+        if (bySeason) "Season ${ch.firstOrNull()?.season ?: "?"}"
+        else "${ch.minOfOrNull { it.num } ?: 1}–${ch.maxOfOrNull { it.num } ?: eps.size}"
     // Newest-first flips the block order and the order within each block; the 25-wide boundaries
     // themselves never move, so a given episode always lives in the same range chip.
     val pages = if (sortAsc) blocks else blocks.asReversed().map { it.asReversed() }
@@ -596,8 +635,6 @@ private fun EpisodeTab(
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     items(pages.size) { i ->
                         val ch = pages[i]
-                        val lo = ch.minOf { it.num }
-                        val hi = ch.maxOf { it.num }
                         val on = i == page
                         Box(
                             Modifier.clip(RoundedCornerShape(TnRadii.pill))
@@ -606,16 +643,13 @@ private fun EpisodeTab(
                                 .clickable { page = i }
                                 .padding(horizontal = 14.dp, vertical = 7.dp),
                         ) {
-                            Text("$lo–$hi", color = if (on) Color.White else c.ink2, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Text(chipLabel(ch), color = if (on) Color.White else c.ink2, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
             } else {
-                val only = pages.firstOrNull().orEmpty()
-                val lo = only.minOfOrNull { it.num } ?: 1
-                val hi = only.maxOfOrNull { it.num } ?: eps.size
                 Box(Modifier.clip(RoundedCornerShape(TnRadii.pill)).background(c.rose).padding(horizontal = 14.dp, vertical = 7.dp)) {
-                    Text("$lo–$hi", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text(chipLabel(pages.firstOrNull().orEmpty()), color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
             }
             Spacer(Modifier.height(14.dp))
@@ -629,7 +663,7 @@ private fun EpisodeTab(
         Spacer(Modifier.height(8.dp))
         Text("Rekomendasi Serupa", color = c.ink, fontWeight = FontWeight.ExtraBold, fontSize = 18.sp)
         Spacer(Modifier.height(12.dp))
-        val reco = TnData.recommendations(currentTitle, 6, detailUrl)
+        val reco = TnData.recommendations(currentTitle, 20, detailUrl)
         val pad = if (wide) 28.dp else 20.dp
         LazyRow(
             modifier = Modifier.bleedEnd(pad),
@@ -648,7 +682,6 @@ private fun EpisodeTab(
                     }
                     Spacer(Modifier.height(6.dp))
                     Text(p.title, color = c.ink, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(p.sub, color = c.muted, fontSize = 11.sp, maxLines = 1)
                 }
             }
         }
@@ -780,7 +813,7 @@ private fun AboutTab(d: DetailData, liveLoading: Boolean) {
     Column {
         Text("Tentang ${d.title}", color = c.ink, fontWeight = FontWeight.ExtraBold, fontSize = 18.sp)
         Spacer(Modifier.height(10.dp))
-        // Synopsis straight from the source (web) — never synthetic; honest loading/empty otherwise.
+        // Synopsis stays real: source first, MAL translation only when the source is blank/SEO.
         val syn = d.syn.trim()
         Text(
             text = syn.ifBlank { if (liveLoading) "Memuat sinopsis…" else "Sinopsis belum tersedia dari sumber." },

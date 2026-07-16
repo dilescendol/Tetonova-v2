@@ -13,9 +13,19 @@
     "SUBTITLES"
   ],
   "entry": "compat/freereels/catalog.json",
-  "upstreamUrl": "https://drakula.dramabos.my.id/freereels",
-  "apiBaseUrl": "https://drakula.dramabos.my.id/freereels/api/v1",
-  "webBaseUrl": "https://drakula.dramabos.my.id/freereels",
-  "healthProbeUrl": "https://drakula.dramabos.my.id/freereels-api.html",
-  "category": "Dracin/Drakor"
+  "upstreamUrl": "https://drakula.goodbos.online",
+  "apiBaseUrl": "https://drakula.goodbos.online",
+  "webBaseUrl": "https://drakula.goodbos.online",
+  "healthProbeUrl": "https://drakula.goodbos.online/freereels-api.html",
+  "category": "Short Series",
+  "homeLinks": {
+    "showAll": [
+      { "label": "New", "url": "https://drakula.goodbos.online/api/freereels/new?lang=id" }
+    ],
+    "showOnClick": [
+      { "label": "New", "url": "https://drakula.goodbos.online/api/freereels/new?lang=id" },
+      { "label": "For You", "url": "https://drakula.goodbos.online/api/freereels/foryou?lang=id" },
+      { "label": "Popular", "url": "https://drakula.goodbos.online/api/freereels/popular?lang=id" }
+    ]
+  }
 }

@@ -1,0 +1,142 @@
+package com.tetonova.app.data
+
+import android.content.Context
+import android.content.Intent
+import android.util.Log
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
+import com.google.android.gms.auth.api.signin.GoogleSignIn
+import com.google.android.gms.auth.api.signin.GoogleSignInOptions
+import com.google.android.gms.tasks.Task
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.FirebaseUser
+import com.google.firebase.auth.GoogleAuthProvider
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
+
+/**
+ * Real account identity for the app: **Google sign-in via Firebase Auth**. The verified Firebase ID
+ * token gates the panel's `/api/v1/me/...` (Authorization: Bearer) so History/Followed/resume sync per
+ * account ([LibrarySync]).
+ *
+ * Uses the classic `GoogleSignIn` intent flow (not Credential Manager) on purpose: it works on the
+ * older Google Play Services found on test emulators (LDPlayer) AND on modern phones, whereas
+ * Credential Manager's Google provider needs very recent Play Services.
+ *
+ * Local-first / degrades gracefully: Firebase only initialises when `google-services.json` configured
+ * a default `FirebaseApp`. Without it the app runs normally signed-out — [isAvailable] is false,
+ * [signInIntent] returns null, and nothing crashes.
+ */
+object AuthManager {
+    private var auth: FirebaseAuth? = null
+
+    /** The signed-in Firebase user, or null. Snapshot-backed so the UI reacts to sign-in/out. */
+    var user by mutableStateOf<FirebaseUser?>(null)
+        private set
+
+    val signedIn: Boolean get() = user != null
+
+    /** True once a default FirebaseApp exists (i.e. google-services.json is present). */
+    val isAvailable: Boolean get() = auth != null
+
+    /** Best-effort init from the Application. No-op (stays signed-out) when Firebase isn't configured. */
+    fun init(context: Context) {
+        if (auth != null) return
+        runCatching {
+            val a = FirebaseAuth.getInstance() // throws if no default FirebaseApp (no google-services.json)
+            auth = a
+            user = a.currentUser
+            a.addAuthStateListener { user = it.currentUser }
+        }.onFailure { Log.i("TnAuth", "Firebase not configured — sign-in disabled (${it.message})") }
+    }
+
+    /** A fresh Firebase ID token for the `Authorization: Bearer` header, or null when signed-out. */
+    suspend fun idToken(): String? {
+        val u = auth?.currentUser ?: return null
+        return runCatching { u.getIdToken(false).await().token }.getOrNull()
+    }
+
+    /**
+     * The Google sign-in Intent to launch via an ActivityResult launcher (see [rememberGoogleSignIn]).
+     * Null when Firebase/web client id isn't configured (google-services.json missing).
+     */
+    fun signInIntent(context: Context): Intent? {
+        if (auth == null) return null
+        val webClientId = webClientId(context) ?: return null
+        val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+            .requestIdToken(webClientId)
+            .requestEmail()
+            .build()
+        return GoogleSignIn.getClient(context, gso).signInIntent
+    }
+
+    /** Exchange the sign-in result's Google ID token for a Firebase session. */
+    suspend fun handleSignInResult(data: Intent?): Result<Unit> {
+        val a = auth ?: return Result.failure(IllegalStateException("Firebase belum dikonfigurasi"))
+        return runCatching {
+            val account = GoogleSignIn.getSignedInAccountFromIntent(data).await()
+            val idToken = account.idToken ?: error("Tidak ada ID token dari Google")
+            a.signInWithCredential(GoogleAuthProvider.getCredential(idToken, null)).await()
+            user = a.currentUser
+            try { TnData.refreshUserProfile() } catch (e: Throwable) { Log.w("TnAuth", "profile refresh failed: ${e.message}") }
+            LibrarySync.onSignedIn()
+            // Absorb this device's anonymous cultivation into the account + re-read as the account.
+            try { TnData.onSignedIn() } catch (e: Throwable) { Log.w("TnAuth", "cultivation merge failed: ${e.message}") }
+            Unit
+        }.onFailure { Log.w("TnAuth", "signIn failed: ${it.message}") }
+    }
+
+    fun signOut() {
+        runCatching { auth?.signOut() }
+        user = null
+        LibrarySync.onSignedOut()
+        TnData.onSignedOutRefresh() // back to anonymous (install) cultivation
+    }
+
+    /** The OAuth Web client id generated by the google-services plugin (absent until the JSON lands). */
+    private fun webClientId(context: Context): String? {
+        val id = context.resources.getIdentifier("default_web_client_id", "string", context.packageName)
+        return if (id != 0) context.getString(id) else null
+    }
+}
+
+/**
+ * Returns a `() -> Unit` that launches Google sign-in and signs into Firebase, with the
+ * ActivityResult launcher wired up. Call it from a Composable and invoke the returned lambda from a
+ * button's onClick. Shows a toast on failure / when Firebase isn't configured.
+ */
+@Composable
+fun rememberGoogleSignIn(): () -> Unit {
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        scope.launch {
+            AuthManager.handleSignInResult(result.data).onFailure {
+                android.widget.Toast.makeText(ctx, it.message ?: "Gagal masuk", android.widget.Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+    return {
+        val intent = AuthManager.signInIntent(ctx)
+        if (intent == null) {
+            android.widget.Toast.makeText(ctx, "Firebase belum dikonfigurasi", android.widget.Toast.LENGTH_LONG).show()
+        } else {
+            launcher.launch(intent)
+        }
+    }
+}
+
+/** Await a Play-services [Task] from a coroutine without pulling in kotlinx-coroutines-play-services. */
+private suspend fun <T> Task<T>.await(): T = suspendCancellableCoroutine { cont ->
+    addOnSuccessListener { cont.resume(it) }
+    addOnFailureListener { cont.resumeWithException(it) }
+    addOnCanceledListener { cont.cancel() }
+}

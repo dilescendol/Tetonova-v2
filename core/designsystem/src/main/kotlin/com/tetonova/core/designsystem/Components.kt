@@ -20,6 +20,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -28,6 +31,8 @@ import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontFamily
 import coil.compose.AsyncImage
@@ -180,7 +185,18 @@ fun Poster(
     onClick: () -> Unit = {},
 ) {
     val c = TnTheme.colors
-    Column(modifier.clickable { onClick() }) {
+    var focused by remember { mutableStateOf(false) }
+    Column(
+        modifier
+            .graphicsLayer {
+                scaleX = if (focused) 1.04f else 1f
+                scaleY = if (focused) 1.04f else 1f
+            }
+            .border(3.dp, if (focused) c.rose else Color.Transparent, RoundedCornerShape(TnRadii.md))
+            .padding(3.dp)
+            .onFocusChanged { focused = it.isFocused }
+            .clickable { onClick() },
+    ) {
         Box(Modifier.fillMaxWidth().aspectRatio(2f / 3f).clip(RoundedCornerShape(TnRadii.md))) {
             Art(item.art, item.title.substringBefore(' '), Modifier.fillMaxSize(), coverTitle = item.title, coverUrl = item.cover)
             item.badge?.let { b ->
@@ -211,13 +227,6 @@ fun Poster(
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.padding(top = 8.dp),
         )
-        Text(
-            item.sub,
-            color = c.muted,
-            style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
     }
 }
 
@@ -241,13 +250,15 @@ fun TnChip(
     onClick: () -> Unit = {},
 ) {
     val c = TnTheme.colors
+    var focused by remember { mutableStateOf(false) }
     val bg = if (selected) c.rose else c.surface
     val fg = if (selected) Color.White else c.ink2
     Row(
         modifier
             .clip(RoundedCornerShape(TnRadii.pill))
             .background(bg)
-            .border(1.dp, if (selected) c.rose else c.line, RoundedCornerShape(TnRadii.pill))
+            .border(if (focused) 3.dp else 1.dp, if (focused) c.rose else if (selected) c.rose else c.line, RoundedCornerShape(TnRadii.pill))
+            .onFocusChanged { focused = it.isFocused }
             .clickable { onClick() }
             .padding(horizontal = 16.dp, vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically,

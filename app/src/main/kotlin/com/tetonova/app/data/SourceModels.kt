@@ -1,5 +1,6 @@
 package com.tetonova.app.data
 
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 /**
@@ -15,8 +16,15 @@ data class SourcesResponse(
     val supportMe: SupportMe? = null,
     val proxyBypass: ProxyBypass? = null,
     val telemetry: Telemetry? = null,
+    val trial: TrialConfig? = null,
     val releaseNotes: ReleaseNotes? = null,
     val helpCenter: HelpCenter? = null,
+)
+
+/** Premium trial config published by the panel and mirrored by the server claim endpoint. */
+@Serializable
+data class TrialConfig(
+    @SerialName("duration_seconds") val durationSeconds: Long = 0L,
 )
 
 /**
@@ -78,6 +86,9 @@ data class SourceOverride(
     val category: String? = null,
     val accessCode: String? = null,
     val lastProbeStatus: String? = null,
+    /** True when this source is a paid/premium source (served via the dramabuzz API provider). Drives
+     *  the live "N source" count and is gated behind the subscription paywall. */
+    val premium: Boolean = false,
     val homeLinks: HomeLinks? = null,
     /** True when the panel caches this source server-side (scrape-once). The app then reads Home/
      *  search/detail from [proxyPaths] instead of scraping on-device, falling back to live on a miss. */

@@ -1,6 +1,7 @@
 package com.tetonova.app.data
 
 import android.content.Context
+import android.util.Log
 import android.webkit.CookieManager
 import com.tetonova.core.scraper.ChallengeSolver
 import okhttp3.Cookie
@@ -15,13 +16,32 @@ import okhttp3.HttpUrl
  * subsequent fetches and queries the challenge redirect would otherwise strip.
  */
 object WebViewCookieJar : CookieJar {
-    private val cm get() = runCatching { CookieManager.getInstance() }.getOrNull()
-    override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
-        val mgr = cm ?: return
-        cookies.forEach { mgr.setCookie(url.toString(), it.toString()) }
+    @Volatile private var disabled = false
+
+    private fun cm(): CookieManager? {
+        if (disabled) return null
+        return runCatching { CookieManager.getInstance() }
+            .onFailure {
+                disabled = true
+                Log.w("TnCookieJar", "WebView CookieManager unavailable; continuing without shared cookies", it)
+            }
+            .getOrNull()
     }
+
+    override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
+        val mgr = cm() ?: return
+        cookies.forEach { cookie ->
+            runCatching { mgr.setCookie(url.toString(), cookie.toString()) }
+                .onFailure { disabled = true }
+        }
+    }
+
     override fun loadForRequest(url: HttpUrl): List<Cookie> {
-        val header = cm?.getCookie(url.toString()).orEmpty()
+        val mgr = cm() ?: return emptyList()
+        val header = runCatching { mgr.getCookie(url.toString()) }
+            .onFailure { disabled = true }
+            .getOrNull()
+            .orEmpty()
         if (header.isBlank()) return emptyList()
         return header.split(';').mapNotNull { Cookie.parse(url, it.trim()) }
     }

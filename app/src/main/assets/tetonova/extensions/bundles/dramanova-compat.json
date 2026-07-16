@@ -1,0 +1,31 @@
+{
+  "id": "dramanova-compat",
+  "name": "DramaNova",
+  "version": "1.0.0",
+  "contentTypes": [
+    "SERIES"
+  ],
+  "capabilities": [
+    "HOME",
+    "SEARCH",
+    "DETAIL",
+    "PLAYBACK",
+    "SUBTITLES"
+  ],
+  "entry": "compat/dramanova/catalog.json",
+  "upstreamUrl": "https://dramanova.goodbos.online",
+  "apiBaseUrl": "https://dramanova.goodbos.online",
+  "webBaseUrl": "https://dramanova.goodbos.online",
+  "healthProbeUrl": "https://dramanova.goodbos.online/api.html",
+  "accessCode": "A49C5D6FED6BD029B18F525D8A8B0F5E",
+  "category": "Short Series",
+  "homeLinks": {
+    "showAll": [
+      { "label": "Terbaru", "url": "https://dramanova.goodbos.online/api/home?lang=id&page=1&sort=views" }
+    ],
+    "showOnClick": [
+      { "label": "Terbaru", "url": "https://dramanova.goodbos.online/api/home?lang=id&page=1&sort=views" },
+      { "label": "Hot", "url": "https://dramanova.goodbos.online/api/hot?lang=id&page=1&sort=views" }
+    ]
+  }
+}

@@ -1,6 +1,8 @@
 package com.tetonova.app.feature.settings
 
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -17,7 +19,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
@@ -36,12 +37,29 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
+import com.tetonova.app.data.AuthManager
+import com.tetonova.app.data.AutoBackup
+import com.tetonova.app.data.BackupCodec
+import com.tetonova.app.data.BillingApi
+import com.tetonova.app.data.FcmRegistration
+import com.tetonova.app.data.FcmTokenHolder
+import com.tetonova.app.data.LibrarySync
+import com.tetonova.app.data.PaymentRow
+import com.tetonova.app.data.PlanView
+import com.tetonova.app.data.TnData
 import com.tetonova.app.data.TrialPhase
 import com.tetonova.app.data.TrialStore
+import com.tetonova.app.data.planViews
+import com.tetonova.app.data.rememberGoogleSignIn
+import com.tetonova.app.data.rupiah
 import com.tetonova.app.ui.AppState
+import com.tetonova.app.ui.QrisArg
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.window.Dialog
+import kotlinx.coroutines.launch
 import com.tetonova.app.ui.PageScroll
 import com.tetonova.app.ui.TnGhostButton
-import com.tetonova.app.ui.bleedEnd
 import com.tetonova.core.designsystem.TnCard
 import com.tetonova.core.designsystem.TnIcon
 import com.tetonova.core.designsystem.theme.RoseGradientColors
@@ -51,19 +69,15 @@ import com.tetonova.core.designsystem.theme.TnTheme
 import com.tetonova.core.designsystem.tnGradient
 import kotlinx.coroutines.delay
 
-private data class Plan(val id: String, val name: String, val price: Int, val per: String, val sub: String, val save: String?, val best: Boolean = false)
-
-private val PLANS = listOf(
-    Plan("month", "Bulanan", 15000, "/bln", "Coba dulu", null),
-    Plan("quarter", "3 Bulan", 40000, "/3 bln", "≈ Rp 13.300/bln", "Hemat 11%"),
-    Plan("year", "Tahunan", 120000, "/thn", "≈ Rp 10.000/bln", "Hemat 33%", best = true),
-)
-private val PERKS = listOf("layers" to "40+ source", "zap" to "Tanpa iklan", "refresh" to "Auto-update", "shield" to "Server prioritas")
-private val ANCHORS = listOf(
-    "user" to "Akun", "sparkle" to "Langganan", "palette" to "Tampilan", "play" to "Pemutaran",
-    "eye" to "Konten", "bell" to "Notifikasi", "cloud" to "Cadangan", "info" to "Tentang",
-)
-private fun rp(n: Int) = "Rp " + "%,d".format(n).replace(',', '.')
+private val PERKS = listOf("zap" to "Tanpa iklan", "refresh" to "Auto-update", "shield" to "Server prioritas")
+private val ID_LOCALE = java.util.Locale("in", "ID")
+private fun parseIsoMs(iso: String?): Long? =
+    iso?.let { runCatching { java.time.Instant.parse(it).toEpochMilli() }.getOrNull() }
+private fun fmtDate(ms: Long): String =
+    java.time.Instant.ofEpochMilli(ms).atZone(java.time.ZoneId.systemDefault())
+        .format(java.time.format.DateTimeFormatter.ofPattern("d MMM yyyy", ID_LOCALE))
+/** "N+ source" when known, else a generic word so the count is never a fabricated number. */
+private fun sourceCountLabel(n: Int): String = if (n > 0) "$n+ source" else "banyak source"
 
 @Composable
 fun SettingsScreen(state: AppState, onBack: () -> Unit) {
@@ -81,28 +95,9 @@ fun SettingsScreen(state: AppState, onBack: () -> Unit) {
         Spacer(Modifier.height(14.dp))
         Text("TetoNova · v0.1.0", color = c.muted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
         Text("Pengaturan", color = c.ink, fontWeight = FontWeight.ExtraBold, fontSize = 30.sp)
-        Text("Atur tampilan, pemutaran, konten, dan sinkron antar perangkat.", color = c.muted, fontSize = 13.sp)
-        Spacer(Modifier.height(14.dp))
-
-        LazyRow(
-            modifier = Modifier.bleedEnd(20.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            items(ANCHORS.size) { i ->
-                val (icon, label) = ANCHORS[i]
-                Row(
-                    Modifier.clip(RoundedCornerShape(TnRadii.pill)).background(c.surface).border(1.dp, c.line, RoundedCornerShape(TnRadii.pill))
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp),
-                ) {
-                    TnIcon(icon, size = 14.dp, tint = c.ink2)
-                    Text(label, color = c.ink2, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                }
-            }
-        }
 
         SectionCard("Akun & Sinkron", "Kelola akun dan koneksi cloud", "user") { AccountHero(state) }
-        SectionCard("Langganan & API", "Akses 40+ source lewat API provider", "sparkle") { SubscriptionPanel() }
+        SectionCard("Langganan & API", "Akses ${sourceCountLabel(TnData.premiumSourceCount())} lewat API provider", "sparkle") { SubscriptionPanel(state) }
         SectionCard("Tampilan", "Tema, warna aksen, dan kepadatan UI", "palette") { AppearanceSection(state) }
         SectionCard("Pemutaran & Data", "Kualitas stream dan perilaku player", "play") { PlaybackSection(state) }
         SectionCard("Penyimpanan & Unduhan", "Kualitas unduhan & file offline", "download") { DownloadsSettingsSection(state) }
@@ -124,7 +119,6 @@ private fun SectionCard(title: String, desc: String, icon: String, content: @Com
             }
             Column {
                 Text(title, color = c.ink, fontWeight = FontWeight.ExtraBold, fontSize = 17.sp)
-                Text(desc, color = c.muted, fontSize = 12.sp)
             }
         }
         Spacer(Modifier.height(12.dp))
@@ -142,7 +136,6 @@ private fun SettingRow(icon: String, title: String, desc: String, controlBelow: 
             }
             Column(Modifier.weight(1f)) {
                 Text(title, color = c.ink, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                Text(desc, color = c.muted, fontSize = 12.sp)
             }
             if (!controlBelow) control()
         }
@@ -181,30 +174,35 @@ private fun <T> SegSelect(value: T, options: List<Pair<T, String>>, onSelect: (T
 @Composable
 private fun AccountHero(state: AppState) {
     val c = TnTheme.colors
+    val user = AuthManager.user
+    val signIn = rememberGoogleSignIn()
     Column(Modifier.fillMaxWidth().padding(8.dp)) {
         if (state.signedIn) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Box(Modifier.size(48.dp).clip(CircleShape).tnGradient(com.tetonova.core.designsystem.theme.gradColors(0)), contentAlignment = Alignment.Center) {
-                    Text("R", color = Color.White, fontWeight = FontWeight.ExtraBold, fontSize = 20.sp)
+                val photo = user?.photoUrl?.toString()
+                if (photo != null) {
+                    AsyncImage(model = photo, contentDescription = null, modifier = Modifier.size(48.dp).clip(CircleShape))
+                } else {
+                    Box(Modifier.size(48.dp).clip(CircleShape).tnGradient(com.tetonova.core.designsystem.theme.gradColors(0)), contentAlignment = Alignment.Center) {
+                        Text((user?.displayName ?: user?.email ?: "?").take(1).uppercase(), color = Color.White, fontWeight = FontWeight.ExtraBold, fontSize = 20.sp)
+                    }
                 }
                 Column(Modifier.weight(1f)) {
-                    Text("Rafa Nova", color = c.ink, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                    Text("rafa@nova.id", color = c.muted, fontSize = 12.sp)
-                    Text("Sinkron aktif · 3 perangkat · Terakhir 2 menit lalu", color = c.muted, fontSize = 11.sp)
+                    Text(user?.displayName ?: "Akun Google", color = c.ink, fontWeight = FontWeight.Bold, fontSize = 15.sp, maxLines = 1)
+                    Text(user?.email ?: "", color = c.muted, fontSize = 12.sp, maxLines = 1)
+                    Text("Sinkron aktif", color = Color(0xFF1FA463), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                 }
             }
             Spacer(Modifier.height(12.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                TnGhostButton(text = "Ubah password", icon = "key")
-                TnGhostButton(text = "Keluar", icon = "logout", onClick = { state.signedIn = false })
+                TnGhostButton(text = "Keluar", icon = "logout", onClick = { state.signOut() })
             }
         } else {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("Masuk untuk sinkron lintas perangkat", color = c.ink, fontWeight = FontWeight.ExtraBold, fontSize = 17.sp)
-                Text("Library, history, dan badge kamu akan otomatis tersinkron. Tetap gratis, tanpa iklan.", color = c.muted, fontSize = 12.sp)
+                Text("Library, history, dan lanjut tonton kamu akan otomatis tersinkron. Tetap gratis, tanpa iklan.", color = c.muted, fontSize = 12.sp)
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    com.tetonova.app.ui.TnPrimaryButton(text = "Masuk dengan Email", icon = "mail", onClick = { state.signedIn = true })
-                    TnGhostButton(text = "Lanjut dengan Google", icon = "globe")
+                    com.tetonova.app.ui.TnPrimaryButton(text = "Masuk dengan Google", icon = "login", onClick = { signIn() })
                 }
             }
         }
@@ -252,18 +250,30 @@ private fun PlaybackSection(state: AppState) {
 
 @Composable
 private fun ContentSection(state: AppState) {
-    SettingRow("eyeOff", "Konten Dewasa (18+)", "Tampilkan atau sembunyikan judul bertanda 18+.") { TnToggle(state.mature) { state.mature = it } }
+    // Persist the flag, then bump ext state so the Extensions catalog + Home/Search re-filter mature
+    // sources instantly (matureVisible() reads the same persisted key).
+    SettingRow("eyeOff", "Konten Dewasa (18+)", "Tampilkan atau sembunyikan judul bertanda 18+.") { TnToggle(state.mature) { state.mature = it; com.tetonova.app.data.TnData.onMatureChanged() } }
     Divider()
     SettingRow("flag", "Lapor konten bermasalah", "Cara cepat lapor judul / source yang error.") { TnGhostButton(text = "Lapor sekarang", onClick = { state.openReport() }) }
 }
 
 @Composable
 private fun NotifSection(state: AppState) {
+    val scope = rememberCoroutineScope()
     SettingRow("bookmark", "Follow notifications", "Saat judul yang kamu ikuti rilis episode baru.") { TnToggle(state.notifFollow) { state.notifFollow = it } }
     Divider()
     SettingRow("comment", "Balasan forum", "Saat seseorang membalas thread atau komentar kamu.") { TnToggle(state.notifForum) { state.notifForum = it } }
     Divider()
-    SettingRow("shield", "Push lokal saja", "Gunakan worker lokal, tanpa push stack eksternal.") { TnToggle(state.pushLocal) { state.pushLocal = it } }
+    SettingRow("shield", "Push lokal saja", "Gunakan worker lokal, tanpa push stack eksternal.") {
+        TnToggle(state.pushLocal) { v ->
+            state.pushLocal = v
+            // Flipping this promptly (un)registers the current FCM token instead of waiting for the
+            // next token refresh. No-op without a token (e.g. Firebase not configured) — local-first.
+            FcmTokenHolder.token?.let { token ->
+                scope.launch { if (v) FcmRegistration.unregisterToken(token) else FcmRegistration.registerToken(token) }
+            }
+        }
+    }
 }
 
 @Composable
@@ -296,14 +306,57 @@ private fun fmtSize(bytes: Long): String {
 @Composable
 private fun BackupSection(state: AppState) {
     val context = LocalContext.current
-    SettingRow("cloud", "Cadangan otomatis", if (state.signedIn) "Backup tiap 24 jam ke cloud akun kamu." else "Masuk dulu untuk aktifkan backup cloud.") {
-        TnToggle(state.autoBackup && state.signedIn) { v -> if (state.signedIn) state.autoBackup = v else state.signedIn = true }
+    val signIn = rememberGoogleSignIn()
+    var folderName by remember { mutableStateOf(AutoBackup.folderName(context)) }
+
+    // SAF: write the .tnova backup into a user-chosen location in their file manager.
+    val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        val ok = runCatching {
+            context.contentResolver.openOutputStream(uri)?.use { it.write(BackupCodec.export().toByteArray()) }
+        }.isSuccess
+        Toast.makeText(context, if (ok) "Backup tersimpan" else "Gagal menyimpan backup", Toast.LENGTH_SHORT).show()
+    }
+    // SAF: read a previously exported .tnova and merge it back in.
+    val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        val text = runCatching { context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() } }.getOrNull()
+        val result = text?.let { BackupCodec.import(it, state) }
+        val msg = result?.fold({ "Berhasil impor $it item" }, { "File backup tidak valid" }) ?: "Gagal membaca file"
+        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+    }
+    // SAF: pick the folder the periodic local auto-backup writes into.
+    val folderLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        AutoBackup.setFolder(context, uri)
+        folderName = AutoBackup.folderName(context)
+        AutoBackup.maybeRun(context)
+    }
+
+    SettingRow("cloud", "Cadangan otomatis", if (state.signedIn) "Backup tiap 24 jam ke cloud akun & file lokal." else "Masuk dulu untuk aktifkan backup cloud.") {
+        TnToggle(state.autoBackup && state.signedIn) { v ->
+            if (!state.signedIn) { signIn(); return@TnToggle }
+            state.autoBackup = v
+            if (v) { LibrarySync.onSignedIn(); AutoBackup.maybeRun(context) }
+        }
+    }
+    if (state.autoBackup && state.signedIn) {
+        Divider()
+        SettingRow("file", "Folder cadangan lokal", folderName?.let { "Tersimpan ke: $it" } ?: "Pilih folder untuk backup file otomatis.") {
+            TnGhostButton(text = if (folderName != null) "Ubah" else "Pilih folder", icon = "file", onClick = { folderLauncher.launch(null) })
+        }
     }
     Divider()
-    SettingRow("upload", "Ekspor data", "Unduh library, history, dan settings sebagai file.") { TnGhostButton(text = "Ekspor", icon = "download", onClick = { shareText(context, exportJson(state)) }) }
+    SettingRow("upload", "Ekspor data", "Simpan library, history, dan settings sebagai file .tnova.") {
+        TnGhostButton(text = "Ekspor", icon = "download", onClick = { exportLauncher.launch("tetonova-backup-${backupDate()}.tnova") })
+    }
     Divider()
-    SettingRow("file", "Impor dari file", "Pulihkan dari file backup .tnova sebelumnya.") { TnGhostButton(text = "Pilih file", icon = "upload", onClick = { Toast.makeText(context, "Pilih file .tnova — segera hadir", Toast.LENGTH_SHORT).show() }) }
+    SettingRow("file", "Impor dari file", "Pulihkan dari file backup .tnova sebelumnya.") {
+        TnGhostButton(text = "Pilih file", icon = "upload", onClick = { importLauncher.launch(arrayOf("*/*")) })
+    }
 }
+
+private fun backupDate(): String = java.text.SimpleDateFormat("yyyyMMdd-HHmm", java.util.Locale.US).format(java.util.Date())
 
 @Composable
 private fun AboutSection(state: AppState) {
@@ -312,39 +365,129 @@ private fun AboutSection(state: AppState) {
     SettingRow("help", "Pusat bantuan", "FAQ, panduan source, dan kontak.") { TnGhostButton(text = "Buka", icon = "chevR", onClick = { state.openHelp() }) }
 }
 
-private fun shareText(context: android.content.Context, text: String) {
-    val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(android.content.Intent.EXTRA_TEXT, text) }
-    runCatching { context.startActivity(android.content.Intent.createChooser(send, "Ekspor data")) }
+/** Format sisa waktu trial sebagai mm:ss / hh:mm:ss. */
+private fun fmtTrial(ms: Long): String {
+    val t = ms / 1000
+    val h = t / 3600
+    val m = (t % 3600) / 60
+    val s = t % 60
+    return if (h > 0) "%02d:%02d:%02d".format(h, m, s) else "%02d:%02d".format(m, s)
 }
 
-private fun exportJson(state: AppState): String =
-    """{"app":"TetoNova","theme":"${if (state.darkTheme) "dark" else "light"}","accent":"${state.accentId}","quality":"${state.quality}","dataSaver":${state.dataSaver},"autoNext":${state.autoNext},"skipOpening":${state.skipOp},"mature":${state.mature}}"""
-
-/** Format sisa waktu trial sebagai mm:ss. */
-private fun fmtTrial(ms: Long): String { val t = ms / 1000; return "%02d:%02d".format(t / 60, t % 60) }
+private fun fmtTrialDuration(ms: Long): String {
+    val minutes = (ms / 60_000L).coerceAtLeast(1L)
+    val days = minutes / 1440L
+    val hours = minutes / 60L
+    return when {
+        minutes % 1440L == 0L -> "$days hari"
+        minutes >= 60L && minutes % 60L == 0L -> "$hours jam"
+        minutes >= 60L -> "$hours jam ${minutes % 60L} menit"
+        else -> "$minutes menit"
+    }
+}
 
 @Composable
-private fun SubscriptionPanel() {
+private fun SubscriptionPanel(state: AppState) {
     val c = TnTheme.colors
-    var status by remember { mutableStateOf("active") }
-    var plan by remember { mutableStateOf("year") }
-    val active = status == "active"
-    val sel = PLANS.first { it.id == plan }
-    // Trial Premium 1 jam (sekali pakai). Real state lewat TrialStore; tick tiap detik saat aktif.
-    var phase by remember { mutableStateOf(TrialStore.phase()) }
-    var remaining by remember { mutableStateOf(TrialStore.remainingMs()) }
-    LaunchedEffect(phase) {
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val signIn = rememberGoogleSignIn()
+    fun toast(msg: String) = Toast.makeText(ctx, msg, Toast.LENGTH_SHORT).show()
+
+    // Live state. `panelVersion` read so the source count recomposes after a panel fetch.
+    @Suppress("UNUSED_VARIABLE") val pv = TnData.panelVersion
+    val sub = TnData.subscription
+    val views = planViews(TnData.plans)
+    val premiumCount = TnData.premiumSourceCount()
+    val signedIn = AuthManager.signedIn
+    val entitled = sub?.entitled == true
+    val trialDurationMs = TnData.trialDurationMs()
+
+    // "Pratinjau status" stays a manual design preview, defaulting to the real status (re-keyed on it).
+    var preview by remember(sub?.status) { mutableStateOf(if (entitled) "active" else "free") }
+    val active = preview == "active"
+
+    // Selected plan: pre-select the user's current plan when premium (so "Perpanjang" buys the same),
+    // else the best-value plan; never null while views exist.
+    var planCode by remember(sub?.planCode, TnData.plans) { mutableStateOf(sub?.planCode) }
+    val sel = views.firstOrNull { it.plan.code == planCode } ?: views.firstOrNull { it.best } ?: views.firstOrNull()
+
+    // Trial phase: server-enforced when signed in (status=="trial" / 409 → used), else on-device TrialStore.
+    val serverTrial = sub?.status == "trial"
+    val serverTrialUsed = sub?.trialUsedAt != null
+    var localTrialUsed by remember { mutableStateOf(false) }
+    var phase by remember(sub?.status, sub?.trialUsedAt, signedIn, localTrialUsed) {
+        mutableStateOf(
+            when {
+                serverTrial -> TrialPhase.ACTIVE
+                signedIn -> if (serverTrialUsed || localTrialUsed) TrialPhase.EXPIRED else TrialPhase.AVAILABLE
+                else -> TrialStore.phase()
+            }
+        )
+    }
+    var remaining by remember { mutableStateOf(0L) }
+    LaunchedEffect(phase, sub?.currentExpiry) {
+        val serverExpiry = parseIsoMs(sub?.currentExpiry)
         while (phase == TrialPhase.ACTIVE) {
-            remaining = TrialStore.remainingMs()
+            remaining = if (serverTrial && serverExpiry != null)
+                (serverExpiry - System.currentTimeMillis()).coerceAtLeast(0L)
+            else TrialStore.remainingMs()
             if (remaining <= 0L) { phase = TrialPhase.EXPIRED; break }
             delay(1000)
         }
     }
+
+    var showManage by remember { mutableStateOf(false) }
+
+    // Pull fresh entitlement + plans when the Langganan panel opens (best-effort, no-op signed-out).
+    LaunchedEffect(Unit) { runCatching { TnData.refreshSubscription() } }
+
+    fun launchCheckout(view: PlanView?) {
+        if (view == null) return
+        if (!signedIn) { signIn(); return }
+        scope.launch {
+            when (val out = TnData.startCheckout(view.plan.code)) {
+                is BillingApi.CheckoutOutcome.Success -> state.openQris(
+                    QrisArg(
+                        orderId = out.orderId, qrImageUrl = out.qrImageUrl, checkoutUrl = out.checkoutUrl,
+                        amountIdr = out.amountIdr, expiresAt = out.expiresAt,
+                        planCode = view.plan.code, planName = view.plan.displayName,
+                    )
+                )
+                BillingApi.CheckoutOutcome.PlanNotPurchasable -> toast("Paket belum bisa diproses")
+                BillingApi.CheckoutOutcome.GatewayUnavailable -> toast("Gerbang pembayaran sedang gangguan, coba lagi")
+                BillingApi.CheckoutOutcome.BillingUnavailable -> toast("Pembayaran belum tersedia")
+                BillingApi.CheckoutOutcome.Failed -> toast("Gagal memulai pembayaran")
+            }
+        }
+    }
+
+    fun startTrial() {
+        if (trialDurationMs <= 0L) {
+            toast("Trial sedang nonaktif")
+            return
+        }
+        if (!signedIn) {
+            // Offline/signed-out soft fallback: on-device TrialStore. Server enforcement needs an account.
+            if (TrialStore.claim(trialDurationMs)) { phase = TrialPhase.ACTIVE; remaining = TrialStore.remainingMs() } else signIn()
+            return
+        }
+        scope.launch {
+            when (TnData.claimTrialServer()) {
+                is BillingApi.TrialOutcome.Success -> {} // sub.status flips to "trial" → phase recomputes
+                is BillingApi.TrialOutcome.AlreadyUsed -> { localTrialUsed = true; toast("Trial sudah dipakai") }
+                BillingApi.TrialOutcome.DeviceLimited -> { localTrialUsed = true; toast("Trial sudah dipakai di perangkat ini") }
+                BillingApi.TrialOutcome.Contention -> toast("Sedang sibuk, coba lagi sebentar")
+                BillingApi.TrialOutcome.Failed -> toast("Gagal memulai trial")
+            }
+        }
+    }
+
     Column(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        // status preview (demo toggle)
+        // status preview (manual design override; defaults to the real entitlement)
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("PRATINJAU STATUS", color = c.muted, fontSize = 10.sp, fontWeight = FontWeight.ExtraBold)
-            SegSelect(status, listOf("active" to "Premium aktif", "free" to "Gratis"), onSelect = { status = it })
+            SegSelect(preview, listOf("active" to "Premium aktif", "free" to "Gratis"), onSelect = { preview = it })
         }
         // status hero
         Box(
@@ -362,7 +505,7 @@ private fun SubscriptionPanel() {
                     if (active) {
                         Row(Modifier.clip(RoundedCornerShape(TnRadii.pill)).background(Color(0x3321A463)).padding(horizontal = 9.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                             Box(Modifier.size(7.dp).clip(CircleShape).background(Color(0xFF53E08A)))
-                            Text("Aktif", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            Text(if (serverTrial) "Trial" else "Aktif", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         }
                     } else {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
@@ -373,20 +516,24 @@ private fun SubscriptionPanel() {
                 }
                 Text(if (active) "TetoNova Premium" else "Upgrade ke Premium", color = if (active) Color.White else c.ink, fontWeight = FontWeight.ExtraBold, fontSize = 22.sp)
                 if (active) {
+                    val expiryMs = parseIsoMs(sub?.currentExpiry)
+                    val daysLeft = expiryMs?.let { ((it - System.currentTimeMillis()) / 86_400_000L).toInt().coerceAtLeast(0) }
+                    val totalDays = TnData.plans.firstOrNull { it.code == sub?.planCode }?.durationSeconds?.let { (it / 86_400L).toInt() }
+                    val frac = if (totalDays != null && totalDays > 0 && daysLeft != null) (daysLeft.toFloat() / totalDays).coerceIn(0f, 1f) else 0.6f
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         TnIcon("clock", size = 14.dp, tint = Color.White.copy(0.9f))
-                        Text("Aktif sampai 12 Juli 2026", color = Color.White.copy(0.9f), fontSize = 12.sp)
-                        Box(Modifier.clip(RoundedCornerShape(TnRadii.pill)).background(Color.White.copy(0.2f)).padding(horizontal = 8.dp, vertical = 2.dp)) {
-                            Text("36 hari lagi", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        Text(expiryMs?.let { "Aktif sampai ${fmtDate(it)}" } ?: "Langganan aktif", color = Color.White.copy(0.9f), fontSize = 12.sp)
+                        if (daysLeft != null) Box(Modifier.clip(RoundedCornerShape(TnRadii.pill)).background(Color.White.copy(0.2f)).padding(horizontal = 8.dp, vertical = 2.dp)) {
+                            Text("$daysLeft hari lagi", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                     Box(Modifier.fillMaxWidth().height(7.dp).clip(RoundedCornerShape(TnRadii.pill)).background(Color.White.copy(0.25f))) {
-                        Box(Modifier.fillMaxWidth(0.7f).height(7.dp).clip(RoundedCornerShape(TnRadii.pill)).background(Color.White))
+                        Box(Modifier.fillMaxWidth(frac).height(7.dp).clip(RoundedCornerShape(TnRadii.pill)).background(Color.White))
                     }
                 } else {
-                    Text("Sambungkan ke API provider untuk membuka 40+ source streaming — tanpa iklan, update otomatis, dan server prioritas.", color = c.ink2, fontSize = 12.sp)
+                    Text("Sambungkan ke API provider untuk membuka ${sourceCountLabel(premiumCount)} streaming — tanpa iklan, update otomatis, dan server prioritas.", color = c.ink2, fontSize = 12.sp)
                 }
-                // API provider sub-card — premium (demo) tersambung; free → pintu trial 1 jam.
+                // API provider sub-card: premium tersambung; free -> panel-configured trial.
                 if (active) {
                     Row(
                         Modifier.fillMaxWidth().clip(RoundedCornerShape(TnRadii.md)).background(Color.White.copy(0.12f)).padding(12.dp),
@@ -397,33 +544,39 @@ private fun SubscriptionPanel() {
                         }
                         Column(Modifier.weight(1f)) {
                             Text("API provider tersambung", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                            Text("40 source aktif · sinkron 2 menit lalu", color = Color.White.copy(0.85f), fontSize = 11.sp)
+                            Text(if (premiumCount > 0) "$premiumCount source premium aktif" else "Source premium aktif", color = Color.White.copy(0.85f), fontSize = 11.sp)
                         }
-                        Box(Modifier.size(34.dp).clip(CircleShape).background(Color.White.copy(0.14f)), contentAlignment = Alignment.Center) { TnIcon("refresh", size = 14.dp, tint = Color.White) }
+                        Box(
+                            Modifier.size(34.dp).clip(CircleShape).background(Color.White.copy(0.14f))
+                                .clickable { scope.launch { TnData.refreshSubscription() } },
+                            contentAlignment = Alignment.Center,
+                        ) { TnIcon("refresh", size = 14.dp, tint = Color.White) }
                     }
                 } else {
-                    val (tIcon, tTitle, tSub) = when (phase) {
-                        TrialPhase.AVAILABLE -> Triple("sparkle", "Coba Premium 1 jam gratis", "Sekali pakai · tanpa kartu")
+                    val trialEnabled = trialDurationMs > 0L
+                    val effectivePhase = if (!trialEnabled && phase == TrialPhase.AVAILABLE) TrialPhase.EXPIRED else phase
+                    val (tIcon, tTitle, _) = when (effectivePhase) {
+                        TrialPhase.AVAILABLE -> Triple("sparkle", "Coba Premium ${fmtTrialDuration(trialDurationMs)} gratis", "Sekali pakai · tanpa kartu")
                         TrialPhase.ACTIVE    -> Triple("clock", "Trial Premium aktif", "Sisa ${fmtTrial(remaining)}")
-                        TrialPhase.EXPIRED   -> Triple("lock", "Trial sudah dipakai", "Berlangganan untuk lanjut akses")
+                        TrialPhase.EXPIRED   -> if (trialEnabled)
+                            Triple("lock", "Trial sudah dipakai", "Berlangganan untuk lanjut akses")
+                        else
+                            Triple("lock", "Trial tidak tersedia", "Berlangganan untuk membuka Premium")
                     }
-                    val tTint = if (phase == TrialPhase.EXPIRED) c.muted else c.rose
+                    val tTint = if (effectivePhase == TrialPhase.EXPIRED) c.muted else c.rose
                     Row(
                         Modifier.fillMaxWidth().clip(RoundedCornerShape(TnRadii.md)).background(c.surface)
-                            .then(if (phase == TrialPhase.AVAILABLE) Modifier.clickable {
-                                if (TrialStore.claim()) { phase = TrialPhase.ACTIVE; remaining = TrialStore.remainingMs() }
-                            } else Modifier)
+                            .then(if (effectivePhase == TrialPhase.AVAILABLE) Modifier.clickable { startTrial() } else Modifier)
                             .padding(12.dp),
                         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
                         Box(Modifier.size(34.dp).clip(RoundedCornerShape(TnRadii.sm)).background(c.surface3), contentAlignment = Alignment.Center) {
-                            TnIcon(tIcon, size = 16.dp, tint = tTint, filled = phase == TrialPhase.AVAILABLE)
+                            TnIcon(tIcon, size = 16.dp, tint = tTint, filled = effectivePhase == TrialPhase.AVAILABLE)
                         }
                         Column(Modifier.weight(1f)) {
                             Text(tTitle, color = c.ink, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                            Text(tSub, color = c.muted, fontSize = 11.sp)
                         }
-                        when (phase) {
+                        when (effectivePhase) {
                             TrialPhase.AVAILABLE -> Box(Modifier.clip(RoundedCornerShape(TnRadii.pill)).background(c.rose).padding(horizontal = 12.dp, vertical = 6.dp), contentAlignment = Alignment.Center) {
                                 Text("Mulai", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold)
                             }
@@ -435,49 +588,39 @@ private fun SubscriptionPanel() {
                     }
                 }
                 if (active) {
-                    // Two buttons share one full-width row (weight 1f each, centered, no wrap) —
-                    // design handoff phone rule `.sub-actions .btn{flex:1 1 0;min-width:0;justify-content:center}`.
+                    // Perpanjang = shortcut to the same checkout (stacking); Kelola = payment history sheet.
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Box(Modifier.weight(1f).clip(RoundedCornerShape(TnRadii.pill)).background(Color.White).clickable {}.padding(horizontal = 10.dp, vertical = 11.dp), contentAlignment = Alignment.Center) {
+                        Box(Modifier.weight(1f).clip(RoundedCornerShape(TnRadii.pill)).background(Color.White).clickable { launchCheckout(sel) }.padding(horizontal = 10.dp, vertical = 11.dp), contentAlignment = Alignment.Center) {
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                                 TnIcon("sparkle", size = 15.dp, tint = c.rose, filled = true)
                                 Text("Perpanjang", color = c.rose, fontWeight = FontWeight.ExtraBold, fontSize = 13.sp, maxLines = 1, softWrap = false)
                             }
                         }
-                        Box(Modifier.weight(1f).clip(RoundedCornerShape(TnRadii.pill)).background(Color.White.copy(0.15f)).clickable {}.padding(horizontal = 10.dp, vertical = 11.dp), contentAlignment = Alignment.Center) {
+                        Box(Modifier.weight(1f).clip(RoundedCornerShape(TnRadii.pill)).background(Color.White.copy(0.15f)).clickable { showManage = true }.padding(horizontal = 10.dp, vertical = 11.dp), contentAlignment = Alignment.Center) {
                             Text("Kelola langganan", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1, softWrap = false)
                         }
                     }
                 }
             }
         }
-        // perks
+        // perks — first chip is the live premium-source count (when known)
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            PERKS.forEach { (icon, label) ->
-                Column(
-                    Modifier.weight(1f).clip(RoundedCornerShape(TnRadii.sm)).background(c.surface2).padding(vertical = 12.dp, horizontal = 6.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(5.dp),
-                ) {
-                    TnIcon(icon, size = 16.dp, tint = c.rose)
-                    Text(label, color = c.ink2, fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 1)
-                }
-            }
+            PerkChip("layers", if (premiumCount > 0) "$premiumCount+ source" else "Multi-source", Modifier.weight(1f))
+            PERKS.forEach { (icon, label) -> PerkChip(icon, label, Modifier.weight(1f)) }
         }
         // plan picker — 3 cards on tablet, stacked rows on phone
         BoxWithConstraints {
             if (maxWidth >= 560.dp) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    PLANS.forEach { p -> PlanCardVertical(p, plan == p.id, Modifier.weight(1f)) { plan = p.id } }
+                    views.forEach { v -> PlanCardVertical(v, sel?.plan?.code == v.plan.code, Modifier.weight(1f)) { planCode = v.plan.code } }
                 }
             } else {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    PLANS.forEach { p -> PlanCard(p, plan == p.id) { plan = p.id } }
+                    views.forEach { v -> PlanCard(v, sel?.plan?.code == v.plan.code) { planCode = v.plan.code } }
                 }
             }
         }
-        // checkout — stacked on phone (price block above a full-width CTA) so the
-        // price never gets crushed into a mid-number wrap; design handoff
-        // `@media phone .pay-card{flex-direction:column} .pay-cta{width:100%}`.
+        // checkout — stacked on phone (price block above a full-width CTA).
         Column(
             Modifier.fillMaxWidth().clip(RoundedCornerShape(TnRadii.md)).background(c.roseTint).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -485,35 +628,105 @@ private fun SubscriptionPanel() {
             Column {
                 Text(if (active) "Perpanjang" else "Mulai langganan", color = c.muted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                 Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Text(rp(sel.price), color = c.ink, fontWeight = FontWeight.ExtraBold, fontSize = 20.sp, maxLines = 1, softWrap = false)
-                    Text(sel.per, color = c.muted, fontSize = 12.sp, maxLines = 1, softWrap = false)
+                    Text(sel?.priceLabel ?: "—", color = c.ink, fontWeight = FontWeight.ExtraBold, fontSize = 20.sp, maxLines = 1, softWrap = false)
+                    Text(sel?.perLabel ?: "", color = c.muted, fontSize = 12.sp, maxLines = 1, softWrap = false)
+                }
+                if (active) Text("Waktu ditambah ke sisa langganan — gak hangus.", color = c.muted, fontSize = 11.sp)
+            }
+            com.tetonova.app.ui.TnPrimaryButton(
+                text = "Bayar ${sel?.priceLabel ?: ""}", icon = "shield", modifier = Modifier.fillMaxWidth(),
+            ) { launchCheckout(sel) }
+        }
+    }
+
+    if (showManage) ManageSubscriptionDialog(onDismiss = { showManage = false })
+}
+
+/** One perk chip (icon + short label). */
+@Composable
+private fun PerkChip(icon: String, label: String, modifier: Modifier) {
+    val c = TnTheme.colors
+    Column(
+        modifier.clip(RoundedCornerShape(TnRadii.sm)).background(c.surface2).padding(vertical = 12.dp, horizontal = 6.dp),
+        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(5.dp),
+    ) {
+        TnIcon(icon, size = 16.dp, tint = c.rose)
+        Text(label, color = c.ink2, fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+    }
+}
+
+/** "Kelola langganan" — payment-history only (the hero already shows status/expiry/sync). */
+@Composable
+private fun ManageSubscriptionDialog(onDismiss: () -> Unit) {
+    val c = TnTheme.colors
+    var rows by remember { mutableStateOf<List<PaymentRow>?>(null) }
+    LaunchedEffect(Unit) { rows = TnData.paymentHistory() }
+    Dialog(onDismissRequest = onDismiss) {
+        Column(
+            Modifier.clip(RoundedCornerShape(TnRadii.lg)).background(c.surface).padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text("Riwayat pembayaran", color = c.ink, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp)
+            val list = rows
+            when {
+                list == null -> Text("Memuat…", color = c.muted, fontSize = 12.sp)
+                list.isEmpty() -> Text("Belum ada pembayaran.", color = c.muted, fontSize = 12.sp)
+                else -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    list.take(20).forEach { p ->
+                        val planLabel = p.planDisplayName?.trim()?.takeIf { it.isNotEmpty() } ?: p.planCode
+                        val dateLabel = parseIsoMs(p.createdAt)?.let { fmtDate(it) } ?: p.createdAt
+                        Row(
+                            Modifier.fillMaxWidth().clip(RoundedCornerShape(TnRadii.sm)).background(c.surface2).padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(planLabel, color = c.ink, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                Text("${rupiah(p.amountIdr)} - $dateLabel", color = c.muted, fontSize = 11.sp)
+                            }
+                            Text(paymentStatusLabel(p.status), color = paymentStatusColor(p.status, c.muted), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
                 }
             }
-            com.tetonova.app.ui.TnPrimaryButton(text = "Bayar ${rp(sel.price)}", icon = "shield", modifier = Modifier.fillMaxWidth())
+            TnGhostButton("Tutup", modifier = Modifier.fillMaxWidth(), onClick = onDismiss)
         }
     }
 }
 
+private fun paymentStatusLabel(s: String): String = when (s) {
+    "completed" -> "Lunas"
+    "pending" -> "Menunggu"
+    "expired" -> "Kedaluwarsa"
+    "cancelled" -> "Dibatalkan"
+    else -> s
+}
+
+private fun paymentStatusColor(s: String, muted: Color): Color = when (s) {
+    "completed" -> Color(0xFF1FA463)
+    "pending" -> Color(0xFFE08A1F)
+    else -> muted
+}
+
 /** Vertical plan card (tablet 3-up). */
 @Composable
-private fun PlanCardVertical(p: Plan, selected: Boolean, modifier: Modifier, onClick: () -> Unit) {
+private fun PlanCardVertical(v: PlanView, selected: Boolean, modifier: Modifier, onClick: () -> Unit) {
     val c = TnTheme.colors
     Box(
         modifier.clip(RoundedCornerShape(TnRadii.md)).background(if (selected) c.roseTint else c.surface)
             .border(if (selected) 2.dp else 1.dp, if (selected) c.rose else c.line, RoundedCornerShape(TnRadii.md))
             .clickable { onClick() }.padding(16.dp),
     ) {
-        if (p.best) Box(Modifier.align(Alignment.TopEnd).clip(RoundedCornerShape(TnRadii.pill)).tnGradient(RoseGradientColors).padding(horizontal = 8.dp, vertical = 2.dp)) {
+        if (v.best) Box(Modifier.align(Alignment.TopEnd).clip(RoundedCornerShape(TnRadii.pill)).tnGradient(RoseGradientColors).padding(horizontal = 8.dp, vertical = 2.dp)) {
             Text("Terpopuler", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.ExtraBold)
         }
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(p.name.uppercase(), color = c.muted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            Text(v.plan.displayName.uppercase(), color = c.muted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
             Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text(rp(p.price), color = c.ink, fontWeight = FontWeight.ExtraBold, fontSize = 22.sp)
-                Text(p.per, color = c.muted, fontSize = 12.sp)
+                Text(v.priceLabel, color = c.ink, fontWeight = FontWeight.ExtraBold, fontSize = 22.sp)
+                Text(v.perLabel, color = c.muted, fontSize = 12.sp)
             }
-            Text(p.sub, color = c.muted, fontSize = 11.sp)
-            p.save?.let {
+            Text(v.perMonthLabel ?: "Coba dulu", color = c.muted, fontSize = 11.sp)
+            v.savingsLabel?.let {
                 Box(Modifier.clip(RoundedCornerShape(TnRadii.pill)).background(Color(0x1A1FA463)).padding(horizontal = 8.dp, vertical = 3.dp)) {
                     Text(it, color = Color(0xFF1FA463), fontSize = 10.sp, fontWeight = FontWeight.Bold)
                 }
@@ -528,7 +741,7 @@ private fun PlanCardVertical(p: Plan, selected: Boolean, modifier: Modifier, onC
 }
 
 @Composable
-private fun PlanCard(p: Plan, selected: Boolean, onClick: () -> Unit) {
+private fun PlanCard(v: PlanView, selected: Boolean, onClick: () -> Unit) {
     val c = TnTheme.colors
     Row(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(TnRadii.md)).background(if (selected) c.roseTint else c.surface)
@@ -538,16 +751,16 @@ private fun PlanCard(p: Plan, selected: Boolean, onClick: () -> Unit) {
     ) {
         Column(Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(p.name, color = c.ink, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                if (p.best) Box(Modifier.clip(RoundedCornerShape(TnRadii.pill)).tnGradient(RoseGradientColors).padding(horizontal = 8.dp, vertical = 2.dp)) {
+                Text(v.plan.displayName, color = c.ink, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                if (v.best) Box(Modifier.clip(RoundedCornerShape(TnRadii.pill)).tnGradient(RoseGradientColors).padding(horizontal = 8.dp, vertical = 2.dp)) {
                     Text("Terpopuler", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.ExtraBold)
                 }
             }
             Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text(rp(p.price), color = c.ink, fontWeight = FontWeight.ExtraBold, fontSize = 18.sp)
-                Text(p.per, color = c.muted, fontSize = 12.sp)
+                Text(v.priceLabel, color = c.ink, fontWeight = FontWeight.ExtraBold, fontSize = 18.sp)
+                Text(v.perLabel, color = c.muted, fontSize = 12.sp)
             }
-            Text(p.sub + (p.save?.let { "  ·  $it" } ?: ""), color = c.muted, fontSize = 11.sp)
+            Text((v.perMonthLabel ?: "Coba dulu") + (v.savingsLabel?.let { "  ·  $it" } ?: ""), color = c.muted, fontSize = 11.sp)
         }
         Box(
             Modifier.size(22.dp).clip(CircleShape).background(if (selected) c.rose else Color.Transparent).border(if (selected) 0.dp else 2.dp, c.line2, CircleShape),

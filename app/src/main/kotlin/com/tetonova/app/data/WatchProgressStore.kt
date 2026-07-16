@@ -57,6 +57,7 @@ object WatchProgressStore {
         val m = map()
         m[url] = Progress(positionMs.coerceAtMost(durationMs), durationMs, System.currentTimeMillis())
         persist(m)
+        LibrarySync.onLocalChange()
     }
 
     /** Mark an episode fully watched (so it won't resume near the end and shows a full bar). */
@@ -65,6 +66,30 @@ object WatchProgressStore {
         val m = map()
         m[url] = Progress(durationMs, durationMs, System.currentTimeMillis())
         persist(m)
+        LibrarySync.onLocalChange()
+    }
+
+    // ---- sync ----
+
+    /** All resume positions for an upload to the account. */
+    fun exportForSync(): List<ProgressRow> = map().map { (url, p) ->
+        ProgressRow(epUrl = url, positionMs = p.positionMs, durationMs = p.durationMs, updatedAt = p.updatedAt)
+    }
+
+    /** Apply the account's set, last-write-wins by `updatedAt`. Returns true if anything changed. */
+    fun mergeFromSync(rows: List<ProgressRow>): Boolean {
+        val m = map()
+        var changed = false
+        rows.forEach { r ->
+            if (r.epUrl.isBlank() || r.durationMs <= 0L) return@forEach
+            val cur = m[r.epUrl]
+            if (cur == null || r.updatedAt > cur.updatedAt) {
+                m[r.epUrl] = Progress(r.positionMs.coerceAtMost(r.durationMs), r.durationMs, r.updatedAt)
+                changed = true
+            }
+        }
+        if (changed) persist(m)
+        return changed
     }
 
     fun isFinished(url: String?): Boolean {

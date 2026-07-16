@@ -13,9 +13,19 @@
     "SUBTITLES"
   ],
   "entry": "compat/dramawave/catalog.json",
-  "upstreamUrl": "https://dramawave.dramabos.my.id",
-  "apiBaseUrl": "https://dramawave.dramabos.my.id/api/v1",
-  "webBaseUrl": "https://dramawave.dramabos.my.id",
-  "healthProbeUrl": "https://dramawave.dramabos.my.id/api.html",
-  "category": "Dracin/Drakor"
+  "upstreamUrl": "https://dramawave.goodbos.online",
+  "apiBaseUrl": "https://dramawave.goodbos.online",
+  "webBaseUrl": "https://dramawave.goodbos.online",
+  "healthProbeUrl": "https://dramawave.goodbos.online/api.html",
+  "accessCode": "A49C5D6FED6BD029B18F525D8A8B0F5E",
+  "category": "Short Series",
+  "homeLinks": {
+    "showAll": [
+      { "label": "Pilihan Populer", "url": "https://dramawave.goodbos.online/api/recommend?lang=in&next=1" }
+    ],
+    "showOnClick": [
+      { "label": "Pilihan Populer", "url": "https://dramawave.goodbos.online/api/recommend?lang=in&next=1" },
+      { "label": "Anime", "url": "https://dramawave.goodbos.online/api/anime?lang=in&next=1" }
+    ]
+  }
 }

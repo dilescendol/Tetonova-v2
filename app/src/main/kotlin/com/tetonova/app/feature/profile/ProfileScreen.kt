@@ -12,7 +12,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -30,29 +29,44 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import coil.compose.AsyncImage
+import com.tetonova.app.data.AuthManager
+import com.tetonova.app.data.ProfileApi
 import com.tetonova.app.data.RealmTier
 import com.tetonova.app.data.TnData
+import com.tetonova.app.data.rememberGoogleSignIn
+import com.tetonova.app.feature.library.libraryGroup
 import com.tetonova.app.ui.AppState
 import com.tetonova.app.ui.DetailArg
 import com.tetonova.app.ui.PageScroll
 import com.tetonova.app.ui.PosterGrid
+import com.tetonova.app.ui.isTelevision
 import com.tetonova.app.ui.TnGhostButton
 import com.tetonova.app.ui.TnPrimaryButton
 import com.tetonova.app.ui.bleedEnd
@@ -70,9 +84,9 @@ import com.tetonova.core.designsystem.tnGradient
 import com.tetonova.core.model.BadgeItem
 import com.tetonova.core.model.RewardItem
 import com.tetonova.core.model.RewardState
-import com.tetonova.core.model.SampleData
 import com.tetonova.core.model.StatItem
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 @Composable
 fun ProfileScreen(state: AppState) {
@@ -81,6 +95,8 @@ fun ProfileScreen(state: AppState) {
     LaunchedEffect(Unit) {
         runCatching { TnData.refreshUserXp() }
         runCatching { TnData.refreshAchievements() }
+        runCatching { TnData.refreshUserProfile() }
+        runCatching { TnData.refreshSubscription() }
     }
     // Breakthrough: a realm crossing triggers the full "Tribulasi" overlay; a plain level-up just toasts.
     var tribulation by remember { mutableStateOf<TnData.BreakthroughEvent?>(null) }
@@ -94,7 +110,7 @@ fun ProfileScreen(state: AppState) {
     }
     Box(Modifier.fillMaxSize()) {
         PageScroll(topInset = true) {
-            ProfileHero(signedIn = state.signedIn)
+            ProfileHero(signedIn = state.signedIn, onOpenSubscription = { state.openSettings() })
             SectionHead(title = "Statistik nonton", sub = "30 hari terakhir")
             StatGrid()
             CollapseSection(title = "Jalan Kultivasi", sub = "Naik level untuk membuka realm") { RewardTrack() }
@@ -104,11 +120,9 @@ fun ProfileScreen(state: AppState) {
             SectionHead(
                 title = "Library Lane",
                 sub = "Riwayat, ikutan & unduhan",
-                action = { TnGhostButton(text = "Buka Full Library", icon = "chevR") },
+                action = { TnGhostButton(text = "Buka Full Library", icon = "chevR", onClick = { state.openLibrary() }) },
             )
             Library(onOpenDetail = state::openDetail)
-            SectionHead(title = "Akun & Aplikasi", sub = "Kelola akun, dukungan, dan pengaturan")
-            AccountFooter(state)
             Spacer(Modifier.height(24.dp))
         }
         tribulation?.let { TribulationOverlay(it) { tribulation = null } }
@@ -149,7 +163,7 @@ private fun TribulationOverlay(event: TnData.BreakthroughEvent, onDone: () -> Un
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun ProfileHero(signedIn: Boolean) {
+private fun ProfileHero(signedIn: Boolean, onOpenSubscription: () -> Unit) {
     val banner = TnBanners.first { it.id == "grape" }
     // Live cultivation identity (falls back to a fresh Manusia Fana / Lv.1 cultivator when offline).
     val xp = TnData.userXp
@@ -163,6 +177,12 @@ private fun ProfileHero(signedIn: Boolean) {
     // Equipped frame (chosen from any reached realm) overrides the current realm's frame.
     val frameRealmId = xp?.equippedFrame?.ifBlank { null } ?: realm?.realmId
     val frameUrl = frameRealmId?.let { id -> TnData.realms.firstOrNull { it.realmId == id }?.frameUrl }
+    // Editable identity (synced to the account; falls back to local cache / Google / default).
+    val name = TnData.profileName
+    val username = TnData.profileUsername
+    val photoUrl = TnData.profilePhotoUrl
+    var showEdit by remember { mutableStateOf(false) }
+    val launchSignIn = rememberGoogleSignIn()
     Box(
         Modifier
             .fillMaxWidth()
@@ -170,25 +190,33 @@ private fun ProfileHero(signedIn: Boolean) {
             .background(banner.brush)
             .padding(22.dp),
     ) {
-        Box(Modifier.align(Alignment.TopEnd).size(38.dp).clip(CircleShape).background(Color.White.copy(0.14f)), contentAlignment = Alignment.Center) {
+        // Pencil → edit profile (signed in) or prompt Google sign-in first so the edit can sync.
+        Box(
+            Modifier.align(Alignment.TopEnd).size(38.dp).clip(CircleShape).background(Color.White.copy(0.14f))
+                .clickable { if (AuthManager.signedIn) showEdit = true else launchSignIn() },
+            contentAlignment = Alignment.Center,
+        ) {
             TnIcon("edit", size = 19.dp, tint = Color.White)
         }
         Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                LevelRing(letter = "R", level = level, frameUrl = frameUrl)
+                LevelRing(letter = name.take(1).uppercase().ifBlank { "?" }, level = level, frameUrl = frameUrl, photoUrl = photoUrl)
                 Column {
-                    Text("Selamat datang kembali · @rafzhx", color = Color.White.copy(0.82f), fontSize = 12.sp)
-                    Text("Rafa Nova", color = Color.White, fontWeight = FontWeight.ExtraBold, fontSize = 24.sp)
+                    Text("Selamat datang kembali · @$username", color = Color.White.copy(0.82f), fontSize = 12.sp)
+                    Text(name, color = Color.White, fontWeight = FontWeight.ExtraBold, fontSize = 24.sp)
                 }
             }
             // compact inline pills (wrap to next line as needed)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 HeroPill("cloud", if (signedIn) "Sinkron aktif" else "Masuk untuk sinkron")
-                HeroPill("sparkle", "Premium · 40 source", filled = true)
+                // Live status word only (no source count); tap → Settings → Langganan to upgrade/manage.
+                val premiumEntitled = TnData.subscription?.entitled == true
+                HeroPill("sparkle", if (premiumEntitled) "Premium" else "Free", filled = premiumEntitled, onClick = onOpenSubscription)
                 HeroPill("flame2", if (streak > 0) "$streak hari streak" else "Mulai streak")
                 val freezes = xp?.streakFreezes ?: 0
                 if (freezes > 0) HeroPill("shield", "$freezes Pil Penjaga Qi", filled = true)
-                HeroPill("star", "Top 5% kontributor")
+                val contributorLabel = xp?.contributor?.label?.takeIf { it.isNotBlank() } ?: "Kontributor baru"
+                HeroPill("star", contributorLabel)
             }
             // Cultivation realm + breakthrough progress (was a hardcoded Lv./XP line).
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -202,15 +230,32 @@ private fun ProfileHero(signedIn: Boolean) {
             }
         }
     }
+    if (showEdit) {
+        EditProfileDialog(
+            initialName = name,
+            initialUsername = username,
+            initialPhotoUrl = photoUrl,
+            onDismiss = { showEdit = false },
+        )
+    }
 }
 
 @Composable
-private fun LevelRing(letter: String, level: Int = 1, frameUrl: String? = null) {
+private fun LevelRing(letter: String, level: Int = 1, frameUrl: String? = null, photoUrl: String? = null) {
     val frame = TnFrames.first { it.id == "rose" }
     Box(contentAlignment = Alignment.Center) {
         Box(Modifier.size(84.dp).clip(CircleShape).background(frame.ring), contentAlignment = Alignment.Center) {
             Box(Modifier.size(72.dp).clip(CircleShape).tnGradient(gradColors(0)), contentAlignment = Alignment.Center) {
-                Text(letter, color = Color.White, fontWeight = FontWeight.ExtraBold, fontSize = 30.sp)
+                if (photoUrl != null) {
+                    AsyncImage(
+                        model = photoUrl,
+                        contentDescription = null,
+                        modifier = Modifier.size(72.dp).clip(CircleShape),
+                        contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                    )
+                } else {
+                    Text(letter, color = Color.White, fontWeight = FontWeight.ExtraBold, fontSize = 30.sp)
+                }
             }
         }
         // The current realm's frame cosmetic (when uploaded) wraps the avatar; else the rose ring above.
@@ -224,10 +269,138 @@ private fun LevelRing(letter: String, level: Int = 1, frameUrl: String? = null) 
     }
 }
 
+/** Edit display name + handle + avatar photo; all changes sync to the account (cross-device). */
 @Composable
-private fun HeroPill(icon: String, label: String, modifier: Modifier = Modifier, filled: Boolean = false) {
+private fun EditProfileDialog(
+    initialName: String,
+    initialUsername: String,
+    initialPhotoUrl: String?,
+    onDismiss: () -> Unit,
+) {
+    val c = TnTheme.colors
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var name by remember { mutableStateOf(initialName) }
+    var username by remember { mutableStateOf(initialUsername) }
+    var photoUrl by remember { mutableStateOf(initialPhotoUrl) }
+    var usernameError by remember { mutableStateOf<String?>(null) }
+    var saving by remember { mutableStateOf(false) }
+    var uploading by remember { mutableStateOf(false) }
+
+    val pickPhoto = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) {
+            uploading = true
+            scope.launch {
+                val bytes = runCatching { ctx.contentResolver.openInputStream(uri)?.use { it.readBytes() } }.getOrNull()
+                val mime = ctx.contentResolver.getType(uri) ?: "image/jpeg"
+                if (bytes != null && bytes.isNotEmpty() && TnData.updateAvatar(bytes, mime)) {
+                    photoUrl = TnData.profilePhotoUrl
+                } else {
+                    android.widget.Toast.makeText(ctx, "Gagal unggah foto, coba lagi", android.widget.Toast.LENGTH_SHORT).show()
+                }
+                uploading = false
+            }
+        }
+    }
+
+    val cleanUsername = username.removePrefix("@").lowercase()
+    val usernameValid = Regex("^[a-z0-9_]{3,20}$").matches(cleanUsername)
+    val nameValid = name.trim().isNotEmpty() && name.trim().length <= 40
+    val canSave = nameValid && usernameValid && !saving && !uploading
+
+    AlertDialog(
+        onDismissRequest = { if (!saving) onDismiss() },
+        containerColor = c.surface,
+        title = { Text("Edit profil", color = c.ink, fontWeight = FontWeight.ExtraBold) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                    Box(Modifier.size(64.dp).clip(CircleShape).tnGradient(gradColors(0)), contentAlignment = Alignment.Center) {
+                        if (photoUrl != null) {
+                            AsyncImage(model = photoUrl, contentDescription = null, modifier = Modifier.size(64.dp).clip(CircleShape), contentScale = ContentScale.Crop)
+                        } else {
+                            Text(name.take(1).uppercase().ifBlank { "?" }, color = Color.White, fontWeight = FontWeight.ExtraBold, fontSize = 24.sp)
+                        }
+                    }
+                    TnGhostButton(
+                        text = if (uploading) "Mengunggah…" else "Ganti foto",
+                        onClick = { if (!uploading) pickPhoto.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                    )
+                }
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { if (it.length <= 40) name = it },
+                    label = { Text("Nama") },
+                    singleLine = true,
+                    isError = name.isNotEmpty() && !nameValid,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = tnFieldColors(),
+                )
+                OutlinedTextField(
+                    value = username,
+                    onValueChange = { input ->
+                        username = input.removePrefix("@").lowercase()
+                            .filter { ch -> ch in 'a'..'z' || ch in '0'..'9' || ch == '_' }
+                            .take(20)
+                        usernameError = null
+                    },
+                    label = { Text("Username") },
+                    prefix = { Text("@", color = c.muted) },
+                    singleLine = true,
+                    isError = usernameError != null || (username.isNotEmpty() && !usernameValid),
+                    supportingText = {
+                        val msg = usernameError
+                            ?: if (username.isNotEmpty() && !usernameValid) "3–20 huruf kecil, angka, atau _" else null
+                        if (msg != null) Text(msg, color = c.rose, fontSize = 11.sp)
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = tnFieldColors(),
+                )
+            }
+        },
+        confirmButton = {
+            TnPrimaryButton(
+                text = if (saving) "Menyimpan…" else "Simpan",
+                modifier = Modifier.alpha(if (canSave) 1f else 0.5f),
+                onClick = {
+                    if (!canSave) return@TnPrimaryButton
+                    saving = true
+                    usernameError = null
+                    scope.launch {
+                        when (TnData.updateProfile(name.trim(), cleanUsername)) {
+                            is ProfileApi.SaveOutcome.Success -> { saving = false; onDismiss() }
+                            ProfileApi.SaveOutcome.UsernameTaken -> { saving = false; usernameError = "Username sudah dipakai" }
+                            ProfileApi.SaveOutcome.Invalid -> { saving = false; usernameError = "Nama/username tidak valid" }
+                            ProfileApi.SaveOutcome.Failed -> {
+                                saving = false
+                                android.widget.Toast.makeText(ctx, "Gagal menyimpan, coba lagi", android.widget.Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    }
+                },
+            )
+        },
+        dismissButton = { TnGhostButton(text = "Batal", onClick = { if (!saving) onDismiss() }) },
+    )
+}
+
+@Composable
+private fun tnFieldColors() = OutlinedTextFieldDefaults.colors(
+    focusedTextColor = TnTheme.colors.ink,
+    unfocusedTextColor = TnTheme.colors.ink,
+    cursorColor = TnTheme.colors.rose,
+    focusedBorderColor = TnTheme.colors.rose,
+    unfocusedBorderColor = TnTheme.colors.line,
+    focusedContainerColor = TnTheme.colors.surface,
+    unfocusedContainerColor = TnTheme.colors.surface,
+)
+
+@Composable
+private fun HeroPill(icon: String, label: String, modifier: Modifier = Modifier, filled: Boolean = false, onClick: (() -> Unit)? = null) {
     Row(
-        modifier.clip(RoundedCornerShape(TnRadii.pill)).background(Color.White.copy(0.15f)).padding(horizontal = 12.dp, vertical = 9.dp),
+        modifier.clip(RoundedCornerShape(TnRadii.pill)).background(Color.White.copy(0.15f))
+            .then(if (onClick != null) Modifier.clickable { onClick() } else Modifier)
+            .padding(horizontal = 12.dp, vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp),
     ) {
         TnIcon(icon, size = 14.dp, tint = Color.White, filled = filled)
@@ -247,7 +420,13 @@ private fun StatGrid() {
         StatItem("Episode", s.episodes.toString(), null, "eye", 6),
         StatItem("Hari streak", xp.streakDays.toString(), null, "flame2", 4),
         StatItem("Episode selesai", s.episodesCompleted.toString(), null, "check", 2),
-    ) else SampleData.stats
+    ) else listOf(
+        // New user / stats not loaded — honest zeros, never fabricated numbers.
+        StatItem("Jam nonton", "0j", null, "play", 0),
+        StatItem("Episode", "0", null, "eye", 0),
+        StatItem("Hari streak", "0", null, "flame2", 0),
+        StatItem("Episode selesai", "0", null, "check", 0),
+    )
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         stats.forEach { s2 -> StatTile(s2, Modifier.weight(1f)) }
     }
@@ -301,10 +480,7 @@ private fun CollapseSection(title: String, sub: String, content: @Composable () 
 private fun RewardTrack() {
     val ladder = TnData.realms
     if (ladder.isEmpty()) {
-        // Realm ladder not loaded yet (offline / first run) → keep the bundled sample track.
-        LazyRow(modifier = Modifier.bleedEnd(20.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            items(SampleData.rewards.size) { i -> RewardNode(SampleData.rewards[i]) }
-        }
+        // Realm ladder not loaded yet (offline / first run) — render nothing rather than a fake track.
         return
     }
     val xp = TnData.userXp
@@ -391,7 +567,8 @@ private fun RewardNode(r: RewardItem) {
 private fun BadgeWall() {
     val ach = TnData.achievements
     // Hidden + still-locked achievements show as "???"; everything else binds live.
-    val items = if (ach.isEmpty()) SampleData.badges else ach.map { a ->
+    // No achievements loaded yet → empty (no fabricated badges).
+    val items = if (ach.isEmpty()) emptyList() else ach.map { a ->
         BadgeItem(
             name = if (a.hidden && !a.unlocked) "???" else a.name,
             desc = if (a.hidden && !a.unlocked) "Rahasia" else a.desc,
@@ -431,13 +608,12 @@ private fun Library(onOpenDetail: (DetailArg) -> Unit) {
         Triple("followed", "Followed", "bookmark"),
         Triple("downloads", "Downloads", "download"),
     )
-    // Live catalog posters (real covers) — 4 per tab, a distinct slice each.
-    val live = remember(TnData.panelVersion) { TnData.posters }
-    val data = when (tab) {
-        "followed" -> live.drop(4).take(4)
-        "downloads" -> live.drop(8).take(4)
-        else -> live.take(4)
-    }.ifEmpty { live.take(4) }
+    // LIVE library data — real history / followed / downloads (no static catalog slice). Phones show
+    // up to 4 per tab; tablets / Android TV show up to 10 (more width to fill).
+    val cfg = LocalConfiguration.current
+    val ctx = LocalContext.current
+    val limit = if (cfg.screenWidthDp >= 600 || isTelevision(ctx)) 10 else 4
+    val data = libraryGroup(tab).take(limit)
     Column {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             tabs.forEach { (id, label, icon) ->
@@ -454,132 +630,17 @@ private fun Library(onOpenDetail: (DetailArg) -> Unit) {
             }
         }
         Spacer(Modifier.height(14.dp))
-        PosterGrid(items = data, onOpenDetail = onOpenDetail, showProgress = false)
-    }
-}
-
-@Composable
-private fun AccountFooter(state: AppState) {
-    val c = TnTheme.colors
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        // Account card
-        TnCard(Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                if (state.signedIn) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Box(Modifier.size(44.dp).clip(CircleShape).tnGradient(gradColors(0)), contentAlignment = Alignment.Center) {
-                            Text("R", color = Color.White, fontWeight = FontWeight.ExtraBold, fontSize = 18.sp)
-                        }
-                        Column(Modifier.weight(1f)) {
-                            Text("Rafa Nova", color = c.ink, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                            Text("rafa@nova.id", color = c.muted, fontSize = 12.sp)
-                        }
-                        Row(
-                            Modifier.clip(RoundedCornerShape(TnRadii.pill)).background(Color(0x1A1FA463)).padding(horizontal = 10.dp, vertical = 5.dp),
-                            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp),
-                        ) {
-                            Box(Modifier.size(7.dp).clip(CircleShape).background(Color(0xFF1FA463)))
-                            Text("Sinkron aktif", color = Color(0xFF1FA463), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-                        }
-                    }
-                    Text("Terakhir sinkron 2 menit lalu · 3 perangkat", color = c.muted, fontSize = 12.sp)
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        TnGhostButton(text = "Ganti akun", icon = "key")
-                        TnGhostButton(text = "Keluar", icon = "logout", onClick = { state.signedIn = false })
-                    }
-                } else {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Box(Modifier.size(44.dp).clip(CircleShape).background(c.surface3), contentAlignment = Alignment.Center) {
-                            TnIcon("user", size = 22.dp, tint = c.muted)
-                        }
-                        Column(Modifier.weight(1f)) {
-                            Text("Belum masuk", color = c.ink, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                            Text("Data tersimpan di perangkat ini saja", color = c.muted, fontSize = 12.sp)
-                        }
-                    }
-                    Text("Masuk untuk sinkron library, history & badge antar perangkat.", color = c.muted, fontSize = 12.sp)
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        TnPrimaryButton(text = "Masuk / Daftar", icon = "login", onClick = { state.signedIn = true })
-                        TnGhostButton(text = "Mode tamu")
-                    }
-                }
-            }
-        }
-        // Support card — title/description/button + donate link all from the panel's supportMe.
-        val support = remember(TnData.panelVersion) { TnData.supportMe }
-        if (support?.enabled != false) {
-            val ctx = LocalContext.current
-            val desc = support?.description?.ifBlank { null }
-                ?: "Server, scraper sources, dan workers butuh kopi. Donasi sekali atau bulanan — terserah kamu."
-            val btnLabel = support?.buttonLabel?.ifBlank { null } ?: "Dukung sekarang"
-            val url = support?.url?.ifBlank { null } ?: "https://tetonova.dilcendol.web.id"
-            Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(TnRadii.lg)).tnGradient(com.tetonova.core.designsystem.theme.RoseGradientColors).padding(20.dp)) {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                        TnIcon("heart", size = 12.dp, tint = Color.White, filled = true)
-                        Text(support?.label?.ifBlank { null } ?: "Dukung TetoNova", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold)
-                    }
-                    Text("Bantu TetoNova tetap gratis & berkembang", color = Color.White, fontWeight = FontWeight.ExtraBold, fontSize = 17.sp)
-                    Text(desc, color = Color.White.copy(0.9f), fontSize = 12.sp)
-                    Box(
-                        Modifier.clip(RoundedCornerShape(TnRadii.pill)).background(Color.White)
-                            .clickable { openUrl(ctx, url) }.padding(horizontal = 18.dp, vertical = 11.dp),
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                            TnIcon("heart", size = 16.dp, tint = c.rose, filled = true)
-                            Text(btnLabel, color = c.rose, fontWeight = FontWeight.ExtraBold, fontSize = 13.sp)
-                        }
-                    }
-                }
-            }
-        }
-        // Quick tiles — 2-column grid on wide screens
-        val tiles = listOf(
-            Tile("gear", 0, "Pengaturan", "Tampilan, konten, notifikasi") { state.openSettings() },
-            Tile("cloud", 1, "Cadangan & Sinkron", "Backup library lokal") { state.openSettings() },
-            Tile("help", 4, "Bantuan", "FAQ & laporan masalah") { state.openSettings() },
-            Tile("sparkle", 5, "Langganan & API", "Premium aktif · 36 hari lagi") { state.openSettings() },
-            Tile("info", 2, "Tentang", "TetoNova 0.1.0 · Catatan rilis") { state.openSettings() },
-        )
-        BoxWithConstraints {
-            val cols = if (maxWidth >= 560.dp) 2 else 1
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                tiles.chunked(cols).forEach { row ->
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        row.forEach { t -> QuickTile(t.icon, t.grad, t.title, t.sub, Modifier.weight(1f), t.onClick) }
-                        repeat(cols - row.size) { Spacer(Modifier.weight(1f)) }
-                    }
-                }
-            }
+        if (data.isEmpty()) {
+            Text(libraryEmptyHint(tab), color = c.muted, fontSize = 13.sp, modifier = Modifier.padding(vertical = 8.dp))
+        } else {
+            PosterGrid(items = data, onOpenDetail = onOpenDetail, showProgress = tab == "history")
         }
     }
 }
 
-private class Tile(
-    val icon: String,
-    val grad: Int,
-    val title: String,
-    val sub: String,
-    val onClick: () -> Unit,
-)
-
-private fun openUrl(context: android.content.Context, url: String) {
-    runCatching { context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url))) }
-}
-
-@Composable
-private fun QuickTile(icon: String, grad: Int, title: String, sub: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    val c = TnTheme.colors
-    Row(
-        modifier.fillMaxWidth().clip(RoundedCornerShape(TnRadii.md)).background(c.surface).border(1.dp, c.line, RoundedCornerShape(TnRadii.md))
-            .clickable { onClick() }.padding(14.dp),
-        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        GradientTile(icon, grad, Modifier.size(40.dp), iconSize = 18.dp, filled = icon == "sparkle")
-        Column(Modifier.weight(1f)) {
-            Text(title, color = c.ink, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-            Text(sub, color = c.muted, fontSize = 12.sp)
-        }
-        TnIcon("chevR", size = 18.dp, tint = c.faint)
-    }
+/** Empty-state copy per Library tab (fresh install → History/Followed are empty). */
+internal fun libraryEmptyHint(tab: String): String = when (tab) {
+    "followed" -> "Belum ada judul yang diikuti. Tap + di halaman detail untuk mengikuti."
+    "downloads" -> "Belum ada unduhan. Tap ikon unduh di episode untuk simpan offline."
+    else -> "Belum ada riwayat. Judul yang kamu buka akan muncul di sini."
 }

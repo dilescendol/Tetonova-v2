@@ -9,10 +9,16 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -30,10 +36,17 @@ fun TnPrimaryButton(
     filledIcon: Boolean = false,
     onClick: () -> Unit = {},
 ) {
+    var focused by remember { mutableStateOf(false) }
     Row(
         modifier
+            .graphicsLayer {
+                scaleX = if (focused) 1.03f else 1f
+                scaleY = if (focused) 1.03f else 1f
+            }
             .clip(RoundedCornerShape(TnRadii.pill))
             .tnGradient(RoseGradientColors)
+            .border(3.dp, if (focused) Color.White else Color.Transparent, RoundedCornerShape(TnRadii.pill))
+            .onFocusChanged { focused = it.isFocused }
             .clickable { onClick() }
             .padding(horizontal = 22.dp, vertical = 13.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
@@ -52,14 +65,20 @@ fun TnGhostButton(
     onClick: () -> Unit = {},
 ) {
     val c = TnTheme.colors
+    var focused by remember { mutableStateOf(false) }
     Row(
         modifier
+            .graphicsLayer {
+                scaleX = if (focused) 1.03f else 1f
+                scaleY = if (focused) 1.03f else 1f
+            }
             .clip(RoundedCornerShape(TnRadii.pill))
             .background(c.surface)
-            .border(1.dp, c.line, RoundedCornerShape(TnRadii.pill))
+            .border(if (focused) 3.dp else 1.dp, if (focused) c.rose else c.line, RoundedCornerShape(TnRadii.pill))
+            .onFocusChanged { focused = it.isFocused }
             .clickable { onClick() }
             .padding(horizontal = 18.dp, vertical = 11.dp),
-        horizontalArrangement = Arrangement.spacedBy(7.dp),
+        horizontalArrangement = Arrangement.spacedBy(7.dp, Alignment.CenterHorizontally),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (icon != null) TnIcon(icon, size = 16.dp, tint = c.ink2)

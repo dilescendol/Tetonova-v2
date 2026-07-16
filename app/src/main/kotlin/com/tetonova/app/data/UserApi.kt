@@ -27,6 +27,7 @@ data class UserXp(
     val flags: List<String> = emptyList(),
     val realm: Realm? = null,
     val stats30d: Stats30d? = null,
+    val contributor: ContributorRank? = null,
 )
 
 /** Current cultivation realm for the user's level. */
@@ -44,6 +45,15 @@ data class Stats30d(
     val watchHours: Double = 0.0,
     val episodes: Int = 0,
     val episodesCompleted: Int = 0,
+)
+
+/** Live contribution rank derived by the panel from cross-user XP totals. */
+@Serializable
+data class ContributorRank(
+    val rank: Int = 0,
+    val total: Int = 0,
+    val topPercent: Int = 0,
+    val label: String = "",
 )
 
 /** One realm tier on the "Jalan Kultivasi" ladder (panel `GET /api/v1/realms`). */
@@ -101,21 +111,25 @@ class UserApi(baseUrl: String) {
 
     private val base = baseUrl.trim().trimEnd('/')
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
-    private val client = OkHttpClient.Builder()
+    private val client = TnHttp.client.newBuilder()
         .connectTimeout(12, TimeUnit.SECONDS)
         .readTimeout(12, TimeUnit.SECONDS)
         .build()
 
-    /** Read the user's XP/level/streak/realm + 30-day stats. Needs the telemetry token (server-gated). */
-    suspend fun fetchXp(installId: String, token: String): UserXp? = withContext(Dispatchers.IO) {
-        if (base.isEmpty() || installId.isBlank() || token.isBlank()) return@withContext null
+    /**
+     * When signed in, [bearer] is the Firebase ID token — the server then owns the data by ACCOUNT
+     * (`acct:<uid>`) and ignores the install id, so level/XP follow the account across devices.
+     */
+    private fun Request.Builder.auth(token: String, installId: String, bearer: String?): Request.Builder {
+        if (bearer != null) header("Authorization", "Bearer $bearer")
+        return header("X-TN-Telemetry-Token", token).header("X-TN-Install-Id", installId)
+    }
+
+    /** Read the user's XP/level/streak/realm + 30-day stats. Owned by account when [bearer] is set. */
+    suspend fun fetchXp(installId: String, token: String, bearer: String? = null): UserXp? = withContext(Dispatchers.IO) {
+        if (base.isEmpty() || (token.isBlank() && bearer == null)) return@withContext null
         runCatching {
-            val req = Request.Builder()
-                .url("$base/api/v1/users/$installId/xp")
-                .header("X-TN-Telemetry-Token", token)
-                .header("X-TN-Install-Id", installId)
-                .get()
-                .build()
+            val req = Request.Builder().url("$base/api/v1/users/$installId/xp").auth(token, installId, bearer).get().build()
             client.newCall(req).execute().use { resp ->
                 if (!resp.isSuccessful) error("HTTP ${resp.code}")
                 json.decodeFromString<UserXpResponse>(resp.body?.string().orEmpty()).user
@@ -123,16 +137,11 @@ class UserApi(baseUrl: String) {
         }.onFailure { Log.w("TnUserXp", "fetchXp failed: ${it.message}") }.getOrNull()
     }
 
-    /** Read the user's cultivation achievements (server evaluates + persists unlocks). Token-gated. */
-    suspend fun fetchAchievements(installId: String, token: String): List<Achievement>? = withContext(Dispatchers.IO) {
-        if (base.isEmpty() || installId.isBlank() || token.isBlank()) return@withContext null
+    /** Read the user's cultivation achievements (server evaluates + persists unlocks). */
+    suspend fun fetchAchievements(installId: String, token: String, bearer: String? = null): List<Achievement>? = withContext(Dispatchers.IO) {
+        if (base.isEmpty() || (token.isBlank() && bearer == null)) return@withContext null
         runCatching {
-            val req = Request.Builder()
-                .url("$base/api/v1/users/$installId/achievements")
-                .header("X-TN-Telemetry-Token", token)
-                .header("X-TN-Install-Id", installId)
-                .get()
-                .build()
+            val req = Request.Builder().url("$base/api/v1/users/$installId/achievements").auth(token, installId, bearer).get().build()
             client.newCall(req).execute().use { resp ->
                 if (!resp.isSuccessful) error("HTTP ${resp.code}")
                 json.decodeFromString<AchievementsResponse>(resp.body?.string().orEmpty()).achievements
@@ -140,19 +149,32 @@ class UserApi(baseUrl: String) {
         }.onFailure { Log.w("TnUserXp", "fetchAchievements failed: ${it.message}") }.getOrNull()
     }
 
-    /** Equip a reached realm's frame cosmetic on the avatar. Returns true on success. Token-gated. */
-    suspend fun equipFrame(installId: String, realmId: String, token: String): Boolean = withContext(Dispatchers.IO) {
-        if (base.isEmpty() || installId.isBlank() || token.isBlank()) return@withContext false
+    /** Equip a reached realm's frame cosmetic on the avatar. Returns true on success. */
+    suspend fun equipFrame(installId: String, realmId: String, token: String, bearer: String? = null): Boolean = withContext(Dispatchers.IO) {
+        if (base.isEmpty() || (token.isBlank() && bearer == null)) return@withContext false
         runCatching {
             val req = Request.Builder()
                 .url("$base/api/v1/users/$installId/equip-frame")
                 .header("Content-Type", "application/json")
-                .header("X-TN-Telemetry-Token", token)
-                .header("X-TN-Install-Id", installId)
+                .auth(token, installId, bearer)
                 .post(JSONObject().put("realmId", realmId).toString().toRequestBody("application/json".toMediaType()))
                 .build()
             client.newCall(req).execute().use { it.isSuccessful }
         }.onFailure { Log.w("TnUserXp", "equipFrame failed: ${it.message}") }.getOrDefault(false)
+    }
+
+    /** Absorb this device's anonymous progress into the signed-in account (once per device). */
+    suspend fun mergeCultivation(installId: String, bearer: String): Boolean = withContext(Dispatchers.IO) {
+        if (base.isEmpty() || installId.isBlank() || bearer.isBlank()) return@withContext false
+        runCatching {
+            val req = Request.Builder()
+                .url("$base/api/v1/me/cultivation/merge")
+                .header("Content-Type", "application/json")
+                .header("Authorization", "Bearer $bearer")
+                .post(JSONObject().put("installId", installId).toString().toRequestBody("application/json".toMediaType()))
+                .build()
+            client.newCall(req).execute().use { it.isSuccessful }
+        }.onFailure { Log.w("TnUserXp", "mergeCultivation failed: ${it.message}") }.getOrDefault(false)
     }
 
     /** The cultivation realm ladder (public; no token). */
@@ -176,8 +198,9 @@ class UserApi(baseUrl: String) {
         sourceId: String,
         heartbeats: List<Heartbeat>,
         token: String,
+        bearer: String? = null,
     ): Unit = withContext(Dispatchers.IO) {
-        if (base.isEmpty() || token.isBlank() || heartbeats.size < 2) return@withContext
+        if (base.isEmpty() || (token.isBlank() && bearer == null) || heartbeats.size < 2) return@withContext
         runCatching {
             val hb = JSONArray()
             heartbeats.forEach { h ->
@@ -202,8 +225,7 @@ class UserApi(baseUrl: String) {
             val req = Request.Builder()
                 .url("$base/api/v1/telemetry/watch-session")
                 .header("Content-Type", "application/json")
-                .header("X-TN-Telemetry-Token", token)
-                .header("X-TN-Install-Id", installId)
+                .auth(token, installId, bearer)
                 .post(payload.toRequestBody("application/json".toMediaType()))
                 .build()
             client.newCall(req).execute().use { /* fire-and-forget */ }

@@ -18,6 +18,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -32,6 +33,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.tetonova.app.data.AuthManager
 import com.tetonova.app.data.ReportApi
 import com.tetonova.app.data.TnData
 import com.tetonova.app.ui.PageScroll
@@ -61,7 +63,7 @@ private fun SubScreenHeader(title: String, subtitle: String, icon: String, onBac
         }
         Column {
             Text(title, color = c.ink, fontWeight = FontWeight.ExtraBold, fontSize = 26.sp)
-            Text(subtitle, color = c.muted, fontSize = 13.sp)
+            if (subtitle.isNotBlank()) Text(subtitle, color = c.muted, fontSize = 13.sp)
         }
     }
     Spacer(Modifier.height(16.dp))
@@ -74,14 +76,18 @@ fun ReportScreen(onBack: () -> Unit) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     var message by remember { mutableStateOf("") }
-    var contact by remember { mutableStateOf("") }
     var sending by remember { mutableStateOf(false) }
+    val contact = TnData.profileContact
     val canSend = message.isNotBlank() && !sending
+
+    LaunchedEffect(AuthManager.signedIn) {
+        if (AuthManager.signedIn) TnData.refreshUserProfile()
+    }
 
     PageScroll(topInset = true) {
         SubScreenHeader(
             title = "Lapor konten",
-            subtitle = "Lapor judul / source yang error langsung dari sini.",
+            subtitle = "",
             icon = "flag",
             onBack = onBack,
         )
@@ -93,18 +99,6 @@ fun ReportScreen(onBack: () -> Unit) {
                     value = message,
                     onValueChange = { message = it },
                     modifier = Modifier.fillMaxWidth().heightIn(min = 140.dp),
-                    placeholder = { Text("Mis. One Piece episode 1090 di AnimeSail gak bisa diputar.", color = c.muted) },
-                    colors = tnFieldColors(),
-                )
-                Spacer(Modifier.height(16.dp))
-                Text("Kontak (opsional)", color = c.ink, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                Spacer(Modifier.height(8.dp))
-                OutlinedTextField(
-                    value = contact,
-                    onValueChange = { contact = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    placeholder = { Text("Email / username biar bisa dibalas", color = c.muted) },
                     colors = tnFieldColors(),
                 )
                 Spacer(Modifier.height(18.dp))
@@ -116,7 +110,7 @@ fun ReportScreen(onBack: () -> Unit) {
                         if (canSend) {
                             sending = true
                             scope.launch {
-                                val res = ReportApi.submit(message.trim(), contact.trim())
+                                val res = ReportApi.submit(message.trim(), contact)
                                 sending = false
                                 if (res.isSuccess) {
                                     Toast.makeText(ctx, "Laporan terkirim — makasih!", Toast.LENGTH_SHORT).show()

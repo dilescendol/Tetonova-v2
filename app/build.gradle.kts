@@ -1,8 +1,32 @@
+import java.util.Base64
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
+}
+
+// Apply Google Services ONLY when google-services.json is present. This keeps the
+// build green before Firebase is set up — Google sign-in stays inert (the app is
+// local-first) until the JSON is dropped into app/. See AuthManager.
+if (file("google-services.json").exists()) {
+    apply(plugin = "com.google.gms.google-services")
+}
+
+// --- Build-time secret obfuscation ---------------------------------------------------
+// XOR + base64 the panel domain / API keys so a decompiled release APK doesn't expose
+// them as plaintext string constants. R8 minify does NOT encrypt string literals, so a
+// raw buildConfigField value is trivially recoverable with `strings`/jadx. The matching
+// runtime decode lives in app/.../Secrets.kt — keep secretXorKey in sync with it. This
+// is obfuscation, not real crypto: it defeats casual extraction, not a determined RE.
+val secretXorKey = "Tn0v4_biz_2026".toByteArray(Charsets.UTF_8)
+fun obfuscateSecret(value: String): String {
+    val bytes = value.toByteArray(Charsets.UTF_8)
+    val out = ByteArray(bytes.size) { i ->
+        (bytes[i].toInt() xor secretXorKey[i % secretXorKey.size].toInt()).toByte()
+    }
+    return Base64.getEncoder().encodeToString(out)
 }
 
 android {
@@ -23,17 +47,24 @@ android {
 
         // Control-panel base URL for the live /api/v1/sources feed (sources + Home sections).
         // Precedence: Gradle property -> env var -> the live panel default.
+        // Obfuscated at build time (see obfuscateSecret above + Secrets.kt) so the domain
+        // isn't a plaintext constant in the APK. Read via Secrets.controlPanelUrl, never BuildConfig directly.
         val controlPanelUrl = (project.findProperty("TETONOVA_CONTROL_PANEL_URL") as String?)
-            ?: System.getenv("TETONOVA_CONTROL_PANEL_URL") ?: "https://tetonova.dilcendol.web.id"
-        buildConfigField("String", "TETONOVA_CONTROL_PANEL_URL", "\"$controlPanelUrl\"")
+            ?: System.getenv("TETONOVA_CONTROL_PANEL_URL") ?: "https://tetonova.biz.id"
+        buildConfigField("String", "TETONOVA_CONTROL_PANEL_URL_ENC", "\"${obfuscateSecret(controlPanelUrl)}\"")
 
         // OMDb (IMDB) API key for Movie/Drama detail (omdbapi.com). Override via gradle prop / env.
+        // Obfuscated like the panel URL — read via Secrets.omdbKey.
         val omdbKey = (project.findProperty("TETONOVA_OMDB_KEY") as String?)
             ?: System.getenv("TETONOVA_OMDB_KEY") ?: "d1f883ce"
-        buildConfigField("String", "TETONOVA_OMDB_KEY", "\"$omdbKey\"")
+        buildConfigField("String", "TETONOVA_OMDB_KEY_ENC", "\"${obfuscateSecret(omdbKey)}\"")
     }
 
     buildTypes {
+        debug {
+            // Keep debug on the main Firebase Android app id so Google Sign-In uses
+            // the `com.tetonova.app` OAuth client/fingerprint.
+        }
         release {
             isMinifyEnabled = true
             isShrinkResources = true
@@ -62,6 +93,7 @@ dependencies {
     implementation(project(":core:scraper"))
 
     implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.documentfile)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.activity.compose)
@@ -87,6 +119,16 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.okhttp)
     implementation(libs.jsoup)
+
+    // Account sync: Firebase Auth + legacy Google Sign-In (play-services-auth). Inert until
+    // google-services.json is present (see the conditional plugin apply above).
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.auth)
+    implementation(libs.firebase.messaging)
+    implementation(libs.play.services.auth)
+
+    // WorkManager for background task scheduling (follow episode check)
+    implementation(libs.androidx.work.runtime)
 
     debugImplementation(libs.androidx.ui.tooling)
 }

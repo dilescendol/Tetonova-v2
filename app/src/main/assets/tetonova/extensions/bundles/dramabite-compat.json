@@ -13,9 +13,19 @@
     "SUBTITLES"
   ],
   "entry": "compat/dramabite/catalog.json",
-  "upstreamUrl": "https://dramabite.dramabos.my.id",
-  "apiBaseUrl": "https://dramabite.dramabos.my.id/api/v1",
-  "webBaseUrl": "https://dramabite.dramabos.my.id",
-  "healthProbeUrl": "https://dramabite.dramabos.my.id/api.html",
-  "category": "Dracin/Drakor"
+  "upstreamUrl": "https://dramabite.goodbos.online",
+  "apiBaseUrl": "https://dramabite.goodbos.online",
+  "webBaseUrl": "https://dramabite.goodbos.online",
+  "healthProbeUrl": "https://dramabite.goodbos.online/api.html",
+  "accessCode": "A49C5D6FED6BD029B18F525D8A8B0F5E",
+  "category": "Short Series",
+  "homeLinks": {
+    "showAll": [
+      { "label": "Paling Populer", "url": "https://dramabite.goodbos.online/home?lang=id" }
+    ],
+    "showOnClick": [
+      { "label": "Paling Populer", "url": "https://dramabite.goodbos.online/home?lang=id" },
+      { "label": "Rekomendasi", "url": "https://dramabite.goodbos.online/module?page=1&lang=id" }
+    ]
+  }
 }

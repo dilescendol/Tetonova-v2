@@ -13,9 +13,21 @@
     "SUBTITLES"
   ],
   "entry": "compat/shortmax/catalog.json",
-  "upstreamUrl": "https://shortmax.dramabos.my.id",
-  "apiBaseUrl": "https://shortmax.dramabos.my.id/api/v1",
-  "webBaseUrl": "https://shortmax.dramabos.my.id",
-  "healthProbeUrl": "https://shortmax.dramabos.my.id/api.html",
-  "category": "Dracin/Drakor"
+  "upstreamUrl": "https://shortmax.goodbos.online",
+  "apiBaseUrl": "https://shortmax.goodbos.online",
+  "webBaseUrl": "https://shortmax.goodbos.online",
+  "healthProbeUrl": "https://shortmax.goodbos.online/api.html",
+  "accessCode": "A49C5D6FED6BD029B18F525D8A8B0F5E",
+  "category": "Short Series",
+  "homeLinks": {
+    "showAll": [
+      { "label": "Baru", "url": "https://shortmax.goodbos.online/api/v1/new?lang=id&page=1" }
+    ],
+    "showOnClick": [
+      { "label": "Baru", "url": "https://shortmax.goodbos.online/api/v1/new?lang=id&page=1" },
+      { "label": "Populer", "url": "https://shortmax.goodbos.online/api/v1/popular?lang=id&page=1" },
+      { "label": "Hot", "url": "https://shortmax.goodbos.online/api/v1/hot?lang=id&page=1" },
+      { "label": "Peringkat", "url": "https://shortmax.goodbos.online/api/v1/ranking?lang=id&type=monthly" }
+    ]
+  }
 }

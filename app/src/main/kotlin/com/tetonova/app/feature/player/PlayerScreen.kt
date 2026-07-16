@@ -3,10 +3,13 @@ package com.tetonova.app.feature.player
 import android.app.Activity
 import android.content.Intent
 import android.content.pm.ActivityInfo
+import android.graphics.Color as AndroidColor
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
+import android.util.TypedValue
 import android.view.ViewGroup
+import android.view.WindowManager
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
@@ -14,10 +17,12 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -33,31 +38,50 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.window.PopupProperties
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
@@ -65,15 +89,20 @@ import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DataSource
+import androidx.media3.datasource.DataSpec
+import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
+import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.PlayerView
 import com.tetonova.core.scraper.ExtractResult
 import com.tetonova.core.scraper.LiveSource
+import com.tetonova.core.scraper.ServerVariant
 import com.tetonova.core.scraper.StreamExtractor
 import com.tetonova.core.scraper.StreamVariant
+import com.tetonova.core.scraper.SubtitleTrack
 import com.tetonova.core.scraper.VideoServer
 import com.tetonova.app.data.Heartbeat
 import com.tetonova.app.data.SettingsStore
@@ -84,8 +113,44 @@ import com.tetonova.app.data.WatchProgressStore
 import com.tetonova.app.data.WebViewGate
 import com.tetonova.app.data.download.DownloadCenter
 import com.tetonova.app.ui.PlayerArg
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
+import java.net.HttpURLConnection
+import java.net.URL
 import java.util.concurrent.atomic.AtomicBoolean
+
+private val PlayerPopupProperties = PopupProperties(focusable = false)
+
+private data class SubtitleCue(val startMs: Long, val endMs: Long, val text: String)
+
+private fun PlayerView.applyTetoNovaSubtitleStyle() {
+    subtitleView?.apply {
+        setApplyEmbeddedStyles(false)
+        setApplyEmbeddedFontSizes(false)
+        setFixedTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
+        setBottomPaddingFraction(0.12f)
+        setStyle(
+            CaptionStyleCompat(
+                AndroidColor.WHITE,
+                AndroidColor.TRANSPARENT,
+                AndroidColor.TRANSPARENT,
+                CaptionStyleCompat.EDGE_TYPE_OUTLINE,
+                AndroidColor.BLACK,
+                null,
+            ),
+        )
+    }
+}
+
+@Suppress("DEPRECATION")
+private fun playerSystemUiFlags(): Int =
+    android.view.View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or
+        android.view.View.SYSTEM_UI_FLAG_FULLSCREEN or
+        android.view.View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
+        android.view.View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
+        android.view.View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
+        android.view.View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
 
 /**
  * In-app player. Servers are scraped live from the episode's watch page (per-episode); the chosen
@@ -94,41 +159,83 @@ import java.util.concurrent.atomic.AtomicBoolean
  * WebView embed. Top bar (back · title · Source) is the same regardless of source.
  */
 @Composable
-fun PlayerScreen(arg: PlayerArg, onBack: () -> Unit, hasNext: Boolean = false, onNext: () -> Unit = {}) {
+fun PlayerScreen(
+    arg: PlayerArg,
+    onBack: () -> Unit,
+    hasNext: Boolean = false,
+    onNext: () -> Unit = {},
+    hasPrev: Boolean = false,
+    onPrev: () -> Unit = {},
+) {
     val context = LocalContext.current
     val referer = arg.url.orEmpty()
     // If this episode is already downloaded, play it straight from the offline cache (no network,
     // no server resolution) — the same ExoStage, just fed a cache-backed data source.
     val offlineVariant = remember(arg.url) { DownloadCenter.offlineVariant(arg.url) }
 
-    // Force landscape while playing. MainActivity has configChanges=orientation|screenSize so this does
-    // NOT recreate the activity. Restore on exit. (Immersive is handled by the sticky effect below.)
-    DisposableEffect(Unit) {
+    // Portrait for vertical short-drama, landscape for everything else. Seeded from the source hint so
+    // the lock is right before the first frame, then confirmed/corrected from the real video aspect
+    // ratio (ExoStage's onVideoSizeChanged) — self-correcting if the hint was wrong.
+    var vertical by remember(arg.url) { mutableStateOf(arg.vertical) }
+
+    // Lock the chosen orientation while playing. MainActivity has configChanges=orientation|screenSize so
+    // this does NOT recreate the activity. Re-applied when `vertical` flips; restored on exit.
+    // Per device tier:
+    //   TV     -> always landscape.
+    //   Tablet -> dracin follows rotation (both), horizontal locks landscape.
+    //   Phone  -> dracin portrait, horizontal landscape.
+    // (Immersive is handled by the sticky effect below.)
+    val tier = remember { com.tetonova.app.deviceTier(context) }
+    DisposableEffect(vertical, tier) {
         val activity = context as? Activity
         val prev = activity?.requestedOrientation
-        activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        val chosen = when {
+            tier == com.tetonova.app.DeviceTier.TV -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+            vertical && tier == com.tetonova.app.DeviceTier.TABLET -> ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR
+            vertical -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+            else -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        }
+        activity?.requestedOrientation = chosen
+        android.util.Log.i("TnPlayer", "orientation=${if (vertical) "PORTRAIT" else "LANDSCAPE"} tier=$tier (hint=${arg.vertical}) url=${arg.url}")
         onDispose { activity?.requestedOrientation = prev ?: ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED }
     }
-    // Opening a Compose dropdown (Source/Resolusi) spawns a focusable popup window; while it's focused
-    // the system shows the bars, and on close the activity doesn't re-assert immersive on its own. Use
-    // legacy IMMERSIVE_STICKY AND re-apply it whenever the activity window regains focus (popup closed).
+    DisposableEffect(Unit) {
+        val window = (context as? Activity)?.window
+        val decor = window?.decorView
+        val prevKeepScreenOn = decor?.keepScreenOn ?: false
+        window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        decor?.keepScreenOn = true
+        onDispose {
+            decor?.keepScreenOn = prevKeepScreenOn
+            window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+    }
+    // Keep the player truly immersive. Compose popups/emulator windows can briefly reveal system bars,
+    // so use both the modern controller and legacy sticky flags, then re-apply on focus changes.
     @Suppress("DEPRECATION")
     DisposableEffect(Unit) {
-        val decor = (context as? Activity)?.window?.decorView
-        val sticky = android.view.View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or
-            android.view.View.SYSTEM_UI_FLAG_FULLSCREEN or
-            android.view.View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
-            android.view.View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
-            android.view.View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
-            android.view.View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-        decor?.systemUiVisibility = sticky
+        val window = (context as? Activity)?.window
+        val decor = window?.decorView
+        val previousUi = decor?.systemUiVisibility ?: android.view.View.SYSTEM_UI_FLAG_VISIBLE
+        fun hideBars() {
+            val d = decor ?: return
+            d.systemUiVisibility = playerSystemUiFlags()
+            window?.let {
+                WindowCompat.getInsetsController(it, d).apply {
+                    systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                    hide(WindowInsetsCompat.Type.systemBars())
+                }
+            }
+        }
+        hideBars()
         val focusL = android.view.ViewTreeObserver.OnWindowFocusChangeListener { hasFocus ->
-            if (hasFocus) decor?.systemUiVisibility = sticky
+            if (hasFocus) hideBars()
         }
         decor?.viewTreeObserver?.addOnWindowFocusChangeListener(focusL)
         onDispose {
             decor?.viewTreeObserver?.removeOnWindowFocusChangeListener(focusL)
-            decor?.systemUiVisibility = android.view.View.SYSTEM_UI_FLAG_VISIBLE
+            decor?.systemUiVisibility = previousUi
+            window?.let { w -> decor?.let { d -> WindowCompat.getInsetsController(w, d).show(WindowInsetsCompat.Type.systemBars()) } }
         }
     }
 
@@ -138,7 +245,7 @@ fun PlayerScreen(arg: PlayerArg, onBack: () -> Unit, hasNext: Boolean = false, o
     var retryTick by remember { mutableStateOf(0) } // bumped by the NoSource "Coba lagi" button to re-resolve
     // Servers that failed auto-play (extraction / playback error / 404 / too-slow) — skipped on failover.
     val failed = remember { mutableStateListOf<String>() }
-    fun keyOf(s: VideoServer) = s.name + "|" + s.embedUrl
+    fun keyOf(s: VideoServer) = s.name
 
     LaunchedEffect(arg.url, retryTick) {
         loading = true
@@ -157,7 +264,7 @@ fun PlayerScreen(arg: PlayerArg, onBack: () -> Unit, hasNext: Boolean = false, o
                 .map { (name, embed) -> VideoServer(name, embed) }
                 .filter { StreamExtractor.isPlayable(it.embedUrl) }
         }
-        list = list.sortedWith(compareBy({ speedRank(it) }, { it.name }))
+        list = list.sortedWith(compareBy<VideoServer>({ speedRank(it) }, { -bestServerHeight(it) }, { it.name.lowercase() }))
         servers = list
         selected = list.firstOrNull() // auto-pick the fastest source
         android.util.Log.i("TnPlayer", "servers (fastest-first): ${list.map { it.name }}; auto-pick '${list.firstOrNull()?.name}'")
@@ -173,18 +280,25 @@ fun PlayerScreen(arg: PlayerArg, onBack: () -> Unit, hasNext: Boolean = false, o
         runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(arg.url))) }
     }
 
-    // Auto-failover: mark the current server failed and jump to the next-fastest untried one. Returns
-    // false when none remain (caller then drops to the WebView fallback for the last server).
+    // Auto-failover: mark the current source failed, drop it from the picker, then continue forward.
     fun onServerFailed(): Boolean {
-        val failedName = selected?.name
-        selected?.let { if (keyOf(it) !in failed) failed.add(keyOf(it)) }
-        val next = servers.firstOrNull { keyOf(it) !in failed }
+        val failedServer = selected
+        val failedName = failedServer?.name
+        failedServer?.let { if (keyOf(it) !in failed) failed.add(keyOf(it)) }
+        val currentIndex = failedServer?.let { cur -> servers.indexOfFirst { sameSource(it, cur) } } ?: -1
+        // Wrap around so a failed manual pick near the end of the list still falls back to the
+        // earlier (possibly just-working) servers; the failed set prevents endless cycling.
+        val next = (servers.drop(currentIndex + 1) + servers.take(currentIndex + 1))
+            .firstOrNull { keyOf(it) !in failed }
         if (next != null) selected = next
-        android.util.Log.i("TnPlayer", "server '$failedName' failed → ${next?.name ?: "none (WebView fallback)"}")
+        android.util.Log.i("TnPlayer", "server '$failedName' failed -> ${next?.name ?: "none"}")
         return next != null
     }
-    // Manual pick: try the chosen source; if it can't play it still auto-switches to the next that can.
-    fun onPickServer(s: VideoServer) { failed.remove(keyOf(s)); selected = s }
+    // Manual pick starts a fresh attempt for that source; if it fails, failover walks forward from there.
+    fun onPickServer(s: VideoServer) {
+        failed.remove(keyOf(s))
+        selected = s
+    }
 
     val current = selected
     if (offlineVariant != null) {
@@ -195,13 +309,27 @@ fun PlayerScreen(arg: PlayerArg, onBack: () -> Unit, hasNext: Boolean = false, o
             headers = DownloadCenter.headersFor(arg.url),
             arg = arg, server = offServer, servers = listOf(offServer),
             onPickServer = {}, onBack = onBack, onExternal = ::openExternal, onError = {},
-            hasNext = hasNext, onNext = onNext,
+            hasNext = hasNext, onNext = onNext, hasPrev = hasPrev, onPrev = onPrev, onVertical = { vertical = it },
             dataSourceFactory = DownloadCenter.cacheFactory(),
         )
     } else when {
         loading -> LoadingBox("Mencari source…")
         current == null -> NoSourceBox(onRetry = { retryTick++ }, onExternal = ::openExternal, onBack = onBack)
-        else -> ServerPlayer(current, arg, servers, referer, ::onPickServer, ::onServerFailed, onBack, ::openExternal, hasNext, onNext)
+        else -> ServerPlayer(
+            current,
+            arg,
+            servers.filter { keyOf(it) !in failed || sameSource(it, current) },
+            referer,
+            ::onPickServer,
+            ::onServerFailed,
+            onBack,
+            ::openExternal,
+            hasNext,
+            onNext,
+            hasPrev = hasPrev,
+            onPrev = onPrev,
+            onVertical = { vertical = it },
+        )
     }
 }
 
@@ -218,6 +346,9 @@ private fun ServerPlayer(
     onExternal: () -> Unit,
     hasNext: Boolean = false,
     onNext: () -> Unit = {},
+    hasPrev: Boolean = false,
+    onPrev: () -> Unit = {},
+    onVertical: (Boolean) -> Unit = {},
 ) {
     // Hosts whose token streams 404/403 ExoPlayer (browser-context anti-leech) but play fine in a
     // WebView — JWPlayer (videoplayer.vip) and Dailymotion. Play them in the WebView with the host UI
@@ -231,16 +362,25 @@ private fun ServerPlayer(
         WebPlayerStage(webPlayer, server.embedUrl, arg.title, arg.episodeLabel, servers, server, onPickServer, onServerFailed, onBack, onExternal)
         return
     }
+    // Hydrax/Abyss (playhydrax.com): a proprietary encrypted player with NO sniffable direct stream —
+    // it plays only inside its own WebView player, exactly as the source site's browser player does.
+    // Route straight to the plain embed stage; extract→sniff always fails for these and would wrongly
+    // DROP an otherwise-reliable fallback (e.g. PusatFilm's Hydrax mirror still plays when Turbovip 404s).
+    if (isEmbedOnlyHost(server.embedUrl)) {
+        WebStage(server, arg, servers, referer, onPickServer, onBack, onExternal)
+        return
+    }
     var phase by remember(server) { mutableStateOf<Phase>(Phase.Extracting) }
-    LaunchedEffect(server) {
+    var retryExtract by remember(server) { mutableStateOf(0) }
+    LaunchedEffect(server, retryExtract) {
         // 1) static extractor (ok.ru/dailymotion/rumble/filemoon) → 2) WebView sniffer → 3) WebView embed.
         val res = runCatching { StreamExtractor.extract(server, referer) }.getOrDefault(ExtractResult(emptyList()))
         android.util.Log.i("TnPlayer", "extract '${server.name}' (${server.embedUrl.take(64)}) → ${res.variants.size} variants ${res.variants.map { it.label }}${if (res.variants.isEmpty()) " → sniff" else ""}")
         phase = if (res.variants.isNotEmpty()) Phase.Exo(res.variants, res.headers) else Phase.Sniffing
     }
-    // A server that won't play (sniff failed / playback error / too slow) hands off to the next-fastest
-    // candidate; only when none remain do we drop to the WebView embed for the last server.
-    val onFail = { if (!onServerFailed()) phase = Phase.Web }
+    // A source that won't play is dropped from the picker and skipped. No plain embed fallback here:
+    // dead sources should not surface as a host-controlled player.
+    val onFail = { if (!onServerFailed()) phase = Phase.Dead }
     when (val p = phase) {
         Phase.Extracting -> LoadingBox("Menyiapkan video…")
         Phase.Sniffing -> SniffStage(
@@ -248,7 +388,11 @@ private fun ServerPlayer(
             onSniffed = { url, h -> phase = Phase.Exo(listOf(StreamVariant("Auto", url)), h) },
             onFail = onFail,
         )
-        is Phase.Exo -> ExoStage(p.variants, p.headers, arg, server, servers, onPickServer, onBack, onExternal, onError = onFail, hasNext = hasNext, onNext = onNext)
+        is Phase.Exo ->
+            // Melolo's encrypted MP4 (trips ExoPlayer's Mp4Extractor with "Invalid NAL length" raw) is
+            // decrypted in-flight by MeloloDataSource — see the `#tnk=` netFactory branch in ExoStage.
+            ExoStage(p.variants, p.headers, arg, server, servers, onPickServer, onBack, onExternal, onError = onFail, hasNext = hasNext, onNext = onNext, hasPrev = hasPrev, onPrev = onPrev, onVertical = onVertical)
+        Phase.Dead -> NoSourceBox(onRetry = { phase = Phase.Extracting; retryExtract++ }, onExternal = onExternal, onBack = onBack)
         Phase.Web -> WebStage(server, arg, servers, referer, onPickServer, onBack, onExternal)
     }
 }
@@ -262,6 +406,7 @@ private sealed interface Phase {
     data object Extracting : Phase
     data object Sniffing : Phase
     data class Exo(val variants: List<StreamVariant>, val headers: Map<String, String>) : Phase
+    data object Dead : Phase
     data object Web : Phase
 }
 
@@ -309,6 +454,28 @@ private const val JW_STATE_JS =
 
 private fun isJwPlayerHost(embedUrl: String): Boolean = "videoplayer.vip" in embedUrl
 private fun isDailymotionHost(embedUrl: String): Boolean = "dailymotion" in embedUrl
+
+/** Hosts that play ONLY inside their own WebView player — a proprietary encrypted stream with nothing
+ *  sniffable (Hydrax/Abyss), or a native player our extractor/sniffer can't crack that still plays fine
+ *  in its own iframe. Routed straight to [WebStage] so extract→sniff doesn't fail-and-DROP the server
+ *  (there is no plain-embed fallback after a failed sniff — a dropped server just disappears).
+ *
+ *  Samehadaku's OLD movies serve only these two hosts, so without this they sniff-fail → NoSource:
+ *   - files.fm (samehadaku ships it as `file.fm/embed/playerv2`, 301→files.fm): a VideoJS + WebTorrent
+ *     P2P player whose stream is a blob/webseed (`down.php`, IP-gated) — nothing static to sniff.
+ *   - gdriveplayer.to: an obfuscated JWPlayer (XOR-decoded config via `file.js`) with ad-gated sources. */
+private fun isEmbedOnlyHost(embedUrl: String): Boolean {
+    val h = embedUrl.lowercase()
+    return "playhydrax" in h || "hydrax" in h || "abyss.to" in h || "abyssplayer" in h ||
+        "gn1r5n" in h ||
+        "file.fm" in h || "files.fm" in h || "gdriveplayer" in h || "playeriframe.sbs" in h ||
+        // Blogger (anoboy Btube): a Google WIZ player that only requests its googlevideo stream AFTER a
+        // real play gesture — the background sniffer can't trigger that (synthetic .click() isn't a
+        // trusted gesture), so it plays in its own WebView player (one tap). The app already ranks the
+        // sniffable YUp/yourupload mirror ABOVE this, so OUR player is used whenever an episode has one;
+        // Blogger is only the fallback for Btube-only episodes.
+        "blogger.com/video.g" in h || "blogspot.com/video" in h
+}
 
 // Dailymotion is cross-origin (no CSS/JS injection) and its raw iframe only posts benchmark telemetry
 // to the parent, not the Player API. So we host it via the official Dailymotion Player SDK inside OUR
@@ -403,7 +570,7 @@ private fun dmPlayer(embedUrl: String, referer: String) = WebPlayer(
 /** Ad/tracker/anti-bot-overlay hosts to block in the JWPlayer WebView (e.g. the ADEX "verify you are
  *  human" interstitial). Blocking them at the network level keeps the video clean behind our controls. */
 private val AD_HOSTS = listOf(
-    "exceedbronzetooth", "protrafficinspector", "255md", "dtscout", "dtscdn", "onaudience", "histats",
+    "exceedbronzetooth", "protrafficinspector", "yellowishgather", "255md", "dtscout", "dtscdn", "onaudience", "histats",
     "crwdcntrl", "adex", "doubleclick", "googlesyndication", "kettledrooping", "spendsdetachment",
     "zoologyfibre", "popads", "popcash", "propeller", "adsterra", "hilltopads",
     // popunder / push / native-ad networks behind the gambling interstitials on 4meplayer/blogger embeds
@@ -428,11 +595,20 @@ private const val STRIP_ADS_JS =
         "var RE=/(bet|casino|slot|jackpot|bonus|1xbet|melbet|mostbet|baji|babu88|jeetbuzz|crickex|marvelbet|lottery|gambl|aviator)/i;" +
         "function box(el){var n=el;for(var i=0;i<6&&n&&n!==document.body;i++){var s;try{s=getComputedStyle(n);}catch(e){break;}if(s&&(s.position==='fixed'||s.position==='absolute'))return n;n=n.parentElement;}return el;}" +
         "function clean(){try{" +
+        "document.querySelectorAll('#uyeouyeo,a[id=\"uyeouyeo\"]').forEach(function(a){a.remove();});" +
         "document.querySelectorAll('a[href]').forEach(function(a){if(RE.test(a.getAttribute('href')||'')){box(a).remove();}});" +
         "document.querySelectorAll('iframe[src]').forEach(function(f){if(RE.test(f.getAttribute('src')||'')){box(f).remove();}});" +
         "}catch(e){}}" +
         "clean();setInterval(clean,800);" +
         "try{new MutationObserver(clean).observe(document.documentElement,{childList:true,subtree:true});}catch(e){}})();"
+
+private const val SNIFF_KICK_JS =
+    "(function(){try{" +
+        "if(window.jwplayer){try{jwplayer().setControls(false);jwplayer().play(true);}catch(e){}}" +
+        "if(window.videojs){try{var ids=Object.keys(videojs.players||{});for(var i=0;i<ids.length;i++){var p=videojs(ids[i]);p&&p.play&&p.play();}}catch(e){}}" +
+        "var v=document.querySelector('video');if(v){v.muted=false;var pr=v.play&&v.play();if(pr&&pr.catch){pr.catch(function(){v.muted=true;v.play&&v.play();});}}" +
+        "var b=document.querySelector('.jw-icon-display,.vjs-big-play-button,.plyr__control--overlaid,button[aria-label*=\"lay\" i],.play-button,.play');if(b)b.click();" +
+        "}catch(e){}})();"
 
 private fun looksLikeStream(u: String): Boolean {
     val low = u.lowercase()
@@ -440,13 +616,92 @@ private fun looksLikeStream(u: String): Boolean {
     // Extensions OR path markers (videoplayer.vip serves HLS at /hls/<token> with no .m3u8 suffix).
     return path.endsWith(".m3u8") || path.endsWith(".mp4") || path.endsWith(".mpd") ||
         path.endsWith(".mkv") || path.endsWith(".webm") ||
-        ".m3u8" in low || "/hls/" in path || "/manifest" in path
+        ".m3u8" in low || "/hls/" in path || "/manifest" in path ||
+        ("cdn.dramabos.video/api/" in low && "/hls" in path) ||
+        "videotv.vividshort.com" in low ||
+        "videotv.dramaexpo.com" in low ||
+        "montagehub.xyz" in low ||
+        "janzhoutec.com" in low ||
+        // Blogger (anoboy Btube) streams from googlevideo's /videoplayback with no file extension
+        // and `mime=video/mp4` (not `mime_type=`), so the checks above miss it.
+        ("googlevideo.com" in low && "videoplayback" in path) ||
+        "mime_type=video_mp4" in low
 }
 
 /** True when the resolved URL is HLS (so ExoPlayer is told the MIME type when the URL lacks .m3u8). */
 private fun isHls(u: String): Boolean {
     val low = u.lowercase()
-    return ".m3u8" in low || "/hls/" in low.substringBefore('?') || "/manifest" in low.substringBefore('?')
+    val path = low.substringBefore('?').substringBefore('#')
+    return ".m3u8" in low ||
+        "/hls/" in path ||
+        "/manifest" in path ||
+        ("cdn.dramabos.video/api/" in low && "/hls" in path) ||
+        ("kesbayar.sbs" in low && Regex("\\.\\d{3,4}p$").containsMatchIn(path))
+}
+
+private fun isMp4Like(u: String): Boolean {
+    val low = u.lowercase()
+    val path = low.substringBefore('?').substringBefore('#')
+    return path.endsWith(".mp4") ||
+        "videotv.vividshort.com" in low ||
+        "videotv.dramaexpo.com" in low ||
+        "montagehub.xyz" in low ||
+        "janzhoutec.com" in low ||
+        "awscdn.netshort.com" in low ||
+        ("googlevideo.com" in low && "videoplayback" in low) || // Blogger progressive mp4
+        "mime_type=video_mp4" in low
+}
+
+private fun preferredSubtitleTrack(subtitles: List<SubtitleTrack>): SubtitleTrack? =
+    subtitles
+        .filter { it.url.isNotBlank() }
+        .distinctBy { it.url }
+        .minByOrNull { track ->
+            when (track.language?.lowercase()) {
+                "id", "in" -> 0
+                "en" -> 1
+                else -> 2
+            }
+        }
+
+private suspend fun fetchSubtitleCues(url: String): List<SubtitleCue> = withContext(Dispatchers.IO) {
+    runCatching {
+        val conn = (URL(url).openConnection() as HttpURLConnection).apply {
+            connectTimeout = 10_000
+            readTimeout = 15_000
+            setRequestProperty("User-Agent", DESKTOP_UA)
+        }
+        conn.inputStream.bufferedReader(Charsets.UTF_8).use { parseSrtCues(it.readText()) }
+    }.getOrElse { emptyList() }
+}
+
+private fun parseSrtCues(raw: String): List<SubtitleCue> =
+    raw.replace("\r\n", "\n")
+        .replace('\r', '\n')
+        .split(Regex("\n{2,}"))
+        .mapNotNull { block ->
+            val lines = block.lines().map { it.trim() }.filter { it.isNotBlank() }
+            val timeIndex = lines.indexOfFirst { "-->" in it }
+            if (timeIndex < 0) return@mapNotNull null
+            val times = lines[timeIndex].split("-->")
+            val start = times.getOrNull(0)?.parseSrtTime() ?: return@mapNotNull null
+            val end = times.getOrNull(1)?.parseSrtTime() ?: return@mapNotNull null
+            val text = lines.drop(timeIndex + 1)
+                .joinToString("\n")
+                .replace(Regex("<[^>]+>"), "")
+                .replace("&amp;", "&")
+                .replace("&quot;", "\"")
+                .trim()
+            if (text.isBlank()) null else SubtitleCue(start, end, text)
+        }
+
+private fun String.parseSrtTime(): Long? {
+    val m = Regex("(\\d+):(\\d{2}):(\\d{2})[,.](\\d{1,3})").find(this.trim()) ?: return null
+    val h = m.groupValues[1].toLongOrNull() ?: return null
+    val min = m.groupValues[2].toLongOrNull() ?: return null
+    val sec = m.groupValues[3].toLongOrNull() ?: return null
+    val ms = m.groupValues[4].padEnd(3, '0').take(3).toLongOrNull() ?: return null
+    return (((h * 60L + min) * 60L + sec) * 1000L) + ms
 }
 
 /**
@@ -459,12 +714,13 @@ private fun isHls(u: String): Boolean {
 private fun SniffStage(embedUrl: String, referer: String, onSniffed: (String, Map<String, String>) -> Unit, onFail: () -> Unit) {
     val done = remember { AtomicBoolean(false) }
     var web by remember { mutableStateOf<WebView?>(null) }
-    LaunchedEffect(embedUrl) { delay(22_000); if (done.compareAndSet(false, true)) onFail() }
+    LaunchedEffect(embedUrl) { delay(12_000); if (done.compareAndSet(false, true)) onFail() }
     LaunchedEffect(web) {
         val wv = web ?: return@LaunchedEffect
-        repeat(14) {
-            delay(1500)
+        repeat(8) {
+            delay(1200)
             if (done.get()) return@LaunchedEffect
+            wv.evaluateJavascript(SNIFF_KICK_JS, null)
             wv.evaluateJavascript(READER_JS) { result ->
                 val url = result?.trim('"', ' ')?.replace("\\/", "/")
                     ?.takeIf { it.startsWith("http") && !it.startsWith("blob") }
@@ -485,6 +741,11 @@ private fun SniffStage(embedUrl: String, referer: String, onSniffed: (String, Ma
             factory = { ctx ->
                 WebView(ctx).apply {
                     layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+                    keepScreenOn = true
+                    // TV: don't let this WebView grab D-pad focus — keep it on the Compose key handler.
+                    isFocusable = false
+                    isFocusableInTouchMode = false
+                    descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
                     settings.javaScriptEnabled = true
                     settings.domStorageEnabled = true
                     settings.mediaPlaybackRequiresUserGesture = false
@@ -492,6 +753,7 @@ private fun SniffStage(embedUrl: String, referer: String, onSniffed: (String, Ma
                     webChromeClient = WebChromeClient()
                     webViewClient = object : WebViewClient() {
                         override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
+                            if (isAdHost(request.url.host.orEmpty())) return emptyResponse()
                             val u = request.url.toString()
                             if (looksLikeStream(u) && done.compareAndSet(false, true)) {
                                 val origin = runCatching { java.net.URI(embedUrl).let { "${it.scheme}://${it.host}" } }.getOrNull()
@@ -506,7 +768,11 @@ private fun SniffStage(embedUrl: String, referer: String, onSniffed: (String, Ma
                             }
                             return null
                         }
-                        override fun onPageFinished(view: WebView, url: String?) { view.evaluateJavascript(READER_JS, null) }
+                        override fun onPageFinished(view: WebView, url: String?) {
+                            view.evaluateJavascript(STRIP_ADS_JS, null)
+                            view.evaluateJavascript(SNIFF_KICK_JS, null)
+                            view.evaluateJavascript(READER_JS, null)
+                        }
                     }
                     loadUrl(embedUrl, mapOf("Referer" to referer))
                 }
@@ -526,7 +792,7 @@ private fun SniffStage(embedUrl: String, referer: String, onSniffed: (String, Ma
     }
 }
 
-@OptIn(UnstableApi::class)
+@OptIn(UnstableApi::class, ExperimentalMaterial3Api::class)
 @Composable
 private fun ExoStage(
     variants: List<StreamVariant>,
@@ -540,6 +806,11 @@ private fun ExoStage(
     onError: () -> Unit,
     hasNext: Boolean = false,
     onNext: () -> Unit = {},
+    hasPrev: Boolean = false,
+    onPrev: () -> Unit = {},
+    /** Reports the real video orientation once the first frame's dimensions arrive (portrait → true),
+     *  so [PlayerScreen] can lock the matching device orientation even when the source hint was wrong. */
+    onVertical: (Boolean) -> Unit = {},
     /** Non-null for offline playback: a cache-backed factory so the downloaded stream plays with no network. */
     dataSourceFactory: DataSource.Factory? = null,
 ) {
@@ -574,8 +845,19 @@ private fun ExoStage(
         val httpFactory = DefaultHttpDataSource.Factory()
             .setUserAgent(ua)
             .setDefaultRequestProperties(props.filterKeys { !it.equals("User-Agent", true) })
+        // wibufile's CDN throttles ANY ranged request (`Range: bytes=…`) to ~30 KB/s but serves a plain
+        // full-file GET (no Range) at ~150 KB/s. ExoPlayer's progressive reader issues ranged reads, so its
+        // moov fetch crawled and the watchdog killed every wibufile source. Strip the Range on the initial
+        // (position-0) read so it takes the fast full-file path — the browser's `<video>` does the same.
+        val defaultFactory = DefaultDataSource.Factory(context, httpFactory)
+        val netFactory: DataSource.Factory = dataSourceFactory
+            // Melolo streams (marked by the `#tnk=` key fragment) are AES-CTR encrypted: download+decrypt.
+            ?: if (variants.any { "#tnk=" in it.url }) MeloloDataSourceFactory(httpFactory)
+            else if (variants.any { "wibufile" in it.url.lowercase() })
+                NoInitialRangeFactory(httpFactory)
+            else defaultFactory
         ExoPlayer.Builder(context)
-            .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory ?: httpFactory))
+            .setMediaSourceFactory(DefaultMediaSourceFactory(netFactory))
             .setTrackSelector(trackSelector)
             .build().apply { playWhenReady = true }
     }
@@ -609,6 +891,7 @@ private fun ExoStage(
     var duration by remember { mutableLongStateOf(0L) }
     var controls by remember { mutableStateOf(true) }
     var menuOpen by remember { mutableStateOf(false) } // Source/Resolusi dropdown open → pause auto-hide
+    var sourceOpenTick by remember { mutableIntStateOf(0) } // D-pad Up bumps this → Source picker opens (TV)
     // AniSkip OP/ED timestamps. Only fetched for matched anime (malId>0, not donghua); stays null
     // otherwise → the manual heuristic chip below. `skip_op` governs whether a present span auto-seeks.
     var skip by remember(arg.url) { mutableStateOf<SkipTimes?>(null) }
@@ -621,6 +904,14 @@ private fun ExoStage(
     var ended by remember(arg.url) { mutableStateOf(false) }
     var nextIn by remember(arg.url) { mutableStateOf(-1) } // >0 = countdown active
     var cancelNext by remember(arg.url) { mutableStateOf(false) }
+    val focusRequester = remember { FocusRequester() }
+    val preferredSubtitle = remember(server.subtitles) { preferredSubtitleTrack(server.subtitles) }
+    var subtitleCues by remember(preferredSubtitle?.url) { mutableStateOf<List<SubtitleCue>>(emptyList()) }
+    LaunchedEffect(preferredSubtitle?.url) {
+        subtitleCues = preferredSubtitle?.url?.let { fetchSubtitleCues(it) }.orEmpty()
+        android.util.Log.i("TnPlayer", "subtitle '${preferredSubtitle?.label}' cues=${subtitleCues.size}")
+    }
+    val subtitleText = subtitleCues.firstOrNull { position in it.startMs..it.endMs }?.text.orEmpty()
 
     DisposableEffect(Unit) {
         val l = object : Player.Listener {
@@ -630,6 +921,17 @@ private fun ExoStage(
                 if (s == Player.STATE_ENDED) { ended = true; WatchProgressStore.markFinished(arg.url, exo.duration) }
             }
             override fun onIsPlayingChanged(p: Boolean) { playing = p }
+            override fun onVideoSizeChanged(vs: androidx.media3.common.VideoSize) {
+                // Real display dimensions (account for anamorphic pixel ratio) → portrait when taller
+                // than wide. Confirms/corrects the source hint so short-drama locks portrait reliably.
+                val par = if (vs.pixelWidthHeightRatio > 0f) vs.pixelWidthHeightRatio else 1f
+                val w = vs.width * par
+                val h = vs.height.toFloat()
+                if (w > 0f && h > 0f) {
+                    android.util.Log.i("TnPlayer", "videoSize ${vs.width}x${vs.height} par=$par -> vertical=${h > w}")
+                    onVertical(h > w)
+                }
+            }
             override fun onTracksChanged(tracks: Tracks) {
                 latestTracks = tracks
                 val hs = sortedSetOf<Int>(compareByDescending { it })
@@ -640,7 +942,10 @@ private fun ExoStage(
                 // Honour reso priority (highest-first): force the top track instead of leaving ABR on "Auto".
                 if (autoReso) hs.firstOrNull()?.let { if (it != selHeight) applyHeight(it) }
             }
-            override fun onPlayerError(e: androidx.media3.common.PlaybackException) { onError() }
+            override fun onPlayerError(e: androidx.media3.common.PlaybackException) {
+                android.util.Log.e("TnPlayer", "exo error ${e.errorCodeName}: ${e.message}", e)
+                onError()
+            }
         }
         exo.addListener(l)
         onDispose {
@@ -654,8 +959,11 @@ private fun ExoStage(
     // (Re)load when the chosen quality changes, preserving position.
     LaunchedEffect(quality) {
         val pos = exo.currentPosition
-        val item = MediaItem.Builder().setUri(quality.url).apply {
+        val item = MediaItem.Builder()
+            .setUri(quality.url)
+            .apply {
             if (isHls(quality.url)) setMimeType(androidx.media3.common.MimeTypes.APPLICATION_M3U8)
+            if (isMp4Like(quality.url)) setMimeType(androidx.media3.common.MimeTypes.VIDEO_MP4)
         }.build()
         exo.setMediaItem(item)
         exo.prepare()
@@ -720,16 +1028,105 @@ private fun ExoStage(
         if (!cancelNext) onNext()
     }
     // Watchdog ("terlalu lama"): no first frame within the budget = dead/too-slow stream → hand off to
-    // the next source via onError (the failover). Re-armed on each Resolusi change.
+    // the next source via onError (the failover). Re-armed on each Resolusi change. A hard error still
+    // fails instantly via onPlayerError; this only catches a stream that's SILENTLY stuck.
     LaunchedEffect(quality) {
         delay(12_000)
-        if (exo.currentPosition <= 0L && !playing) onError()
+        if (exo.currentPosition <= 0L && !playing) {
+            // A large progressive mp4 (Samehadaku movies run ~1 GB) may still be locating its moov atom /
+            // buffering at 12s — killing it here wrongly drops a source that would play. Only bail now if
+            // it's genuinely stuck (idle, nothing buffered); if it's actively buffering, grant more time.
+            val progressing = exo.playbackState == Player.STATE_BUFFERING || exo.bufferedPosition > 0L
+            if (!progressing) {
+                android.util.Log.w("TnPlayer", "playback watchdog timeout for ${server.name} ${quality.label}")
+                onError()
+                return@LaunchedEffect
+            }
+            delay(25_000) // ~37s total for slow/large streams before giving up
+            if (exo.currentPosition <= 0L && !playing) {
+                android.util.Log.w("TnPlayer", "extended playback watchdog timeout for ${server.name} ${quality.label}")
+                onError()
+            }
+        }
     }
     LaunchedEffect(controls, playing, menuOpen) { if (controls && playing && !menuOpen) { delay(4000); controls = false } }
 
-    Box(Modifier.fillMaxSize().background(Color.Black)) {
+    LaunchedEffect(menuOpen) { if (!menuOpen) focusRequester.requestFocus() } // re-grab focus after a dropdown closes
+
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(Color.Black)
+            .focusRequester(focusRequester)
+            .focusable()
+            .onPreviewKeyEvent { ev ->
+                if (ev.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                when (ev.key) {
+                    Key.Back -> {
+                        if (menuOpen) false
+                        else if (controls) {
+                            controls = false
+                            true
+                        } else {
+                            onBack()
+                            true
+                        }
+                    }
+                    Key.DirectionLeft -> {
+                        // Single D-pad press = seek −10s (no need to open controls first).
+                        exo.seekTo((exo.currentPosition - 10_000).coerceAtLeast(0))
+                        controls = true
+                        lastInteractionAt = System.currentTimeMillis()
+                        true
+                    }
+                    Key.DirectionRight -> {
+                        exo.seekTo(exo.currentPosition + 10_000)
+                        controls = true
+                        lastInteractionAt = System.currentTimeMillis()
+                        true
+                    }
+                    Key.DirectionUp -> {
+                        // Reveal controls and jump straight to the Source picker so the remote can switch server.
+                        controls = true
+                        lastInteractionAt = System.currentTimeMillis()
+                        sourceOpenTick++
+                        true
+                    }
+                    Key.DirectionDown -> {
+                        controls = true
+                        lastInteractionAt = System.currentTimeMillis()
+                        true
+                    }
+                    Key.DirectionCenter, Key.Enter, Key.NumPadEnter -> {
+                        // Center toggles play/pause when the controls are already up; first press just reveals them.
+                        if (controls) exo.playWhenReady = !exo.playWhenReady else controls = true
+                        lastInteractionAt = System.currentTimeMillis()
+                        true
+                    }
+                    Key.MediaPlayPause, Key.Spacebar -> {
+                        exo.playWhenReady = !exo.playWhenReady
+                        controls = true
+                        lastInteractionAt = System.currentTimeMillis()
+                        true
+                    }
+                    else -> false
+                }
+            },
+    ) {
         AndroidView(
-            factory = { PlayerView(it).apply { player = exo; useController = false; setShutterBackgroundColor(android.graphics.Color.BLACK) } },
+            factory = {
+                PlayerView(it).apply {
+                    player = exo
+                    useController = false
+                    keepScreenOn = true
+                    setShutterBackgroundColor(android.graphics.Color.BLACK)
+                    applyTetoNovaSubtitleStyle()
+                    // TV: keep D-pad focus on the Compose key handler above, not this native view —
+                    // otherwise the surface swallows the remote and our controls never react.
+                    isFocusable = false
+                    descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
+                }
+            },
             modifier = Modifier.fillMaxSize().pointerInput(Unit) {
                 detectTapGestures(
                     onTap = { controls = !controls; lastInteractionAt = System.currentTimeMillis() },
@@ -758,9 +1155,20 @@ private fun ExoStage(
             else if (skipEnding) SkipChip("Lewati Ending ⏭") { exo.seekTo((duration - 2_000L).coerceAtLeast(0L)) }
         }
         if (controls) {
-            Box(Modifier.fillMaxSize().background(Color.Black.copy(0.35f)))
-            TopBar(arg.title, arg.episodeLabel, onBack) {
-                SourcePill(servers, server, onPickServer, onExternal, onOpenChange = { menuOpen = it })
+            // Gradient scrim: dark at top + bottom (so the bars read), transparent through the middle so
+            // the video stays visible — replaces the old flat dim. Matches the Player Redesign handoff.
+            Box(
+                Modifier.fillMaxSize().background(
+                    Brush.verticalGradient(
+                        0.0f to Color.Black.copy(0.68f),
+                        0.26f to Color.Transparent,
+                        0.62f to Color.Transparent,
+                        1.0f to Color.Black.copy(0.72f),
+                    ),
+                ),
+            )
+            TopBar(arg.title, arg.episodeLabel, onBack, background = Color.Transparent) {
+                SourcePill(servers, server, onPickServer, onExternal, onOpenChange = { menuOpen = it }, openTick = sourceOpenTick)
                 if (variants.size > 1) {
                     // Per-quality stream URLs (e.g. ok.ru, Rumble mp4 ladder).
                     Spacer(Modifier.width(8.dp))
@@ -771,34 +1179,36 @@ private fun ExoStage(
                     val opts = listOf<Int?>(null) + trackHeights
                     Pill("Resolusi", selHeight?.let { "${it}p" } ?: "Auto", opts,
                         itemLabel = { it?.let { h -> "${h}p" } ?: "Auto" }, selected = { it == selHeight }, onOpenChange = { menuOpen = it }) { autoReso = false; applyHeight(it) }
+                } else if (serverResolutionChoices(servers, server).size > 1) {
+                    Spacer(Modifier.width(8.dp))
+                    ServerResolutionPill(servers, server, onPickServer, onOpenChange = { menuOpen = it })
+                } else if (preEmbedVariants(server).isNotEmpty()) {
+                    Spacer(Modifier.width(8.dp))
+                    PreEmbedResolutionPill(server, onPickServer, onOpenChange = { menuOpen = it })
                 }
             }
-            // center play / pause
-            Box(
-                Modifier.align(Alignment.Center).size(64.dp).clip(CircleShape).background(Color.White.copy(0.18f))
-                    .clickable { exo.playWhenReady = !exo.playWhenReady },
-                contentAlignment = Alignment.Center,
+            // bottom: accent progress bar + current / total time below it
+            Column(
+                Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                if (playing) Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                    Box(Modifier.size(6.dp, 22.dp).clip(RoundedCornerShape(2.dp)).background(Color.White))
-                    Box(Modifier.size(6.dp, 22.dp).clip(RoundedCornerShape(2.dp)).background(Color.White))
-                } else Text("▶", color = Color.White, fontSize = 26.sp)
-            }
-            // seek bar
-            Row(
-                Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(fmtTime(position), color = Color.White, fontSize = 12.sp)
-                Slider(
-                    value = if (duration > 0) (position.toFloat() / duration).coerceIn(0f, 1f) else 0f,
-                    onValueChange = { f -> if (duration > 0) { val p = (f * duration).toLong(); position = p; exo.seekTo(p); lastInteractionAt = System.currentTimeMillis() } },
-                    modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
-                    colors = SliderDefaults.colors(thumbColor = Color.White, activeTrackColor = Color.White, inactiveTrackColor = Color.White.copy(0.3f)),
-                )
-                Text(fmtTime(duration), color = Color.White, fontSize = 12.sp)
+                CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
+                    Slider(
+                        value = if (duration > 0) (position.toFloat() / duration).coerceIn(0f, 1f) else 0f,
+                        onValueChange = { f -> if (duration > 0) { val p = (f * duration).toLong(); position = p; exo.seekTo(p); lastInteractionAt = System.currentTimeMillis() } },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = SliderDefaults.colors(thumbColor = Color.White, activeTrackColor = Color(0xFFE23A3A), inactiveTrackColor = Color.White.copy(0.25f)),
+                        thumb = { Box(Modifier.size(13.dp).clip(CircleShape).background(Color.White)) },
+                    )
+                }
+                BottomTransportRow(fmtTime(position), fmtTime(duration)) {
+                    if (hasPrev) EpisodeStepButton("⏮") { onPrev() }
+                    PlayerToggleButton(playing) { exo.playWhenReady = !exo.playWhenReady }
+                    if (hasNext) EpisodeStepButton("⏭") { onNext() }
+                }
             }
         }
+        if (subtitleText.isNotBlank()) SubtitleOverlay(subtitleText, controls)
         // Auto-next countdown overlay (after the episode ends; cancelable).
         if (nextIn > 0) {
             Box(Modifier.fillMaxSize().background(Color.Black.copy(0.6f)), contentAlignment = Alignment.Center) {
@@ -808,16 +1218,53 @@ private fun ExoStage(
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         Box(
                             Modifier.clip(RoundedCornerShape(50)).background(Color.White.copy(0.18f))
-                                .clickable { cancelNext = true; nextIn = -1 }.padding(horizontal = 18.dp, vertical = 10.dp),
+                                .clickable { cancelNext = true; nextIn = -1 }.focusable().padding(horizontal = 18.dp, vertical = 10.dp),
                         ) { Text("Batal", color = Color.White, fontSize = 13.sp) }
                         Box(
                             Modifier.clip(RoundedCornerShape(50)).background(Color.White)
-                                .clickable { onNext() }.padding(horizontal = 18.dp, vertical = 10.dp),
+                                .clickable { onNext() }.focusable().padding(horizontal = 18.dp, vertical = 10.dp),
                         ) { Text("Tonton sekarang ⏭", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 13.sp) }
                     }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun EpisodeStepButton(glyph: String, onClick: () -> Unit) {
+    Box(
+        Modifier.size(42.dp).clickable(onClick = onClick).focusable(),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(glyph, color = Color.White, fontSize = 22.sp)
+    }
+}
+
+@Composable
+private fun PlayerToggleButton(playing: Boolean, onClick: () -> Unit) {
+    Box(Modifier.size(42.dp).clickable(onClick = onClick).focusable(), contentAlignment = Alignment.Center) {
+        if (playing) Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            Box(Modifier.size(5.dp, 18.dp).clip(RoundedCornerShape(2.dp)).background(Color.White))
+            Box(Modifier.size(5.dp, 18.dp).clip(RoundedCornerShape(2.dp)).background(Color.White))
+        } else {
+            Text("▶", color = Color.White, fontSize = 22.sp)
+        }
+    }
+}
+
+@Composable
+private fun BottomTransportRow(start: String, end: String, content: @Composable () -> Unit) {
+    Box(Modifier.fillMaxWidth().height(42.dp)) {
+        Text(start, color = Color.White.copy(0.72f), fontSize = 12.sp, modifier = Modifier.align(Alignment.CenterStart))
+        Row(
+            Modifier.align(Alignment.Center),
+            horizontalArrangement = Arrangement.spacedBy(22.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            content()
+        }
+        Text(end, color = Color.White.copy(0.72f), fontSize = 12.sp, modifier = Modifier.align(Alignment.CenterEnd))
     }
 }
 
@@ -840,6 +1287,32 @@ private fun BoxScope.SkipChip(label: String, onClick: () -> Unit) {
 // ---------------------------------------------------------------------------------------------
 
 @Composable
+private fun BoxScope.SubtitleOverlay(text: String, controlsVisible: Boolean) {
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val bottomGap = if (maxHeight > maxWidth) maxHeight * 0.34f else if (controlsVisible) 96.dp else 52.dp
+        Text(
+            text = text,
+            color = Color.White,
+            fontSize = 18.sp,
+            lineHeight = 22.sp,
+            textAlign = TextAlign.Center,
+            fontWeight = FontWeight.SemiBold,
+            style = TextStyle(
+                shadow = Shadow(
+                    color = Color.Black.copy(alpha = 0.95f),
+                    offset = Offset(1.6f, 1.6f),
+                    blurRadius = 3.5f,
+                ),
+            ),
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(horizontal = 26.dp)
+                .padding(bottom = bottomGap),
+        )
+    }
+}
+
+@Composable
 private fun WebStage(
     server: VideoServer,
     arg: PlayerArg,
@@ -852,18 +1325,53 @@ private fun WebStage(
     var barVisible by remember { mutableStateOf(true) }
     var fullscreen by remember { mutableStateOf(false) }
     var menuOpen by remember { mutableStateOf(false) }
+    val focusRequester = remember { FocusRequester() }
     LaunchedEffect(barVisible, fullscreen, menuOpen) { if (barVisible && !fullscreen && !menuOpen) { delay(4000); barVisible = false } }
     LaunchedEffect(fullscreen) { if (fullscreen) barVisible = false }
+    LaunchedEffect(menuOpen) { if (!menuOpen) focusRequester.requestFocus() } // re-grab focus after a dropdown closes
     val allowHost = remember(server.embedUrl) {
         runCatching { coreDomain(java.net.URI(server.embedUrl).host.orEmpty()) }.getOrDefault("")
     }
 
-    Box(Modifier.fillMaxSize().background(Color.Black)) {
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(Color.Black)
+            .focusRequester(focusRequester)
+            .focusable()
+            .onPreviewKeyEvent { ev ->
+                if (ev.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                when (ev.key) {
+                    Key.Back -> {
+                        if (menuOpen) false
+                        else if (barVisible && !fullscreen) {
+                            barVisible = false
+                            true
+                        } else {
+                            onBack()
+                            true
+                        }
+                    }
+                    Key.DirectionUp, Key.DirectionDown, Key.DirectionLeft, Key.DirectionRight, Key.DirectionCenter, Key.Enter, Key.NumPadEnter -> {
+                        if (!barVisible && !fullscreen) {
+                            barVisible = true
+                            true
+                        } else false
+                    }
+                    else -> false
+                }
+            },
+    ) {
         key(server.embedUrl) {
             AndroidView(
                 factory = { ctx ->
                     WebView(ctx).apply {
                         layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+                        keepScreenOn = true
+                        // TV: don't let this WebView grab D-pad focus — keep it on the Compose key handler.
+                        isFocusable = false
+                        isFocusableInTouchMode = false
+                        descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
                         setBackgroundColor(android.graphics.Color.BLACK)
                         settings.javaScriptEnabled = true
                         settings.domStorageEnabled = true
@@ -881,7 +1389,16 @@ private fun WebStage(
         }
         if (!fullscreen) {
             if (barVisible) {
-                TopBar(arg.title, arg.episodeLabel, onBack) { SourcePill(servers, server, onPickServer, onExternal, onOpenChange = { menuOpen = it }) }
+                TopBar(arg.title, arg.episodeLabel, onBack) {
+                    SourcePill(servers, server, onPickServer, onExternal, onOpenChange = { menuOpen = it })
+                    if (serverResolutionChoices(servers, server).size > 1) {
+                        Spacer(Modifier.width(8.dp))
+                        ServerResolutionPill(servers, server, onPickServer, onOpenChange = { menuOpen = it })
+                    } else if (preEmbedVariants(server).isNotEmpty()) {
+                        Spacer(Modifier.width(8.dp))
+                        PreEmbedResolutionPill(server, onPickServer, onOpenChange = { menuOpen = it })
+                    }
+                }
             } else {
                 Box(Modifier.align(Alignment.TopStart).fillMaxWidth().height(36.dp).clickable { barVisible = true })
             }
@@ -898,6 +1415,7 @@ private fun WebStage(
 // with the embed's own UI hidden and OUR controls overlaid, driven via the jwplayer() JS API.
 // ---------------------------------------------------------------------------------------------
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun WebPlayerStage(
     player: WebPlayer,
@@ -917,6 +1435,8 @@ private fun WebPlayerStage(
     var duration by remember { mutableLongStateOf(0L) } // seconds
     var controls by remember { mutableStateOf(true) }
     var fullscreen by remember { mutableStateOf(false) }
+    var menuOpen by remember { mutableStateOf(false) }
+    var sourceOpenTick by remember { mutableIntStateOf(0) } // D-pad Up opens the Source picker (TV)
     var qualities by remember { mutableStateOf<List<String>>(emptyList()) }
     var qualityIdx by remember { mutableStateOf(0) }
     var started by remember(embedUrl) { mutableStateOf(false) }
@@ -924,13 +1444,14 @@ private fun WebPlayerStage(
     // "Menyiapkan video…" spinner.
     var dead by remember(embedUrl) { mutableStateOf(false) }
     var reload by remember(embedUrl) { mutableStateOf(0) }
+    val focusRequester = remember { FocusRequester() }
 
     // Watchdog: JWPlayer/Dailymotion can fail to play (e.g. JW error 232404 — dead/geo-blocked playlist)
     // with no JS error we can observe, so a time budget guards the load. If no frame has rolled, hand off
     // to the next server (same failover as ExoStage/SniffStage); when none remain, stop spinning and let
     // the user open externally / go back instead of hanging forever.
     LaunchedEffect(embedUrl, reload) {
-        delay(20_000)
+        delay(12_000)
         if (!started && !dead) { if (!onServerFailed()) dead = true }
     }
     if (dead) {
@@ -954,22 +1475,81 @@ private fun WebPlayerStage(
                     qualityIdx = o.optInt("qi").coerceAtLeast(0)
                     // Kick auto-play until it actually starts (the host's play() can fire before it's ready).
                     // Reveal only once frames are rolling (pos>0) so the startup clutter stays behind the cover.
-                    if (!started) { if (playing && position > 0L) started = true else wv.evaluateJavascript(player.playKick, null) }
+                    if (!started) { if (playing && (position > 0L || duration > 0L)) started = true else wv.evaluateJavascript(player.playKick, null) }
                 }
             }
         }
     }
-    LaunchedEffect(controls, playing) { if (controls && playing) { delay(4000); controls = false } }
+    LaunchedEffect(controls, playing, menuOpen) { if (controls && playing && !menuOpen) { delay(4000); controls = false } }
+    LaunchedEffect(menuOpen) { if (!menuOpen) focusRequester.requestFocus() } // re-grab focus after a dropdown closes
 
     fun js(code: String) { web?.evaluateJavascript(code, null) }
     fun toggle() = js(player.toggle)
 
-    Box(Modifier.fillMaxSize().background(Color.Black)) {
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(Color.Black)
+            .focusRequester(focusRequester)
+            .focusable()
+            .onPreviewKeyEvent { ev ->
+                if (ev.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                when (ev.key) {
+                    Key.Back -> {
+                        if (menuOpen) false
+                        else if (controls && !fullscreen) {
+                            controls = false
+                            true
+                        } else {
+                            onBack()
+                            true
+                        }
+                    }
+                    Key.DirectionLeft -> {
+                        // Single D-pad press = seek −10s (no need to open controls first).
+                        js(player.seekAbs((position - 10).coerceAtLeast(0)))
+                        controls = true
+                        true
+                    }
+                    Key.DirectionRight -> {
+                        js(player.seekAbs(position + 10))
+                        controls = true
+                        true
+                    }
+                    Key.DirectionUp -> {
+                        // Reveal controls + jump straight to the Source picker so the remote can switch server.
+                        controls = true
+                        sourceOpenTick++
+                        true
+                    }
+                    Key.DirectionDown -> {
+                        controls = true
+                        true
+                    }
+                    Key.DirectionCenter, Key.Enter, Key.NumPadEnter -> {
+                        // Center toggles play/pause once controls are up; first press just reveals them.
+                        if (controls) toggle() else controls = true
+                        true
+                    }
+                    Key.MediaPlayPause, Key.Spacebar -> {
+                        toggle()
+                        controls = true
+                        true
+                    }
+                    else -> false
+                }
+            },
+    ) {
         key(embedUrl, reload) {
             AndroidView(
                 factory = { ctx ->
                     WebView(ctx).apply {
                         layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+                        keepScreenOn = true
+                        // TV: don't let this WebView grab D-pad focus — keep it on the Compose key handler.
+                        isFocusable = false
+                        isFocusableInTouchMode = false
+                        descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
                         setBackgroundColor(android.graphics.Color.BLACK)
                         settings.javaScriptEnabled = true
                         settings.domStorageEnabled = true
@@ -1003,8 +1583,7 @@ private fun WebPlayerStage(
         if (!started) {
             LoadingBox("Menyiapkan video…")
             Box(
-                Modifier.align(Alignment.TopStart).padding(10.dp).size(38.dp).clip(CircleShape)
-                    .background(Color.White.copy(0.15f)).clickable { onBack() },
+                Modifier.align(Alignment.TopStart).padding(10.dp).size(38.dp).clickable { onBack() }.focusable(),
                 contentAlignment = Alignment.Center,
             ) { Text("‹", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold) }
             return@Box
@@ -1029,49 +1608,50 @@ private fun WebPlayerStage(
         if (controls && !fullscreen) {
             Box(Modifier.fillMaxSize().background(Color.Black.copy(0.25f)))
             TopBar(title, episodeLabel, onBack) {
-                SourcePill(servers, current, onPickServer, onExternal)
+                SourcePill(servers, current, onPickServer, onExternal, onOpenChange = { menuOpen = it }, openTick = sourceOpenTick)
                 if (qualities.size > 1) {
                     Spacer(Modifier.width(8.dp))
                     Pill("Resolusi", qualities.getOrElse(qualityIdx) { "Auto" }, qualities.indices.toList(),
-                        itemLabel = { qualities[it] }, selected = { it == qualityIdx }) { idx ->
+                        itemLabel = { qualities[it] }, selected = { it == qualityIdx }, onOpenChange = { menuOpen = it }) { idx ->
                         qualityIdx = idx
                         js(player.setQuality(idx))
                     }
+                } else if (serverResolutionChoices(servers, current).size > 1) {
+                    Spacer(Modifier.width(8.dp))
+                    ServerResolutionPill(servers, current, onPickServer, onOpenChange = { menuOpen = it })
+                } else if (preEmbedVariants(current).isNotEmpty()) {
+                    Spacer(Modifier.width(8.dp))
+                    PreEmbedResolutionPill(current, onPickServer, onOpenChange = { menuOpen = it })
                 }
             }
-            Box(
-                Modifier.align(Alignment.Center).size(64.dp).clip(CircleShape).background(Color.White.copy(0.18f)).clickable { toggle() },
-                contentAlignment = Alignment.Center,
-            ) {
-                if (playing) Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                    Box(Modifier.size(width = 6.dp, height = 22.dp).clip(RoundedCornerShape(2.dp)).background(Color.White))
-                    Box(Modifier.size(width = 6.dp, height = 22.dp).clip(RoundedCornerShape(2.dp)).background(Color.White))
-                } else Text("▶", color = Color.White, fontSize = 26.sp)
-            }
-            Row(
+            Column(
                 Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
+                horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Text(fmtTime(position * 1000), color = Color.White, fontSize = 12.sp)
-                Slider(
-                    value = if (duration > 0L) (position.toFloat() / duration).coerceIn(0f, 1f) else 0f,
-                    onValueChange = { f -> if (duration > 0L) { val p = (f * duration).toLong(); position = p; js(player.seekAbs(p)) } },
-                    modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
-                    colors = SliderDefaults.colors(thumbColor = Color.White, activeTrackColor = Color.White, inactiveTrackColor = Color.White.copy(0.3f)),
-                )
-                Text(fmtTime(duration * 1000), color = Color.White, fontSize = 12.sp)
+                CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
+                    Slider(
+                        value = if (duration > 0L) (position.toFloat() / duration).coerceIn(0f, 1f) else 0f,
+                        onValueChange = { f -> if (duration > 0L) { val p = (f * duration).toLong(); position = p; js(player.seekAbs(p)) } },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = SliderDefaults.colors(thumbColor = Color.White, activeTrackColor = Color.White, inactiveTrackColor = Color.White.copy(0.3f)),
+                        thumb = { Box(Modifier.size(13.dp).clip(CircleShape).background(Color.White)) },
+                    )
+                }
+                BottomTransportRow(fmtTime(position * 1000), fmtTime(duration * 1000)) {
+                    PlayerToggleButton(playing) { toggle() }
+                }
             }
         }
     }
 }
 
 @Composable
-private fun BoxScope.TopBar(title: String, episodeLabel: String?, onBack: () -> Unit, trailing: @Composable () -> Unit) {
+private fun BoxScope.TopBar(title: String, episodeLabel: String?, onBack: () -> Unit, background: Color = Color.Black.copy(0.45f), trailing: @Composable () -> Unit) {
     Row(
-        Modifier.align(Alignment.TopStart).fillMaxWidth().background(Color.Black.copy(0.45f)).padding(horizontal = 10.dp, vertical = 8.dp),
+        Modifier.align(Alignment.TopStart).fillMaxWidth().background(background).padding(horizontal = 10.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(Modifier.size(38.dp).clip(CircleShape).background(Color.White.copy(0.15f)).clickable { onBack() }, contentAlignment = Alignment.Center) {
+        Box(Modifier.size(38.dp).clickable { onBack() }.focusable(), contentAlignment = Alignment.Center) {
             Text("‹", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
         }
         Spacer(Modifier.width(10.dp))
@@ -1088,20 +1668,127 @@ private fun BoxScope.TopBar(title: String, episodeLabel: String?, onBack: () -> 
 private fun shortServerName(name: String): String =
     name.replace(Regex("\\s*\\[[^\\]]*\\]"), "").trim().ifBlank { name }
 
+private fun sameSource(a: VideoServer, b: VideoServer): Boolean =
+    a.name == b.name
+
+private data class SourceProviderChoice(val label: String, val server: VideoServer)
+
+private data class ServerResolutionChoice(val label: String, val server: VideoServer)
+
+private val namedServerResolutionRegex = Regex("""(?i)\b(2160|1440|1080|720|480|360|240)\s*p\b""")
+
+private fun namedServerResolution(server: VideoServer): String? =
+    namedServerResolutionRegex.find(shortServerName(server.name))
+        ?.groupValues
+        ?.getOrNull(1)
+        ?.let { "${it}p" }
+
+private fun serverProviderLabel(server: VideoServer): String {
+    val cleaned = shortServerName(server.name)
+    return namedServerResolutionRegex
+        .replace(cleaned, "")
+        .replace(Regex("""\s*[-_/|]+\s*"""), " ")
+        .replace(Regex("""\s+"""), " ")
+        .trim()
+        .ifBlank { cleaned }
+}
+
+private fun preferredServer(servers: List<VideoServer>, current: VideoServer, preferResolution: String? = null): VideoServer {
+    val currentProvider = serverProviderLabel(current)
+    return servers.firstOrNull { sameSource(it, current) }
+        ?: servers.firstOrNull { preferResolution != null && serverProviderLabel(it) == currentProvider && namedServerResolution(it) == preferResolution }
+        ?: servers.firstOrNull { preferResolution != null && namedServerResolution(it) == preferResolution }
+        ?: servers.minWithOrNull(compareBy<VideoServer>({ speedRank(it) }, { -bestServerHeight(it) }, { it.name.lowercase() }))
+        ?: servers.first()
+}
+
+private fun sourceProviderChoices(servers: List<VideoServer>, current: VideoServer): List<SourceProviderChoice> {
+    val currentResolution = namedServerResolution(current)
+    val grouped = linkedMapOf<String, MutableList<VideoServer>>()
+    servers.forEach { grouped.getOrPut(serverProviderLabel(it)) { mutableListOf() }.add(it) }
+    return grouped.map { (label, group) ->
+        SourceProviderChoice(label, preferredServer(group, current, currentResolution))
+    }
+}
+
+private fun serverResolutionChoices(servers: List<VideoServer>, current: VideoServer): List<ServerResolutionChoice> {
+    val grouped = linkedMapOf<String, MutableList<VideoServer>>()
+    servers.forEach { server ->
+        val label = namedServerResolution(server) ?: return@forEach
+        grouped.getOrPut(label) { mutableListOf() }.add(server)
+    }
+    return grouped.map { (label, group) ->
+        ServerResolutionChoice(label, preferredServer(group, current, label))
+    }.sortedByDescending { resoHeight(it.label) }
+}
+
+private fun preEmbedVariants(server: VideoServer): List<ServerVariant> =
+    server.variants.takeIf { it.size > 1 }.orEmpty()
+
+private fun currentPreEmbedLabel(server: VideoServer): String =
+    server.variants.firstOrNull { it.embedUrl == server.embedUrl }?.label
+        ?: server.variants.maxByOrNull { resoHeight(it.label) }?.label
+        ?: "Auto"
+
 /** Source-server picker pill + dropdown (with an "open externally" tail). */
 @Composable
-private fun SourcePill(servers: List<VideoServer>, current: VideoServer, onPick: (VideoServer) -> Unit, onExternal: () -> Unit, onOpenChange: (Boolean) -> Unit = {}) {
+private fun SourcePill(
+    servers: List<VideoServer>,
+    current: VideoServer,
+    onPick: (VideoServer) -> Unit,
+    onExternal: () -> Unit,
+    onOpenChange: (Boolean) -> Unit = {},
+    openTick: Int = 0,
+) {
     var open by remember { mutableStateOf(false) }
+    val choices = remember(servers, current) { sourceProviderChoices(servers, current) }
+    val currentLabel = remember(current) { serverProviderLabel(current) }
+    LaunchedEffect(openTick) { if (openTick > 0) open = true } // TV: D-pad Up opens the picker
     LaunchedEffect(open) { onOpenChange(open) } // let the player pause its controls auto-hide while open
     Box {
-        PillRow("Source", shortServerName(current.name)) { open = true }
-        DropdownMenu(expanded = open, onDismissRequest = { open = false }, properties = PopupProperties(focusable = false)) {
-            servers.forEach { s ->
-                DropdownMenuItem(text = { Text(s.name + if (s.embedUrl == current.embedUrl) "  ✓" else "") }, onClick = { onPick(s); open = false })
+        PillRow("Source", currentLabel) { open = true }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }, properties = PlayerPopupProperties) {
+            choices.forEach { choice ->
+                DropdownMenuItem(
+                    text = { Text(choice.label + if (choice.label == currentLabel) "  ✓" else "") },
+                    onClick = { onPick(choice.server); open = false },
+                )
             }
             HorizontalDivider()
             DropdownMenuItem(text = { Text("Buka di player luar") }, onClick = { onExternal(); open = false })
         }
+    }
+}
+
+@Composable
+private fun ServerResolutionPill(servers: List<VideoServer>, current: VideoServer, onPickServer: (VideoServer) -> Unit, onOpenChange: (Boolean) -> Unit = {}) {
+    val choices = remember(servers, current) { serverResolutionChoices(servers, current) }
+    val currentLabel = namedServerResolution(current) ?: choices.firstOrNull { sameSource(it.server, current) }?.label ?: "Auto"
+    if (choices.size <= 1) return
+    Pill(
+        label = "Resolusi",
+        value = currentLabel,
+        items = choices,
+        itemLabel = { it.label },
+        selected = { it.label == currentLabel },
+        onOpenChange = onOpenChange,
+    ) { picked ->
+        onPickServer(picked.server)
+    }
+}
+
+@Composable
+private fun PreEmbedResolutionPill(server: VideoServer, onPickServer: (VideoServer) -> Unit, onOpenChange: (Boolean) -> Unit = {}) {
+    val variants = preEmbedVariants(server)
+    Pill(
+        label = "Resolusi",
+        value = currentPreEmbedLabel(server),
+        items = variants,
+        itemLabel = { it.label },
+        selected = { it.embedUrl == server.embedUrl },
+        onOpenChange = onOpenChange,
+    ) { picked ->
+        onPickServer(server.copy(embedUrl = picked.embedUrl))
     }
 }
 
@@ -1112,7 +1799,7 @@ private fun <T> Pill(label: String, value: String, items: List<T>, itemLabel: (T
     LaunchedEffect(open) { onOpenChange(open) } // let the player pause its controls auto-hide while open
     Box {
         PillRow(label, value) { open = true }
-        DropdownMenu(expanded = open, onDismissRequest = { open = false }, properties = PopupProperties(focusable = false)) {
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }, properties = PlayerPopupProperties) {
             items.forEach { it2 ->
                 DropdownMenuItem(text = { Text(itemLabel(it2) + if (selected(it2)) "  ✓" else "") }, onClick = { onPick(it2); open = false })
             }
@@ -1123,7 +1810,7 @@ private fun <T> Pill(label: String, value: String, items: List<T>, itemLabel: (T
 @Composable
 private fun PillRow(label: String, value: String, onClick: () -> Unit) {
     Row(
-        Modifier.clip(RoundedCornerShape(50)).background(Color.White.copy(0.15f)).clickable { onClick() }.padding(horizontal = 10.dp, vertical = 7.dp),
+        Modifier.clip(RoundedCornerShape(50)).background(Color.White.copy(0.15f)).clickable { onClick() }.focusable().padding(horizontal = 10.dp, vertical = 7.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(5.dp),
     ) {
@@ -1152,13 +1839,13 @@ private fun NoSourceBox(onRetry: () -> Unit, onExternal: () -> Unit, onBack: () 
             // Kuramanime's player token is rate-limited on quick re-opens, so a manual retry (after a beat)
             // usually succeeds — make it the primary action.
             Spacer(Modifier.height(12.dp))
-            Box(Modifier.clip(RoundedCornerShape(50)).background(Color.White).clickable { onRetry() }.padding(horizontal = 20.dp, vertical = 10.dp)) {
+            Box(Modifier.clip(RoundedCornerShape(50)).background(Color.White).clickable { onRetry() }.focusable().padding(horizontal = 20.dp, vertical = 10.dp)) {
                 Text("Coba lagi", color = Color.Black, fontWeight = FontWeight.Bold)
             }
             Spacer(Modifier.height(10.dp))
-            Text("Buka di player luar", color = Color.White.copy(0.7f), modifier = Modifier.clickable { onExternal() }.padding(8.dp))
+            Text("Buka di player luar", color = Color.White.copy(0.7f), modifier = Modifier.clickable { onExternal() }.focusable().padding(8.dp))
             Spacer(Modifier.height(2.dp))
-            Text("Kembali", color = Color.White.copy(0.7f), modifier = Modifier.clickable { onBack() }.padding(8.dp))
+            Text("Kembali", color = Color.White.copy(0.7f), modifier = Modifier.clickable { onBack() }.focusable().padding(8.dp))
         }
     }
 }
@@ -1187,6 +1874,11 @@ private fun fullscreenChromeClient(ctx: android.content.Context, onEnter: () -> 
         custom = null; cb?.onCustomViewHidden(); cb = null
         onExit()
     }
+    // Embed players fail silently on-device otherwise — surface their console to logcat.
+    override fun onConsoleMessage(msg: android.webkit.ConsoleMessage): Boolean {
+        android.util.Log.i("WebStage", "console ${msg.messageLevel()}: ${msg.message().take(300)} @${msg.sourceId()?.take(80)}:${msg.lineNumber()}")
+        return true
+    }
 }
 
 /** Registrable-ish domain (last two labels) of a host, e.g. "geo.dailymotion.com" → "dailymotion.com". */
@@ -1210,11 +1902,20 @@ private fun playerWebViewClient(allowHost: String) = object : WebViewClient() {
     }
     override fun onPageFinished(view: WebView, url: String?) {
         view.evaluateJavascript(STRIP_ADS_JS, null)
+        // Autoplay nudge. Custom players (Hydrax/Abyss, JW) mount their <video> + big play-button
+        // asynchronously AFTER onPageFinished, so a one-shot injection runs too early and finds nothing.
+        // Poll every 400ms for ~12s: call video.play() (muted-retry when the browser blocks unmuted
+        // autoplay), click any known play button, and dispatch a synthetic pointer click at the player's
+        // centre (many custom overlays only start on a real gesture). Stops once the video is rolling.
         view.evaluateJavascript(
-            "(function(){try{var v=document.querySelector('video');" +
-                "if(v){v.muted=false;var p=v.play&&v.play();if(p&&p.catch){p.catch(function(){v.muted=true;v.play&&v.play();});}}" +
-                "var b=document.querySelector('.vjs-big-play-button,.ytp-large-play-button,button[aria-label*=\"lay\" i],.play-button,.play');" +
-                "if(b){b.click();}}catch(e){}})();",
+            "(function(){var n=0;var iv=setInterval(function(){n++;try{" +
+                "var v=document.querySelector('video');" +
+                "if(v){if(!v.paused&&v.currentTime>0){clearInterval(iv);return;}v.muted=false;var p=v.play&&v.play();if(p&&p.catch){p.catch(function(){v.muted=true;v.play&&v.play();});}}" +
+                "var b=document.querySelector('.vjs-big-play-button,.ytp-large-play-button,button[aria-label*=\"lay\" i],.play-button,.play,.jw-icon-display,.plyr__control--overlaid,#play,.vplayer-play,.play-btn,.btn-play,[class*=\"play\"]');" +
+                "if(b){b.click();}" +
+                "var c=v||document.querySelector('#player,.player,.video-js,#video,.jwplayer')||document.body;" +
+                "if(c){var r=c.getBoundingClientRect();var x=r.left+r.width/2,y=r.top+r.height/2;['mousedown','mouseup','click'].forEach(function(t){c.dispatchEvent(new MouseEvent(t,{bubbles:true,cancelable:true,view:window,clientX:x,clientY:y}));});}" +
+                "}catch(e){}if(n>30)clearInterval(iv);},400);})();",
             null,
         )
     }
@@ -1225,18 +1926,60 @@ private fun playerWebViewClient(allowHost: String) = object : WebViewClient() {
  * resolution streams (kuramadrive/otakudesu) start instantly; first-party direct mp4 next; clean
  * players we drive in our own controls (JWPlayer/ok.ru); packed-JS HLS embeds; ad-heavy / WebView-only last.
  */
+/** Wraps an HTTP [DataSource.Factory] to drop the byte-`Range` on the initial (position-0) read, forcing
+ *  a plain full-file GET. wibufile's CDN throttles any ranged request to ~30 KB/s but serves a no-Range
+ *  GET at ~150 KB/s, so this lets its progressive mp4 (esp. ~1 GB movies with a 2+ MB moov) buffer in time
+ *  instead of crawling until the watchdog fails it. Seeks (position>0) keep their Range as normal. */
+@OptIn(UnstableApi::class)
+private class NoInitialRangeFactory(private val delegate: DataSource.Factory) : DataSource.Factory {
+    override fun createDataSource(): DataSource {
+        val ds = delegate.createDataSource()
+        return object : DataSource by ds {
+            override fun open(dataSpec: DataSpec): Long {
+                val spec = if (dataSpec.position == 0L && dataSpec.length != C.LENGTH_UNSET.toLong())
+                    dataSpec.buildUpon().setLength(C.LENGTH_UNSET.toLong()).build() else dataSpec
+                return ds.open(spec)
+            }
+        }
+    }
+}
+
 private fun speedRank(s: VideoServer): Int {
     val host = s.embedUrl.lowercase()
     val name = s.name.lowercase()
     return when {
+        // Blogger (anoboy Btube): plays only in its own WebView player (embed-only, needs a play tap).
+        // It carries resolution variants too, but must rank BELOW the sniffable yourupload (YUp) mirror
+        // so OUR ExoPlayer + picker is auto-picked whenever an episode has both; Blogger stays the
+        // fallback for Btube-only episodes. Must come before the variants rule (which would give it 0).
+        "blogger.com" in host || "blogspot.com" in host -> 4
         s.variants.isNotEmpty() -> 0
         // NontonAnimeID's native servers carry the embed-page URL here; it XOR-decodes to a direct
         // googlevideo/.mp4/.m3u8 stream, so rank it with the other pre-resolved direct streams (not the
         // "else" bucket, where it would lose the default pick to a third-party ok.ru mirror).
         "desustream" in host || "filedon" in host || "googlevideo" in host ||
             "kotakanimeid.link/video-embed" in host || host.substringBefore('?').endsWith(".mp4") -> 1
-        isJwPlayerHost(s.embedUrl) || "ok.ru" in host || "okru" in name -> 2
-        "filemoon" in host || "filelions" in host || "vidhide" in host || "lulustream" in host || "rumble" in host -> 3
+        isJwPlayerHost(s.embedUrl) || "ok.ru" in host || "okru" in name ||
+            // wibufile (Samehadaku): both the "720p/1080p" direct .mp4 rows (caught above) and the "480p"
+            // api.wibufile.com/embed JWPlayer resolve to a progressive .mp4 in ExoPlayer, so rank the embed
+            // here too — ahead of the WebView-only Blogspot/Mega rows so it wins the default pick.
+            "wibufile" in host ||
+            // emturbovid (PusatFilm's "Turbovip") is a JWPlayer host our generic extractor resolves to a
+            // direct HLS stream — the one PusatFilm mirror that plays in ExoPlayer, so pick it before the
+            // packed-JS / WebView-only mirrors (rapidplay/hydrax/gdriveplayer) that need the WebView sniff.
+            "emturbovid" in host || "turbovid" in host -> 2
+        "playeriframe.sbs" in host -> when {
+            "hydrax" in host || "hydrax" in name -> 3
+            "cast" in host || "cast" in name -> 4
+            "turbovip" in host || "turbovip" in name -> 5
+            else -> 6
+        }
+        "p2p" in name || "hownetwork" in host -> 3
+        // Hydrax/Abyss: a proprietary WebView player with no sniffable stream, but it plays reliably in
+        // its own embed ([isEmbedOnlyHost] → WebStage). Rank it right after the direct stream so it's the
+        // FIRST failover when Turbovip is dead (PusatFilm), ahead of the flaky packed-JS mirrors below.
+        "playhydrax" in host || "hydrax" in host || "abyss.to" in host || "abyssplayer" in host || "gn1r5n" in host ||
+            "filemoon" in host || "filelions" in host || "vidhide" in host || "lulustream" in host || "rumble" in host -> 3
         isDailymotionHost(s.embedUrl) || "[ads]" in name -> 5
         else -> 4
     }
@@ -1256,3 +1999,6 @@ private fun resoHeight(label: String): Int {
         else -> label.filter { it.isDigit() }.toIntOrNull() ?: 0
     }
 }
+
+private fun bestServerHeight(server: VideoServer): Int =
+    server.variants.maxOfOrNull { resoHeight(it.label) } ?: resoHeight(server.name)

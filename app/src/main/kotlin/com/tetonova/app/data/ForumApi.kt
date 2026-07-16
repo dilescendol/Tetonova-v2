@@ -63,7 +63,7 @@ class ForumApi(baseUrl: String) {
 
     private val base = baseUrl.trim().trimEnd('/')
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
-    private val client = OkHttpClient.Builder()
+    private val client = TnHttp.client.newBuilder()
         .connectTimeout(12, TimeUnit.SECONDS)
         .readTimeout(12, TimeUnit.SECONDS)
         .build()

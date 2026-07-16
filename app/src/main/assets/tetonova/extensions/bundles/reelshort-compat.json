@@ -13,9 +13,23 @@
     "SUBTITLES"
   ],
   "entry": "compat/reelshort/catalog.json",
-  "upstreamUrl": "https://reelshort.dramabos.my.id",
-  "apiBaseUrl": "https://reelshort.dramabos.my.id/api/v1",
-  "webBaseUrl": "https://reelshort.dramabos.my.id",
-  "healthProbeUrl": "https://reelshort.dramabos.my.id/trending",
-  "category": "Dracin/Drakor"
+  "upstreamUrl": "https://reelshort.goodbos.online",
+  "apiBaseUrl": "https://reelshort.goodbos.online",
+  "webBaseUrl": "https://reelshort.goodbos.online",
+  "healthProbeUrl": "https://reelshort.goodbos.online/trending?lang=in",
+  "accessCode": "A49C5D6FED6BD029B18F525D8A8B0F5E",
+  "category": "Short Series",
+  "homeLinks": {
+    "showAll": [
+      { "label": "Populer", "url": "https://reelshort.goodbos.online/home?tab=populer&lang=in" }
+    ],
+    "showOnClick": [
+      { "label": "Populer", "url": "https://reelshort.goodbos.online/home?tab=populer&lang=in" },
+      { "label": "Terbaru", "url": "https://reelshort.goodbos.online/home?tab=terbaru&lang=in" },
+      { "label": "Ranking", "url": "https://reelshort.goodbos.online/home?tab=ranking&lang=in" },
+      { "label": "Asia", "url": "https://reelshort.goodbos.online/home?tab=asia&lang=in" },
+      { "label": "Pria", "url": "https://reelshort.goodbos.online/home?tab=pria&lang=in" },
+      { "label": "Wanita", "url": "https://reelshort.goodbos.online/home?tab=wanita&lang=in" }
+    ]
+  }
 }

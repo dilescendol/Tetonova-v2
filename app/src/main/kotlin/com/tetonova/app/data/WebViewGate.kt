@@ -31,6 +31,17 @@ object WebViewGate {
     private const val UA =
         "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
 
+    /**
+     * Only tolerate a bad cert on bare-IP HTTPS mirrors (e.g. AnimeSail = 154.26.137.28) which serve
+     * a hostname-mismatched cert by design. Every named host must present a valid chain — a blanket
+     * proceed() is a MITM hole (CWE-295) and a Play-policy rejection. ponytail: IP-literal allowlist
+     * is the whole rule; tighten to specific mirror IPs if abuse shows up.
+     */
+    private fun handleSslError(view: WebView, h: SslErrorHandler, e: SslError) {
+        val host = android.net.Uri.parse(e.url ?: view.url ?: "").host.orEmpty()
+        if (host.matches(Regex("""^\d{1,3}(\.\d{1,3}){3}$"""))) h.proceed() else h.cancel()
+    }
+
     /** Returns cleared HTML once [looksCleared] passes, or null on timeout/failure. */
     @SuppressLint("SetJavaScriptEnabled")
     suspend fun clear(context: Context, url: String, looksCleared: (String) -> Boolean): String? =
@@ -60,7 +71,7 @@ object WebViewGate {
                     wv.webViewClient = object : WebViewClient() {
                         // Bare-IP HTTPS mirrors (AnimeSail = 154.26.137.28) serve a mismatched cert;
                         // proceed anyway — these are public content sites, no app secrets in flight.
-                        override fun onReceivedSslError(view: WebView, h: SslErrorHandler, e: SslError) = h.proceed()
+                        override fun onReceivedSslError(view: WebView, h: SslErrorHandler, e: SslError) = handleSslError(view, h, e)
                     }
 
                     // Poll the live DOM; the challenge clears itself (Turnstile success -> reload).
@@ -167,7 +178,7 @@ object WebViewGate {
                     CookieManager.getInstance().setAcceptCookie(true)
                     CookieManager.getInstance().setAcceptThirdPartyCookies(wv, true)
                     wv.webViewClient = object : WebViewClient() {
-                        override fun onReceivedSslError(view: WebView, h: SslErrorHandler, e: SslError) = h.proceed()
+                        override fun onReceivedSslError(view: WebView, h: SslErrorHandler, e: SslError) = handleSslError(view, h, e)
                     }
                     cont.invokeOnCancellation { handler.post { finish() } }
                     wv.loadUrl(url)

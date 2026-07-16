@@ -13,9 +13,18 @@
     "SUBTITLES"
   ],
   "entry": "compat/melolo/catalog.json",
-  "upstreamUrl": "https://melolo.dramabos.my.id",
-  "apiBaseUrl": "https://melolo.dramabos.my.id/api/v1",
-  "webBaseUrl": "https://melolo.dramabos.my.id",
-  "healthProbeUrl": "https://melolo.dramabos.my.id/api.html",
-  "category": "Dracin/Drakor"
+  "upstreamUrl": "https://melolo.goodbos.online",
+  "apiBaseUrl": "https://melolo.goodbos.online",
+  "webBaseUrl": "https://melolo.goodbos.online",
+  "healthProbeUrl": "https://melolo.goodbos.online/api.html",
+  "accessCode": "A49C5D6FED6BD029B18F525D8A8B0F5E",
+  "category": "Short Series",
+  "homeLinks": {
+    "showAll": [
+      { "label": "Home / Trending", "url": "https://melolo.goodbos.online/api/home?lang=id&offset=0" }
+    ],
+    "showOnClick": [
+      { "label": "Home / Trending", "url": "https://melolo.goodbos.online/api/home?lang=id&offset=0" }
+    ]
+  }
 }

@@ -68,8 +68,8 @@ import com.tetonova.core.model.ForumThread
 import com.tetonova.core.model.TagChip
 import kotlinx.coroutines.launch
 
-/** Self-declared display name for posts/votes (no real login yet — matches the Profile @handle). */
-private const val CURRENT_USER = "rafzhx"
+/** The user's handle for posts/votes — the same synced username shown on the Profile @handle. */
+private val CURRENT_USER: String get() = TnData.profileUsername
 
 /** Forum categories — must match the panel's accepted set (PublicApi::isForumCategory). */
 private val FORUM_CATS = listOf(
@@ -295,9 +295,9 @@ private fun NewThreadScreen(
         Text("Buat Thread Baru", color = c.ink, fontWeight = FontWeight.ExtraBold, fontSize = 24.sp)
         Spacer(Modifier.height(16.dp))
 
-        FormField("Judul", title, "Tulis judul thread…", singleLine = true) { title = it }
+        FormField("Judul", title, "", singleLine = true) { title = it }
         Spacer(Modifier.height(14.dp))
-        FormField("Isi", body, "Ceritakan detailnya — jangan lupa spoiler-tag kalau perlu…", singleLine = false, minHeight = 140.dp) { body = it }
+        FormField("Isi", body, "", singleLine = false, minHeight = 140.dp) { body = it }
         Spacer(Modifier.height(16.dp))
 
         Text("Kategori", color = c.ink, fontWeight = FontWeight.Bold, fontSize = 14.sp)

@@ -11,6 +11,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import org.json.JSONArray
 import org.json.JSONObject
 import java.net.URLEncoder
 import java.util.Collections
@@ -28,6 +29,7 @@ data class AnimeInfo(
     val studios: List<String>,
     val genres: List<String>,
     val synopsis: String?,
+    val rating: String?,
 )
 
 data class CharacterInfo(val name: String, val imageUrl: String?, val role: String?)
@@ -43,6 +45,7 @@ object CoverResolver {
     private val infoCache = ConcurrentHashMap<String, AnimeInfo>()
     private val infoMiss = Collections.newSetFromMap(ConcurrentHashMap<String, Boolean>())
     private val infoInflight = ConcurrentHashMap<String, Deferred<AnimeInfo?>>()
+    private val synopsisIdCache = ConcurrentHashMap<String, String>()
     private val charCache = ConcurrentHashMap<Int, List<CharacterInfo>>()
     private val charInflight = ConcurrentHashMap<Int, Deferred<List<CharacterInfo>>>()
 
@@ -50,26 +53,39 @@ object CoverResolver {
     private val mutex = Mutex()
     private var lastRequestAt = 0L
 
-    private val client = OkHttpClient.Builder()
+    private val client = TnHttp.client.newBuilder()
         .connectTimeout(8, TimeUnit.SECONDS)
         .readTimeout(8, TimeUnit.SECONDS)
         .build()
 
     /** Cover URL for a title (kept for the design system's CoverProvider hook). */
-    suspend fun resolve(title: String): String? = info(title)?.coverUrl
+    suspend fun resolve(title: String): String? = resolve(title, allowAdult = false)
 
-    suspend fun info(title: String): AnimeInfo? {
+    suspend fun resolve(title: String, allowAdult: Boolean): String? = info(title, allowAdult)?.coverUrl
+
+    suspend fun info(title: String): AnimeInfo? = info(title, allowAdult = false)
+
+    suspend fun info(title: String, allowAdult: Boolean): AnimeInfo? {
         val base = normalize(title)
         if (base.isBlank()) return null
         val season = seasonOf(title)
-        val key = "$base|s$season"   // season-aware: "...|s1" and "...|s4" cache (and resolve) separately
+        val key = "$base|s$season|adult=$allowAdult"   // season-aware + adult-mode aware
         infoCache[key]?.let { return it }
         if (infoMiss.contains(key)) return null
         val deferred = infoInflight.getOrPut(key) {
             scope.async {
-                var r = fetchSeasonAware(base, season)
+                var r: AnimeInfo? = null
+                for (q in queryVariants(base)) {
+                    r = fetchSeasonAware(q, season, allowAdult)
+                    if (r != null) break
+                }
                 // Retry without the subtitle ("Mashle: Magic and Muscles" -> "Mashle").
-                if (r == null && base.contains(':')) r = fetchSeasonAware(base.substringBefore(':').trim(), season)
+                if (r == null && base.contains(':')) {
+                    for (q in queryVariants(base.substringBefore(':').trim())) {
+                        r = fetchSeasonAware(q, season, allowAdult)
+                        if (r != null) break
+                    }
+                }
                 if (r != null) infoCache[key] = r else infoMiss.add(key)
                 infoInflight.remove(key)
                 r
@@ -81,8 +97,8 @@ object CoverResolver {
     /** Match the base (season-1) title, then walk MAL "Sequel" relations to the requested season so
      *  e.g. "...S4" resolves to the S4 entry (its own malId/metadata), not season 1. Best-effort: if
      *  the sequel chain ends early, the furthest season reached is used. */
-    private suspend fun fetchSeasonAware(query: String, season: Int): AnimeInfo? {
-        var info = fetchInfo(query) ?: return null
+    private suspend fun fetchSeasonAware(query: String, season: Int, allowAdult: Boolean): AnimeInfo? {
+        var info = fetchInfo(query, allowAdult) ?: return null
         var hops = season - 1
         while (hops > 0) {
             val nextId = fetchSequelId(info.malId) ?: break
@@ -107,17 +123,49 @@ object CoverResolver {
         return deferred.await()
     }
 
-    private suspend fun fetchInfo(query: String): AnimeInfo? = runCatching {
+    suspend fun translateSynopsisToId(raw: String?): String? {
+        val text = cleanMalSynopsis(raw.orEmpty())
+        if (text.isBlank()) return null
+        synopsisIdCache[text]?.let { return it }
+        val translated = runCatching {
+            withContext(Dispatchers.IO) {
+                val url = "https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=id&dt=t&q=" +
+                    URLEncoder.encode(text.take(3200), "UTF-8")
+                client.newCall(Request.Builder().url(url).get().build()).execute().use { resp ->
+                    if (!resp.isSuccessful) return@use null
+                    val body = resp.body?.string()
+                    if (body.isNullOrBlank()) return@use null
+                    val chunks = JSONArray(body).optJSONArray(0) ?: return@use null
+                    val out = (0 until chunks.length()).joinToString("") { i ->
+                        chunks.optJSONArray(i)?.optString(0).orEmpty()
+                    }.replace(Regex("\\s+"), " ").trim()
+                    out.takeIf { it.length > 20 }
+                }
+            }
+        }.getOrNull()
+        if (translated != null) synopsisIdCache[text] = translated
+        return translated
+    }
+
+    private suspend fun fetchInfo(query: String, allowAdult: Boolean): AnimeInfo? = runCatching {
         throttle()
         withContext(Dispatchers.IO) {
-            val url = "https://api.jikan.moe/v4/anime?limit=1&sfw=true&q=" + URLEncoder.encode(query, "UTF-8")
+            val sfw = if (allowAdult) "" else "&sfw=true"
+            val url = "https://api.jikan.moe/v4/anime?limit=5$sfw&q=" + URLEncoder.encode(query, "UTF-8")
             client.newCall(Request.Builder().url(url).get().build()).execute().use { resp ->
                 if (!resp.isSuccessful) return@use null
                 val body = resp.body?.string()
                 if (body.isNullOrBlank()) return@use null
                 val data = JSONObject(body).optJSONArray("data")
                 if (data == null || data.length() == 0) return@use null
-                parseAnime(data.getJSONObject(0))
+                val needles = queryVariants(query).map(::matchKey)
+                (0 until data.length())
+                    .mapNotNull { data.optJSONObject(it) }
+                    .map { it to candidateScore(it, needles) }
+                    .filter { it.second > 0 }
+                    .maxByOrNull { it.second }
+                    ?.first
+                    ?.let(::parseAnime)
             }
         }
     }.getOrNull()
@@ -199,6 +247,7 @@ object CoverResolver {
             studios = namesOf(o, "studios"),
             genres = namesOf(o, "genres"),
             synopsis = o.optString("synopsis").ifBlank { null },
+            rating = o.optString("rating").ifBlank { null },
         )
     }
 
@@ -206,6 +255,11 @@ object CoverResolver {
         val arr = o.optJSONArray(key) ?: return emptyList()
         return (0 until arr.length()).mapNotNull { arr.optJSONObject(it)?.optString("name")?.takeIf { n -> n.isNotBlank() } }
     }
+
+    private fun cleanMalSynopsis(text: String): String = text
+        .replace(Regex("\\[Written by MAL Rewrite].*$", RegexOption.IGNORE_CASE), "")
+        .replace(Regex("\\s+"), " ")
+        .trim()
 
     /** Serialize requests with a ≥350ms gap so we stay under Jikan's rate limit. */
     private suspend fun throttle() = mutex.withLock {
@@ -219,6 +273,55 @@ object CoverResolver {
         .replace(Regex("\\b(Season|S)\\s*\\d+\\b", RegexOption.IGNORE_CASE), "")
         .replace(Regex("\\b(Episode|Ep)\\s*\\d+.*$", RegexOption.IGNORE_CASE), "")
         .replace(Regex("[\\(\\[].*?[\\)\\]]"), "")
+        .replace(Regex("\\s+"), " ")
+        .trim()
+
+    private fun queryVariants(title: String): List<String> {
+        val base = normalize(title)
+        val aliases = titleAliases[matchKey(base)].orEmpty()
+        return (listOf(base) + aliases).map { it.trim() }.filter { it.isNotBlank() }.distinct()
+    }
+
+    private val titleAliases = mapOf(
+        "to be heroine" to listOf("Tu Bian Yingxiong Leaf"),
+        "renegade immortal" to listOf("Xian Ni"),
+        "soul land" to listOf("Douluo Dalu"),
+        "battle through the heavens" to listOf("Doupo Cangqiong"),
+        "perfect world" to listOf("Wanmei Shijie"),
+        "throne of seal" to listOf("Shen Yin Wangzuo"),
+        "swallowed star" to listOf("Tunshi Xingkong"),
+        "a record of a mortal s journey to immortality" to listOf("Fanren Xiu Xian Chuan"),
+        "a record of a mortals journey to immortality" to listOf("Fanren Xiu Xian Chuan"),
+    )
+
+    private fun candidateScore(o: JSONObject, needles: List<String>): Int {
+        val names = animeNames(o).map(::matchKey).filter { it.isNotBlank() }
+        if (names.isEmpty() || needles.isEmpty()) return 0
+        if (needles.any { q -> names.any { it == q } }) return 100
+        if (needles.any { q -> names.any { it.contains(q) || q.contains(it) } }) return 75
+        val queryTokens = needles.flatMap { it.split(' ') }.filter { it.length > 2 }.distinct()
+        if (queryTokens.size >= 2 && names.any { n -> queryTokens.all { it in n } }) return 55
+        return 0
+    }
+
+    private fun animeNames(o: JSONObject): List<String> {
+        val out = ArrayList<String>()
+        listOf("title", "title_english", "title_japanese").forEach { key ->
+            o.optString(key).takeIf { it.isNotBlank() }?.let(out::add)
+        }
+        val titles = o.optJSONArray("titles")
+        if (titles != null) {
+            for (i in 0 until titles.length()) {
+                titles.optJSONObject(i)?.optString("title")?.takeIf { it.isNotBlank() }?.let(out::add)
+            }
+        }
+        return out.distinct()
+    }
+
+    private fun matchKey(value: String): String = value
+        .lowercase()
+        .replace("&", " and ")
+        .replace(Regex("[^a-z0-9]+"), " ")
         .replace(Regex("\\s+"), " ")
         .trim()
 

@@ -18,6 +18,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -39,7 +40,6 @@ import com.tetonova.core.designsystem.TnChip
 import com.tetonova.core.designsystem.TnIcon
 import com.tetonova.core.designsystem.theme.TnRadii
 import com.tetonova.core.designsystem.theme.TnTheme
-import com.tetonova.core.model.SampleData
 
 @Composable
 fun SearchScreen(onOpenDetail: (DetailArg) -> Unit) {
@@ -91,13 +91,19 @@ fun SearchScreen(onOpenDetail: (DetailArg) -> Unit) {
             }
         }
 
-        // Real top searches from the panel (cross-user); fall back to the bundled tags when offline.
-        SectionHead(title = "Pencarian populer")
-        WrapChips(TnData.popularSearches.ifEmpty { SampleData.searchTags }, onTap = runSearch)
+        // Real top searches from the panel (cross-user). Hidden until real data loads — no bundled fakes.
+        if (TnData.popularSearches.isNotEmpty()) {
+            SectionHead(title = "Pencarian populer")
+            WrapChips(TnData.popularSearches, onTap = runSearch)
+        }
 
         // Results are driven by the SUBMITTED query (grouped per extension), not the live text field.
         val blank = submitted.isBlank()
-        val groups = TnData.liveSearchGroups
+        // Drop displayed result groups whose source was just uninstalled or 18+-hidden (keyed on
+        // extStateVersion + list size so it re-filters instantly; new searches already use browsableSources).
+        val groups = remember(TnData.extStateVersion, TnData.liveSearchGroups.size) {
+            TnData.liveSearchGroups.filter { TnData.isExtVisible(it.sourceId) }
+        }
         val loading = TnData.liveSearchLoading
         if (blank) {
             // No query yet: show the cross-user "trending this week" rail (most-opened content),
@@ -108,14 +114,16 @@ fun SearchScreen(onOpenDetail: (DetailArg) -> Unit) {
             SectionHead(
                 title = "Hasil",
                 sub = when {
-                    loading && groups.isEmpty() -> "Mencari di semua sumber…"
+                    // While any source is still in flight, don't claim a final count (it can read
+                    // "0 judul" prematurely) — keep showing the searching hint until fully settled.
+                    loading -> "Mencari di semua sumber…"
                     else -> "${groups.sumOf { it.posters.size }} judul"
                 },
             )
             // One section per extension: source name header + a single horizontal poster row.
             groups.forEach { g ->
                 SectionHead(title = g.displayName, sub = "${g.posters.size} judul")
-                PosterRail(items = g.posters, showProgress = false, onOpenDetail = onOpenDetail)
+                PosterRail(posters = g.posters, showProgress = false, onOpenDetail = onOpenDetail)
             }
             if (loading) {
                 Text("Mencari di semua sumber…", color = c.muted, fontSize = 13.sp, modifier = Modifier.padding(top = 12.dp))

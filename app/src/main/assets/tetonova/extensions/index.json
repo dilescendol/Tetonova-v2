@@ -1,820 +1,1415 @@
-{
-  "schemaVersion": "1.0.0",
-  "repoName": "TetoNova Official",
-  "repoUrl": "https://raw.githubusercontent.com/dilescendol/repo-tn/main/index.json",
-  "extensions": [
-    {
-      "id": "nova-cinema",
-      "name": "Nova Cinema",
-      "version": "1.0.0",
-      "contentTypes": [
-        "MOVIE",
-        "SERIES"
-      ],
-      "capabilities": [
-        "HOME",
-        "SEARCH",
-        "DETAIL",
-        "PLAYBACK",
-        "SUBTITLES"
-      ],
-      "bundleUrl": "asset://tetonova/extensions/bundles/nova-cinema.json",
-      "category": "Movie"
-    },
-    {
-      "id": "animesail-compat",
-      "name": "AnimeSail",
-      "version": "1.0.0",
-      "contentTypes": [
-        "ANIME",
-        "MOVIE"
-      ],
-      "capabilities": [
-        "HOME",
-        "SEARCH",
-        "DETAIL",
-        "PLAYBACK",
-        "SUBTITLES"
-      ],
-      "entry": "compat/animesail/catalog.json",
-      "bundleUrl": "asset://tetonova/extensions/bundles/animesail-compat.json",
-      "upstreamUrl": "https://154.26.137.28",
-      "apiBaseUrl": "https://154.26.137.28",
-      "webBaseUrl": "https://154.26.137.28",
-      "healthProbeUrl": "https://154.26.137.28/",
-      "riskFlags": ["turnstile-gate", "ip-domain-shift", "certificate-mismatch"],
-      "category": "Anime/Donghua"
-    },
-    {
-      "id": "anichin-compat",
-      "name": "Anichin",
-      "version": "1.0.0",
-      "contentTypes": [
-        "ANIME"
-      ],
-      "capabilities": [
-        "HOME",
-        "SEARCH",
-        "DETAIL",
-        "PLAYBACK",
-        "SUBTITLES"
-      ],
-      "entry": "compat/anichin/catalog.json",
-      "bundleUrl": "asset://tetonova/extensions/bundles/anichin-compat.json",
-      "upstreamUrl": "https://anichin.moe",
-      "category": "Anime/Donghua"
-    },
-    {
-      "id": "anoboy-compat",
-      "name": "Anoboy",
-      "version": "1.0.0",
-      "contentTypes": [
-        "ANIME"
-      ],
-      "capabilities": [
-        "HOME",
-        "SEARCH",
-        "DETAIL",
-        "PLAYBACK",
-        "SUBTITLES"
-      ],
-      "entry": "compat/anoboy/catalog.json",
-      "bundleUrl": "asset://tetonova/extensions/bundles/anoboy-compat.json",
-      "upstreamUrl": "https://ww1.anoboy.boo",
-      "category": "Anime/Donghua"
-    },
-    {
-      "id": "kuramanime-compat",
-      "name": "Kuramanime",
-      "version": "1.0.0",
-      "contentTypes": [
-        "ANIME"
-      ],
-      "capabilities": [
-        "HOME",
-        "SEARCH",
-        "DETAIL",
-        "PLAYBACK",
-        "SUBTITLES"
-      ],
-      "entry": "compat/kuramanime/catalog.json",
-      "bundleUrl": "asset://tetonova/extensions/bundles/kuramanime-compat.json",
-      "upstreamUrl": "https://v18.kuramanime.ing",
-      "apiBaseUrl": "https://v18.kuramanime.ing",
-      "webBaseUrl": "https://v18.kuramanime.ing",
-      "healthProbeUrl": "https://v18.kuramanime.ing/",
-      "category": "Anime/Donghua"
-    },
-    {
-      "id": "otakudesu-compat",
-      "name": "Otakudesu",
-      "version": "1.0.0",
-      "contentTypes": [
-        "ANIME"
-      ],
-      "capabilities": [
-        "HOME",
-        "SEARCH",
-        "DETAIL",
-        "PLAYBACK",
-        "SUBTITLES"
-      ],
-      "entry": "compat/otakudesu/catalog.json",
-      "bundleUrl": "asset://tetonova/extensions/bundles/otakudesu-compat.json",
-      "upstreamUrl": "https://otakudesu.blog",
-      "category": "Anime/Donghua"
-    },
-    {
-      "id": "samehadaku-compat",
-      "name": "Samehadaku",
-      "version": "1.0.0",
-      "contentTypes": [
-        "ANIME"
-      ],
-      "capabilities": [
-        "HOME",
-        "SEARCH",
-        "DETAIL",
-        "PLAYBACK",
-        "SUBTITLES"
-      ],
-      "entry": "compat/samehadaku/catalog.json",
-      "bundleUrl": "asset://tetonova/extensions/bundles/samehadaku-compat.json",
-      "upstreamUrl": "https://v2.samehadaku.how",
-      "category": "Anime/Donghua"
-    },
-    {
-      "id": "nekopoi-compat",
-      "name": "Nekopoi",
-      "version": "1.0.0",
-      "contentTypes": [
-        "ANIME",
-        "MOVIE"
-      ],
-      "capabilities": [
-        "HOME",
-        "SEARCH",
-        "DETAIL",
-        "PLAYBACK"
-      ],
-      "entry": "compat/nekopoi/catalog.json",
-      "bundleUrl": "https://raw.githubusercontent.com/dilescendol/repo-tn/main/bundles/nekopoi-compat.json",
-      "upstreamUrl": "https://nekopoi.care",
-      "apiBaseUrl": "https://nekopoi.care",
-      "webBaseUrl": "https://nekopoi.care",
-      "healthProbeUrl": "https://nekopoi.care/",
-      "compatLayer": "nekopoi-v1",
-      "category": "Anime/Donghua",
-      "isMatureContent": true,
-      "maturityRating": "18+",
-      "riskFlags": [
-        "mature-content",
-        "cloudflare-gate"
-      ]
-    },
-    {
-      "id": "nontonanimeid-compat",
-      "name": "NontonAnimeID",
-      "version": "1.0.0",
-      "contentTypes": [
-        "ANIME"
-      ],
-      "capabilities": [
-        "HOME",
-        "SEARCH",
-        "DETAIL",
-        "PLAYBACK",
-        "SUBTITLES"
-      ],
-      "entry": "compat/nontonanimeid/catalog.json",
-      "bundleUrl": "asset://tetonova/extensions/bundles/nontonanimeid-compat.json",
-      "upstreamUrl": "https://s11.nontonanimeid.boats",
-      "category": "Anime/Donghua"
-    },
-    {
-      "id": "oploverz-compat",
-      "name": "Oploverz",
-      "version": "1.0.0",
-      "contentTypes": [
-        "ANIME"
-      ],
-      "capabilities": [
-        "HOME",
-        "SEARCH",
-        "DETAIL",
-        "PLAYBACK",
-        "SUBTITLES"
-      ],
-      "entry": "compat/oploverz/catalog.json",
-      "bundleUrl": "asset://tetonova/extensions/bundles/oploverz-compat.json",
-      "upstreamUrl": "https://vip.oploverz.ltd",
-      "category": "Anime/Donghua"
-    },
-    {
-      "id": "animexin-compat",
-      "name": "AnimeXin",
-      "version": "1.0.0",
-      "contentTypes": [
-        "ANIME"
-      ],
-      "capabilities": [
-        "HOME",
-        "SEARCH",
-        "DETAIL",
-        "PLAYBACK",
-        "SUBTITLES"
-      ],
-      "entry": "compat/animexin/catalog.json",
-      "bundleUrl": "asset://tetonova/extensions/bundles/animexin-compat.json",
-      "upstreamUrl": "https://animexin.dev",
-      "category": "Anime/Donghua"
-    },
-    {
-      "id": "anixverse-compat",
-      "name": "Anixverse",
-      "version": "1.0.0",
-      "contentTypes": [
-        "ANIME"
-      ],
-      "capabilities": [
-        "HOME",
-        "SEARCH",
-        "DETAIL",
-        "PLAYBACK",
-        "SUBTITLES"
-      ],
-      "entry": "compat/anixverse/catalog.json",
-      "bundleUrl": "asset://tetonova/extensions/bundles/anixverse-compat.json",
-      "upstreamUrl": "https://anixcafe.com",
-      "category": "Anime/Donghua"
-    },
-    {
-      "id": "donghub-compat",
-      "name": "Donghub",
-      "version": "1.0.0",
-      "contentTypes": [
-        "ANIME",
-        "MOVIE"
-      ],
-      "capabilities": [
-        "HOME",
-        "SEARCH",
-        "DETAIL",
-        "PLAYBACK",
-        "SUBTITLES"
-      ],
-      "entry": "compat/donghub/catalog.json",
-      "bundleUrl": "asset://tetonova/extensions/bundles/donghub-compat.json",
-      "upstreamUrl": "https://donghub.vip",
-      "category": "Anime/Donghua"
-    },
-    {
-      "id": "winbu-compat",
-      "name": "Winbu",
-      "version": "1.0.0",
-      "contentTypes": [
-        "MOVIE",
-        "SERIES",
-        "ANIME"
-      ],
-      "capabilities": [
-        "HOME",
-        "SEARCH",
-        "DETAIL",
-        "PLAYBACK",
-        "SUBTITLES"
-      ],
-      "entry": "compat/winbu/catalog.json",
-      "bundleUrl": "asset://tetonova/extensions/bundles/winbu-compat.json",
-      "upstreamUrl": "https://winbu.net",
-      "category": "Movie"
-    },
-    {
-      "id": "pusatfilm-compat",
-      "name": "PusatFilm",
-      "version": "1.0.0",
-      "contentTypes": [
-        "MOVIE",
-        "SERIES"
-      ],
-      "capabilities": [
-        "HOME",
-        "SEARCH",
-        "DETAIL",
-        "PLAYBACK",
-        "SUBTITLES"
-      ],
-      "entry": "compat/pusatfilm/catalog.json",
-      "bundleUrl": "asset://tetonova/extensions/bundles/pusatfilm-compat.json",
-      "upstreamUrl": "https://v3.pusatfilm21info.com/",
-      "category": "Movie"
-    },
-    {
-      "id": "oppadrama-compat",
-      "name": "Oppadrama",
-      "version": "1.0.0",
-      "contentTypes": [
-        "MOVIE",
-        "SERIES"
-      ],
-      "capabilities": [
-        "HOME",
-        "SEARCH",
-        "DETAIL",
-        "PLAYBACK",
-        "SUBTITLES"
-      ],
-      "entry": "compat/oppadrama/catalog.json",
-      "bundleUrl": "asset://tetonova/extensions/bundles/oppadrama-compat.json",
-      "upstreamUrl": "http://45.11.57.199",
-      "category": "Dracin/Drakor"
-    },
-    {
-      "id": "dramabox-compat",
-      "name": "DramaBox",
-      "version": "1.0.0",
-      "contentTypes": [
-        "SERIES"
-      ],
-      "capabilities": [
-        "HOME",
-        "SEARCH",
-        "DETAIL",
-        "PLAYBACK",
-        "SUBTITLES"
-      ],
-      "entry": "compat/dramabox/catalog.json",
-      "bundleUrl": "asset://tetonova/extensions/bundles/dramabox-compat.json",
-      "upstreamUrl": "https://dramabox.dramabos.my.id",
-      "apiBaseUrl": "https://dramabox.dramabos.my.id/api/v1",
-      "webBaseUrl": "https://dramabox.dramabos.my.id",
-      "healthProbeUrl": "https://dramabox.dramabos.my.id/api/v1/latest?lang=in",
-      "accessCode": "A49C5D6FED6BD029B18F525D8A8B0F5E",
-      "category": "Dracin/Drakor"
-    },
-    {
-      "id": "drama-dust",
-      "name": "Drama Dust",
-      "version": "1.0.0",
-      "contentTypes": [
-        "SERIES",
-        "ANIME"
-      ],
-      "capabilities": [
-        "HOME",
-        "SEARCH",
-        "DETAIL",
-        "PLAYBACK"
-      ],
-      "bundleUrl": "asset://tetonova/extensions/bundles/drama-dust.json",
-      "category": "Dracin/Drakor"
-    },
-    {
-      "id": "melolo-compat",
-      "name": "Melolo",
-      "version": "1.0.0",
-      "contentTypes": [
-        "SERIES"
-      ],
-      "capabilities": [
-        "HOME",
-        "SEARCH",
-        "DETAIL",
-        "PLAYBACK",
-        "SUBTITLES"
-      ],
-      "entry": "compat/melolo/catalog.json",
-      "bundleUrl": "asset://tetonova/extensions/bundles/melolo-compat.json",
-      "upstreamUrl": "https://melolo.dramabos.my.id",
-      "apiBaseUrl": "https://melolo.dramabos.my.id/api/v1",
-      "webBaseUrl": "https://melolo.dramabos.my.id",
-      "healthProbeUrl": "https://melolo.dramabos.my.id/api.html",
-      "category": "Dracin/Drakor"
-    },
-    {
-      "id": "flickreels-compat",
-      "name": "FlickReels",
-      "version": "1.0.0",
-      "contentTypes": [
-        "SERIES"
-      ],
-      "capabilities": [
-        "HOME",
-        "SEARCH",
-        "DETAIL",
-        "PLAYBACK",
-        "SUBTITLES"
-      ],
-      "entry": "compat/flickreels/catalog.json",
-      "bundleUrl": "asset://tetonova/extensions/bundles/flickreels-compat.json",
-      "upstreamUrl": "https://flickreels.dramabos.my.id",
-      "apiBaseUrl": "https://flickreels.dramabos.my.id/api/v1",
-      "webBaseUrl": "https://flickreels.dramabos.my.id",
-      "healthProbeUrl": "https://flickreels.dramabos.my.id/api/v1/latest?lang=in",
-      "category": "Dracin/Drakor"
-    },
-    {
-      "id": "dramawave-compat",
-      "name": "DramaWave",
-      "version": "1.0.0",
-      "contentTypes": [
-        "SERIES"
-      ],
-      "capabilities": [
-        "HOME",
-        "SEARCH",
-        "DETAIL",
-        "PLAYBACK",
-        "SUBTITLES"
-      ],
-      "entry": "compat/dramawave/catalog.json",
-      "bundleUrl": "asset://tetonova/extensions/bundles/dramawave-compat.json",
-      "upstreamUrl": "https://dramawave.dramabos.my.id",
-      "apiBaseUrl": "https://dramawave.dramabos.my.id/api/v1",
-      "webBaseUrl": "https://dramawave.dramabos.my.id",
-      "healthProbeUrl": "https://dramawave.dramabos.my.id/api.html",
-      "category": "Dracin/Drakor"
-    },
-    {
-      "id": "dotdrama-compat",
-      "name": "DotDrama",
-      "version": "1.0.0",
-      "contentTypes": [
-        "SERIES"
-      ],
-      "capabilities": [
-        "HOME",
-        "SEARCH",
-        "DETAIL",
-        "PLAYBACK",
-        "SUBTITLES"
-      ],
-      "entry": "compat/dotdrama/catalog.json",
-      "bundleUrl": "asset://tetonova/extensions/bundles/dotdrama-compat.json",
-      "upstreamUrl": "https://dotdrama.dramabos.my.id",
-      "apiBaseUrl": "https://dotdrama.dramabos.my.id/api/v1",
-      "webBaseUrl": "https://dotdrama.dramabos.my.id",
-      "healthProbeUrl": "https://dotdrama.dramabos.my.id/api.html",
-      "category": "Dracin/Drakor"
-    },
-    {
-      "id": "goodshort-compat",
-      "name": "GoodShort",
-      "version": "1.0.0",
-      "contentTypes": [
-        "SERIES"
-      ],
-      "capabilities": [
-        "HOME",
-        "SEARCH",
-        "DETAIL",
-        "PLAYBACK",
-        "SUBTITLES"
-      ],
-      "entry": "compat/goodshort/catalog.json",
-      "bundleUrl": "asset://tetonova/extensions/bundles/goodshort-compat.json",
-      "upstreamUrl": "https://goodshort.dramabos.my.id",
-      "apiBaseUrl": "https://goodshort.dramabos.my.id/api/v1",
-      "webBaseUrl": "https://goodshort.dramabos.my.id",
-      "healthProbeUrl": "https://goodshort.dramabos.my.id/api.html",
-      "category": "Dracin/Drakor"
-    },
-    {
-      "id": "shortmax-compat",
-      "name": "ShortMax",
-      "version": "1.0.0",
-      "contentTypes": [
-        "SERIES"
-      ],
-      "capabilities": [
-        "HOME",
-        "SEARCH",
-        "DETAIL",
-        "PLAYBACK",
-        "SUBTITLES"
-      ],
-      "entry": "compat/shortmax/catalog.json",
-      "bundleUrl": "asset://tetonova/extensions/bundles/shortmax-compat.json",
-      "upstreamUrl": "https://shortmax.dramabos.my.id",
-      "apiBaseUrl": "https://shortmax.dramabos.my.id/api/v1",
-      "webBaseUrl": "https://shortmax.dramabos.my.id",
-      "healthProbeUrl": "https://shortmax.dramabos.my.id/api.html",
-      "category": "Dracin/Drakor"
-    },
-    {
-      "id": "reelshort-compat",
-      "name": "ReelShort",
-      "version": "1.0.0",
-      "contentTypes": [
-        "SERIES"
-      ],
-      "capabilities": [
-        "HOME",
-        "SEARCH",
-        "DETAIL",
-        "PLAYBACK",
-        "SUBTITLES"
-      ],
-      "entry": "compat/reelshort/catalog.json",
-      "bundleUrl": "asset://tetonova/extensions/bundles/reelshort-compat.json",
-      "upstreamUrl": "https://reelshort.dramabos.my.id",
-      "apiBaseUrl": "https://reelshort.dramabos.my.id/api/v1",
-      "webBaseUrl": "https://reelshort.dramabos.my.id",
-      "healthProbeUrl": "https://reelshort.dramabos.my.id/trending",
-      "category": "Dracin/Drakor"
-    },
-    {
-      "id": "netshort-compat",
-      "name": "Netshort",
-      "version": "1.0.0",
-      "contentTypes": [
-        "SERIES"
-      ],
-      "capabilities": [
-        "HOME",
-        "SEARCH",
-        "DETAIL",
-        "PLAYBACK",
-        "SUBTITLES"
-      ],
-      "entry": "compat/netshort/catalog.json",
-      "bundleUrl": "asset://tetonova/extensions/bundles/netshort-compat.json",
-      "upstreamUrl": "https://netshort.dramabos.my.id",
-      "apiBaseUrl": "https://netshort.dramabos.my.id/api/v1",
-      "webBaseUrl": "https://netshort.dramabos.my.id",
-      "healthProbeUrl": "https://netshort.dramabos.my.id/api.html",
-      "category": "Dracin/Drakor"
-    },
-    {
-      "id": "bilitv-compat",
-      "name": "Bilitv",
-      "version": "1.0.0",
-      "contentTypes": [
-        "SERIES"
-      ],
-      "capabilities": [
-        "HOME",
-        "SEARCH",
-        "DETAIL",
-        "PLAYBACK",
-        "SUBTITLES"
-      ],
-      "entry": "compat/bilitv/catalog.json",
-      "bundleUrl": "asset://tetonova/extensions/bundles/bilitv-compat.json",
-      "upstreamUrl": "https://bilitv.dramabos.my.id",
-      "apiBaseUrl": "https://bilitv.dramabos.my.id/api/v1",
-      "webBaseUrl": "https://bilitv.dramabos.my.id",
-      "healthProbeUrl": "https://bilitv.dramabos.my.id/api.html",
-      "category": "Dracin/Drakor"
-    },
-    {
-      "id": "idrama-compat",
-      "name": "iDrama",
-      "version": "1.0.0",
-      "contentTypes": [
-        "SERIES"
-      ],
-      "capabilities": [
-        "HOME",
-        "SEARCH",
-        "DETAIL",
-        "PLAYBACK",
-        "SUBTITLES"
-      ],
-      "entry": "compat/idrama/catalog.json",
-      "bundleUrl": "asset://tetonova/extensions/bundles/idrama-compat.json",
-      "upstreamUrl": "https://idrama.dramabos.my.id",
-      "apiBaseUrl": "https://idrama.dramabos.my.id/api/v1",
-      "webBaseUrl": "https://idrama.dramabos.my.id",
-      "healthProbeUrl": "https://idrama.dramabos.my.id/api.html",
-      "category": "Dracin/Drakor"
-    },
-    {
-      "id": "stardusttv-compat",
-      "name": "Stardusttv",
-      "version": "1.0.0",
-      "contentTypes": [
-        "SERIES"
-      ],
-      "capabilities": [
-        "HOME",
-        "SEARCH",
-        "DETAIL",
-        "PLAYBACK",
-        "SUBTITLES"
-      ],
-      "entry": "compat/stardusttv/catalog.json",
-      "bundleUrl": "asset://tetonova/extensions/bundles/stardusttv-compat.json",
-      "upstreamUrl": "https://stardusttv.dramabos.my.id",
-      "apiBaseUrl": "https://stardusttv.dramabos.my.id/api/v1",
-      "webBaseUrl": "https://stardusttv.dramabos.my.id",
-      "healthProbeUrl": "https://stardusttv.dramabos.my.id/api.html",
-      "category": "Dracin/Drakor"
-    },
-    {
-      "id": "reelife-compat",
-      "name": "Reelife",
-      "version": "1.0.0",
-      "contentTypes": [
-        "SERIES"
-      ],
-      "capabilities": [
-        "HOME",
-        "SEARCH",
-        "DETAIL",
-        "PLAYBACK",
-        "SUBTITLES"
-      ],
-      "entry": "compat/reelife/catalog.json",
-      "bundleUrl": "asset://tetonova/extensions/bundles/reelife-compat.json",
-      "upstreamUrl": "https://reelife.dramabos.my.id",
-      "apiBaseUrl": "https://reelife.dramabos.my.id/api/v1",
-      "webBaseUrl": "https://reelife.dramabos.my.id",
-      "healthProbeUrl": "https://reelife.dramabos.my.id/api.html",
-      "category": "Dracin/Drakor"
-    },
-    {
-      "id": "dramabite-compat",
-      "name": "DramaBite",
-      "version": "1.0.0",
-      "contentTypes": [
-        "SERIES"
-      ],
-      "capabilities": [
-        "HOME",
-        "SEARCH",
-        "DETAIL",
-        "PLAYBACK",
-        "SUBTITLES"
-      ],
-      "entry": "compat/dramabite/catalog.json",
-      "bundleUrl": "asset://tetonova/extensions/bundles/dramabite-compat.json",
-      "upstreamUrl": "https://dramabite.dramabos.my.id",
-      "apiBaseUrl": "https://dramabite.dramabos.my.id/api/v1",
-      "webBaseUrl": "https://dramabite.dramabos.my.id",
-      "healthProbeUrl": "https://dramabite.dramabos.my.id/api.html",
-      "category": "Dracin/Drakor"
-    },
-    {
-      "id": "flextv-compat",
-      "name": "FlexTV",
-      "version": "1.0.0",
-      "contentTypes": [
-        "SERIES"
-      ],
-      "capabilities": [
-        "HOME",
-        "SEARCH",
-        "DETAIL",
-        "PLAYBACK",
-        "SUBTITLES"
-      ],
-      "entry": "compat/flextv/catalog.json",
-      "bundleUrl": "asset://tetonova/extensions/bundles/flextv-compat.json",
-      "upstreamUrl": "https://drakula.dramabos.my.id/flextv",
-      "apiBaseUrl": "https://drakula.dramabos.my.id/flextv/api/v1",
-      "webBaseUrl": "https://drakula.dramabos.my.id/flextv",
-      "healthProbeUrl": "https://drakula.dramabos.my.id/flextv-api.html",
-      "category": "Dracin/Drakor"
-    },
-    {
-      "id": "freereels-compat",
-      "name": "FreeReels",
-      "version": "1.0.0",
-      "contentTypes": [
-        "SERIES"
-      ],
-      "capabilities": [
-        "HOME",
-        "SEARCH",
-        "DETAIL",
-        "PLAYBACK",
-        "SUBTITLES"
-      ],
-      "entry": "compat/freereels/catalog.json",
-      "bundleUrl": "asset://tetonova/extensions/bundles/freereels-compat.json",
-      "upstreamUrl": "https://drakula.dramabos.my.id/freereels",
-      "apiBaseUrl": "https://drakula.dramabos.my.id/freereels/api/v1",
-      "webBaseUrl": "https://drakula.dramabos.my.id/freereels",
-      "healthProbeUrl": "https://drakula.dramabos.my.id/freereels-api.html",
-      "category": "Dracin/Drakor"
-    },
-    {
-      "id": "fundrama-compat",
-      "name": "FunDrama",
-      "version": "1.0.0",
-      "contentTypes": [
-        "SERIES"
-      ],
-      "capabilities": [
-        "HOME",
-        "SEARCH",
-        "DETAIL",
-        "PLAYBACK",
-        "SUBTITLES"
-      ],
-      "entry": "compat/fundrama/catalog.json",
-      "bundleUrl": "asset://tetonova/extensions/bundles/fundrama-compat.json",
-      "upstreamUrl": "https://drakula.dramabos.my.id/fundrama",
-      "apiBaseUrl": "https://drakula.dramabos.my.id/fundrama/api/v1",
-      "webBaseUrl": "https://drakula.dramabos.my.id/fundrama",
-      "healthProbeUrl": "https://drakula.dramabos.my.id/fundrama-api.html",
-      "category": "Dracin/Drakor"
-    },
-    {
-      "id": "microdrama-compat",
-      "name": "Micro Drama",
-      "version": "1.0.0",
-      "contentTypes": [
-        "SERIES"
-      ],
-      "capabilities": [
-        "HOME",
-        "SEARCH",
-        "DETAIL",
-        "PLAYBACK",
-        "SUBTITLES"
-      ],
-      "entry": "compat/microdrama/catalog.json",
-      "bundleUrl": "asset://tetonova/extensions/bundles/microdrama-compat.json",
-      "upstreamUrl": "https://drakula.dramabos.my.id/microdrama",
-      "apiBaseUrl": "https://drakula.dramabos.my.id/microdrama/api/v1",
-      "webBaseUrl": "https://drakula.dramabos.my.id/microdrama",
-      "healthProbeUrl": "https://drakula.dramabos.my.id/microdrama-api.html",
-      "category": "Dracin/Drakor"
-    },
-    {
-      "id": "starshort-compat",
-      "name": "StarShort",
-      "version": "1.0.0",
-      "contentTypes": [
-        "SERIES"
-      ],
-      "capabilities": [
-        "HOME",
-        "SEARCH",
-        "DETAIL",
-        "PLAYBACK",
-        "SUBTITLES"
-      ],
-      "entry": "compat/starshort/catalog.json",
-      "bundleUrl": "asset://tetonova/extensions/bundles/starshort-compat.json",
-      "upstreamUrl": "https://drakula.dramabos.my.id/starshort",
-      "apiBaseUrl": "https://drakula.dramabos.my.id/starshort/api/v1",
-      "webBaseUrl": "https://drakula.dramabos.my.id/starshort",
-      "healthProbeUrl": "https://drakula.dramabos.my.id/starshort-api.html",
-      "category": "Dracin/Drakor"
-    },
-    {
-      "id": "vigloo-compat",
-      "name": "Vigloo",
-      "version": "1.0.0",
-      "contentTypes": [
-        "SERIES"
-      ],
-      "capabilities": [
-        "HOME",
-        "SEARCH",
-        "DETAIL",
-        "PLAYBACK",
-        "SUBTITLES"
-      ],
-      "entry": "compat/vigloo/catalog.json",
-      "bundleUrl": "asset://tetonova/extensions/bundles/vigloo-compat.json",
-      "upstreamUrl": "https://drakula.dramabos.my.id/vigloo",
-      "apiBaseUrl": "https://drakula.dramabos.my.id/vigloo/api/v1",
-      "webBaseUrl": "https://drakula.dramabos.my.id/vigloo",
-      "healthProbeUrl": "https://drakula.dramabos.my.id/vigloo-api.html",
-      "category": "Dracin/Drakor"
-    },
-    {
-      "id": "reelala-compat",
-      "name": "Reelala",
-      "version": "1.0.0",
-      "contentTypes": [
-        "SERIES"
-      ],
-      "capabilities": [
-        "HOME",
-        "SEARCH",
-        "DETAIL",
-        "PLAYBACK",
-        "SUBTITLES"
-      ],
-      "entry": "compat/reelala/catalog.json",
-      "bundleUrl": "asset://tetonova/extensions/bundles/reelala-compat.json",
-      "upstreamUrl": "https://drakula.dramabos.my.id/reelala",
-      "apiBaseUrl": "https://drakula.dramabos.my.id/reelala/api/v1",
-      "webBaseUrl": "https://drakula.dramabos.my.id/reelala",
-      "healthProbeUrl": "https://drakula.dramabos.my.id/reelala.html",
-      "category": "Dracin/Drakor"
-    }
-  ],
-  "defaultQualityPriority": [
-    "1080p",
-    "720p",
-    "480p",
-    "360p"
-  ],
-  "totalExtensions": 39
+﻿{
+    "schemaVersion":  "1.0.0",
+    "repoName":  "TetoNova Official",
+    "repoUrl":  "https://raw.githubusercontent.com/dilescendol/repo-tn/main/index.json",
+    "extensions":  [
+                       {
+                           "id":  "nova-cinema",
+                           "name":  "Nova Cinema",
+                           "version":  "1.0.0",
+                           "contentTypes":  [
+                                                "MOVIE",
+                                                "SERIES"
+                                            ],
+                           "capabilities":  [
+                                                "HOME",
+                                                "SEARCH",
+                                                "DETAIL",
+                                                "PLAYBACK",
+                                                "SUBTITLES"
+                                            ],
+                           "bundleUrl":  "asset://tetonova/extensions/bundles/nova-cinema.json",
+                           "category":  "Movie"
+                       },
+                       {
+                           "id":  "animesail-compat",
+                           "name":  "AnimeSail",
+                           "version":  "1.0.0",
+                           "contentTypes":  [
+                                                "ANIME",
+                                                "MOVIE"
+                                            ],
+                           "capabilities":  [
+                                                "HOME",
+                                                "SEARCH",
+                                                "DETAIL",
+                                                "PLAYBACK",
+                                                "SUBTITLES"
+                                            ],
+                           "entry":  "compat/animesail/catalog.json",
+                           "bundleUrl":  "asset://tetonova/extensions/bundles/animesail-compat.json",
+                           "upstreamUrl":  "https://154.26.137.28",
+                           "apiBaseUrl":  "https://154.26.137.28",
+                           "webBaseUrl":  "https://154.26.137.28",
+                           "healthProbeUrl":  "https://154.26.137.28/",
+                           "riskFlags":  [
+                                             "turnstile-gate",
+                                             "ip-domain-shift",
+                                             "certificate-mismatch"
+                                         ],
+                           "category":  "Anime/Donghua"
+                       },
+                       {
+                           "id":  "anichin-compat",
+                           "name":  "Anichin",
+                           "version":  "1.0.0",
+                           "contentTypes":  [
+                                                "ANIME"
+                                            ],
+                           "capabilities":  [
+                                                "HOME",
+                                                "SEARCH",
+                                                "DETAIL",
+                                                "PLAYBACK",
+                                                "SUBTITLES"
+                                            ],
+                           "entry":  "compat/anichin/catalog.json",
+                           "bundleUrl":  "asset://tetonova/extensions/bundles/anichin-compat.json",
+                           "upstreamUrl":  "https://anichin.moe",
+                           "category":  "Anime/Donghua"
+                       },
+                       {
+                           "id":  "anoboy-compat",
+                           "name":  "Anoboy",
+                           "version":  "1.0.0",
+                           "contentTypes":  [
+                                                "ANIME"
+                                            ],
+                           "capabilities":  [
+                                                "HOME",
+                                                "SEARCH",
+                                                "DETAIL",
+                                                "PLAYBACK",
+                                                "SUBTITLES"
+                                            ],
+                           "entry":  "compat/anoboy/catalog.json",
+                           "bundleUrl":  "asset://tetonova/extensions/bundles/anoboy-compat.json",
+                           "upstreamUrl":  "https://ww1.anoboy.boo",
+                           "category":  "Anime/Donghua"
+                       },
+                       {
+                           "id":  "kuramanime-compat",
+                           "name":  "Kuramanime",
+                           "version":  "1.0.0",
+                           "contentTypes":  [
+                                                "ANIME"
+                                            ],
+                           "capabilities":  [
+                                                "HOME",
+                                                "SEARCH",
+                                                "DETAIL",
+                                                "PLAYBACK",
+                                                "SUBTITLES"
+                                            ],
+                           "entry":  "compat/kuramanime/catalog.json",
+                           "bundleUrl":  "asset://tetonova/extensions/bundles/kuramanime-compat.json",
+                           "upstreamUrl":  "https://v18.kuramanime.ing",
+                           "apiBaseUrl":  "https://v18.kuramanime.ing",
+                           "webBaseUrl":  "https://v18.kuramanime.ing",
+                           "healthProbeUrl":  "https://v18.kuramanime.ing/",
+                           "category":  "Anime/Donghua"
+                       },
+                       {
+                           "id":  "otakudesu-compat",
+                           "name":  "Otakudesu",
+                           "version":  "1.0.0",
+                           "contentTypes":  [
+                                                "ANIME"
+                                            ],
+                           "capabilities":  [
+                                                "HOME",
+                                                "SEARCH",
+                                                "DETAIL",
+                                                "PLAYBACK",
+                                                "SUBTITLES"
+                                            ],
+                           "entry":  "compat/otakudesu/catalog.json",
+                           "bundleUrl":  "asset://tetonova/extensions/bundles/otakudesu-compat.json",
+                           "upstreamUrl":  "https://otakudesu.blog",
+                           "category":  "Anime/Donghua"
+                       },
+                       {
+                           "id":  "samehadaku-compat",
+                           "name":  "Samehadaku",
+                           "version":  "1.0.0",
+                           "contentTypes":  [
+                                                "ANIME"
+                                            ],
+                           "capabilities":  [
+                                                "HOME",
+                                                "SEARCH",
+                                                "DETAIL",
+                                                "PLAYBACK",
+                                                "SUBTITLES"
+                                            ],
+                           "entry":  "compat/samehadaku/catalog.json",
+                           "bundleUrl":  "asset://tetonova/extensions/bundles/samehadaku-compat.json",
+                           "upstreamUrl":  "https://v2.samehadaku.how",
+                           "category":  "Anime/Donghua"
+                       },
+                       {
+                           "id":  "nekopoi-compat",
+                           "name":  "Nekopoi",
+                           "version":  "1.0.0",
+                           "contentTypes":  [
+                                                "ANIME",
+                                                "MOVIE"
+                                            ],
+                           "capabilities":  [
+                                                "HOME",
+                                                "SEARCH",
+                                                "DETAIL",
+                                                "PLAYBACK"
+                                            ],
+                           "entry":  "compat/nekopoi/catalog.json",
+                           "bundleUrl":  "https://raw.githubusercontent.com/dilescendol/repo-tn/main/bundles/nekopoi-compat.json",
+                           "upstreamUrl":  "https://nekopoi.care",
+                           "apiBaseUrl":  "https://nekopoi.care",
+                           "webBaseUrl":  "https://nekopoi.care",
+                           "healthProbeUrl":  "https://nekopoi.care/",
+                           "compatLayer":  "nekopoi-v1",
+                           "category":  "Anime/Donghua",
+                           "isMatureContent":  true,
+                           "maturityRating":  "18+",
+                           "riskFlags":  [
+                                             "mature-content",
+                                             "cloudflare-gate"
+                                         ]
+                       },
+                       {
+                           "id":  "nontonanimeid-compat",
+                           "name":  "NontonAnimeID",
+                           "version":  "1.0.0",
+                           "contentTypes":  [
+                                                "ANIME"
+                                            ],
+                           "capabilities":  [
+                                                "HOME",
+                                                "SEARCH",
+                                                "DETAIL",
+                                                "PLAYBACK",
+                                                "SUBTITLES"
+                                            ],
+                           "entry":  "compat/nontonanimeid/catalog.json",
+                           "bundleUrl":  "asset://tetonova/extensions/bundles/nontonanimeid-compat.json",
+                           "upstreamUrl":  "https://s13.nontonanimeid.boats",
+                           "category":  "Anime/Donghua"
+                       },
+                       {
+                           "id":  "oploverz-compat",
+                           "name":  "Oploverz",
+                           "version":  "1.0.0",
+                           "contentTypes":  [
+                                                "ANIME"
+                                            ],
+                           "capabilities":  [
+                                                "HOME",
+                                                "SEARCH",
+                                                "DETAIL",
+                                                "PLAYBACK",
+                                                "SUBTITLES"
+                                            ],
+                           "entry":  "compat/oploverz/catalog.json",
+                           "bundleUrl":  "asset://tetonova/extensions/bundles/oploverz-compat.json",
+                           "upstreamUrl":  "https://vip.oploverz.ltd",
+                           "category":  "Anime/Donghua"
+                       },
+                       {
+                           "id":  "animexin-compat",
+                           "name":  "AnimeXin",
+                           "version":  "1.0.0",
+                           "contentTypes":  [
+                                                "ANIME"
+                                            ],
+                           "capabilities":  [
+                                                "HOME",
+                                                "SEARCH",
+                                                "DETAIL",
+                                                "PLAYBACK",
+                                                "SUBTITLES"
+                                            ],
+                           "entry":  "compat/animexin/catalog.json",
+                           "bundleUrl":  "asset://tetonova/extensions/bundles/animexin-compat.json",
+                           "upstreamUrl":  "https://animexin.dev",
+                           "category":  "Anime/Donghua"
+                       },
+                       {
+                           "id":  "anixverse-compat",
+                           "name":  "Anixverse",
+                           "version":  "1.0.0",
+                           "contentTypes":  [
+                                                "ANIME"
+                                            ],
+                           "capabilities":  [
+                                                "HOME",
+                                                "SEARCH",
+                                                "DETAIL",
+                                                "PLAYBACK",
+                                                "SUBTITLES"
+                                            ],
+                           "entry":  "compat/anixverse/catalog.json",
+                           "bundleUrl":  "asset://tetonova/extensions/bundles/anixverse-compat.json",
+                           "upstreamUrl":  "https://anixcafe.com",
+                           "category":  "Anime/Donghua"
+                       },
+                       {
+                           "id":  "donghub-compat",
+                           "name":  "Donghub",
+                           "version":  "1.0.0",
+                           "contentTypes":  [
+                                                "ANIME",
+                                                "MOVIE"
+                                            ],
+                           "capabilities":  [
+                                                "HOME",
+                                                "SEARCH",
+                                                "DETAIL",
+                                                "PLAYBACK",
+                                                "SUBTITLES"
+                                            ],
+                           "entry":  "compat/donghub/catalog.json",
+                           "bundleUrl":  "asset://tetonova/extensions/bundles/donghub-compat.json",
+                           "upstreamUrl":  "https://donghub.vip",
+                           "category":  "Anime/Donghua"
+                       },
+                       {
+                           "id":  "winbu-compat",
+                           "name":  "Winbu",
+                           "version":  "1.0.0",
+                           "contentTypes":  [
+                                                "MOVIE",
+                                                "SERIES",
+                                                "ANIME"
+                                            ],
+                           "capabilities":  [
+                                                "HOME",
+                                                "SEARCH",
+                                                "DETAIL",
+                                                "PLAYBACK",
+                                                "SUBTITLES"
+                                            ],
+                           "entry":  "compat/winbu/catalog.json",
+                           "bundleUrl":  "asset://tetonova/extensions/bundles/winbu-compat.json",
+                           "upstreamUrl":  "https://winbu.net",
+                           "category":  "Movie"
+                       },
+                       {
+                           "id":  "pusatfilm-compat",
+                           "name":  "PusatFilm",
+                           "version":  "1.0.0",
+                           "contentTypes":  [
+                                                "MOVIE",
+                                                "SERIES"
+                                            ],
+                           "capabilities":  [
+                                                "HOME",
+                                                "SEARCH",
+                                                "DETAIL",
+                                                "PLAYBACK",
+                                                "SUBTITLES"
+                                            ],
+                           "entry":  "compat/pusatfilm/catalog.json",
+                           "bundleUrl":  "asset://tetonova/extensions/bundles/pusatfilm-compat.json",
+                           "upstreamUrl":  "https://v3.pusatfilm21info.net/",
+                           "category":  "Movie"
+                       },
+                       {
+                           "id":  "lk21-compat",
+                           "name":  "LK21",
+                           "version":  "1.0.0",
+                           "contentTypes":  [
+                                                "MOVIE",
+                                                "SERIES"
+                                            ],
+                           "capabilities":  [
+                                                "HOME",
+                                                "SEARCH",
+                                                "DETAIL",
+                                                "PLAYBACK",
+                                                "SUBTITLES"
+                                            ],
+                           "entry":  "compat/lk21/catalog.json",
+                           "bundleUrl":  "asset://tetonova/extensions/bundles/lk21-compat.json",
+                           "upstreamUrl":  "https://tv11.lk21official.cc/",
+                           "category":  "Movie"
+                       },
+                       {
+                           "id":  "nontondrama-compat",
+                           "name":  "Nonton Drama",
+                           "version":  "1.0.0",
+                           "contentTypes":  [
+                                                "SERIES"
+                                            ],
+                           "capabilities":  [
+                                                "HOME",
+                                                "SEARCH",
+                                                "DETAIL",
+                                                "PLAYBACK",
+                                                "SUBTITLES"
+                                            ],
+                           "entry":  "compat/nontondrama/catalog.json",
+                           "bundleUrl":  "asset://tetonova/extensions/bundles/nontondrama-compat.json",
+                           "upstreamUrl":  "https://tv4.nontondrama.my/",
+                           "category":  "Dracin/Drakor"
+                       },
+                       {
+                           "id":  "oppadrama-compat",
+                           "name":  "Oppadrama",
+                           "version":  "1.0.0",
+                           "contentTypes":  [
+                                                "MOVIE",
+                                                "SERIES"
+                                            ],
+                           "capabilities":  [
+                                                "HOME",
+                                                "SEARCH",
+                                                "DETAIL",
+                                                "PLAYBACK",
+                                                "SUBTITLES"
+                                            ],
+                           "entry":  "compat/oppadrama/catalog.json",
+                           "bundleUrl":  "asset://tetonova/extensions/bundles/oppadrama-compat.json",
+                           "upstreamUrl":  "http://45.11.57.192",
+                           "category":  "Dracin/Drakor"
+                       },
+                       {
+                           "id":  "dramabox-compat",
+                           "name":  "DramaBox",
+                           "version":  "1.0.0",
+                           "contentTypes":  [
+                                                "SERIES"
+                                            ],
+                           "capabilities":  [
+                                                "HOME",
+                                                "SEARCH",
+                                                "DETAIL",
+                                                "PLAYBACK",
+                                                "SUBTITLES"
+                                            ],
+                           "entry":  "compat/dramabox/catalog.json",
+                           "bundleUrl":  "asset://tetonova/extensions/bundles/dramabox-compat.json",
+                           "upstreamUrl":  "https://dramabox.goodbos.online",
+                           "apiBaseUrl":  "https://dramabox.goodbos.online/api/v1",
+                           "webBaseUrl":  "https://dramabox.goodbos.online",
+                           "healthProbeUrl":  "https://dramabox.goodbos.online/api.html",
+                           "accessCode":  "A49C5D6FED6BD029B18F525D8A8B0F5E",
+                           "category":  "Short Series",
+                           "homeLinks":  {
+                                             "showAll":  [
+                                                             {
+                                                                 "label":  "Rekomendasi",
+                                                                 "url":  "https://dramabox.goodbos.online/api/v1/homepage?lang=in"
+                                                             }
+                                                         ],
+                                             "showOnClick":  [
+                                                                 {
+                                                                     "label":  "Rekomendasi",
+                                                                     "url":  "https://dramabox.goodbos.online/api/v1/homepage?lang=in"
+                                                                 },
+                                                                 {
+                                                                     "label":  "For You",
+                                                                     "url":  "https://dramabox.goodbos.online/api/v1/foryou?lang=in"
+                                                                 },
+                                                                 {
+                                                                     "label":  "Dubbed",
+                                                                     "url":  "https://dramabox.goodbos.online/api/v1/dubbed?classify=terpopuler\u0026lang=in"
+                                                                 }
+                                                             ]
+                                         }
+                       },
+                       {
+                           "id":  "drama-dust",
+                           "name":  "Drama Dust",
+                           "version":  "1.0.0",
+                           "contentTypes":  [
+                                                "SERIES",
+                                                "ANIME"
+                                            ],
+                           "capabilities":  [
+                                                "HOME",
+                                                "SEARCH",
+                                                "DETAIL",
+                                                "PLAYBACK"
+                                            ],
+                           "bundleUrl":  "asset://tetonova/extensions/bundles/drama-dust.json",
+                           "category":  "Dracin/Drakor"
+                       },
+                       {
+                           "id":  "melolo-compat",
+                           "name":  "Melolo",
+                           "version":  "1.0.0",
+                           "contentTypes":  [
+                                                "SERIES"
+                                            ],
+                           "capabilities":  [
+                                                "HOME",
+                                                "SEARCH",
+                                                "DETAIL",
+                                                "PLAYBACK",
+                                                "SUBTITLES"
+                                            ],
+                           "entry":  "compat/melolo/catalog.json",
+                           "bundleUrl":  "asset://tetonova/extensions/bundles/melolo-compat.json",
+                           "upstreamUrl":  "https://melolo.goodbos.online",
+                           "apiBaseUrl":  "https://melolo.goodbos.online",
+                           "webBaseUrl":  "https://melolo.goodbos.online",
+                           "healthProbeUrl":  "https://melolo.goodbos.online/api.html",
+                           "accessCode":  "A49C5D6FED6BD029B18F525D8A8B0F5E",
+                           "category":  "Short Series",
+                           "homeLinks":  {
+                                             "showAll":  [
+                                                             {
+                                                                 "label":  "Home / Trending",
+                                                                 "url":  "https://melolo.goodbos.online/api/home?lang=id\u0026offset=0"
+                                                             }
+                                                         ],
+                                             "showOnClick":  [
+                                                                 {
+                                                                     "label":  "Home / Trending",
+                                                                     "url":  "https://melolo.goodbos.online/api/home?lang=id\u0026offset=0"
+                                                                 }
+                                                             ]
+                                         }
+                       },
+                       {
+                           "id":  "flickreels-compat",
+                           "name":  "FlickReels",
+                           "version":  "1.0.0",
+                           "contentTypes":  [
+                                                "SERIES"
+                                            ],
+                           "capabilities":  [
+                                                "HOME",
+                                                "SEARCH",
+                                                "DETAIL",
+                                                "PLAYBACK",
+                                                "SUBTITLES"
+                                            ],
+                           "entry":  "compat/flickreels/catalog.json",
+                           "bundleUrl":  "asset://tetonova/extensions/bundles/flickreels-compat.json",
+                           "upstreamUrl":  "https://flickreels.goodbos.online",
+                           "apiBaseUrl":  "https://flickreels.goodbos.online",
+                           "webBaseUrl":  "https://flickreels.goodbos.online",
+                           "healthProbeUrl":  "https://flickreels.goodbos.online/api.html",
+                           "accessCode":  "A49C5D6FED6BD029B18F525D8A8B0F5E",
+                           "category":  "Short Series",
+                           "homeLinks":  {
+                                             "showAll":  [
+                                                             {
+                                                                 "label":  "Rekomendasi",
+                                                                 "url":  "https://flickreels.goodbos.online/api/home?lang=6\u0026page=1"
+                                                             }
+                                                         ],
+                                             "showOnClick":  [
+                                                                 {
+                                                                     "label":  "Rekomendasi",
+                                                                     "url":  "https://flickreels.goodbos.online/api/home?lang=6\u0026page=1"
+                                                                 },
+                                                                 {
+                                                                     "label":  "Trending",
+                                                                     "url":  "https://flickreels.goodbos.online/trending?lang=6"
+                                                                 }
+                                                             ]
+                                         }
+                       },
+                       {
+                           "id":  "dramawave-compat",
+                           "name":  "DramaWave",
+                           "version":  "1.0.0",
+                           "contentTypes":  [
+                                                "SERIES"
+                                            ],
+                           "capabilities":  [
+                                                "HOME",
+                                                "SEARCH",
+                                                "DETAIL",
+                                                "PLAYBACK",
+                                                "SUBTITLES"
+                                            ],
+                           "entry":  "compat/dramawave/catalog.json",
+                           "bundleUrl":  "asset://tetonova/extensions/bundles/dramawave-compat.json",
+                           "upstreamUrl":  "https://dramawave.goodbos.online",
+                           "apiBaseUrl":  "https://dramawave.goodbos.online",
+                           "webBaseUrl":  "https://dramawave.goodbos.online",
+                           "healthProbeUrl":  "https://dramawave.goodbos.online/api.html",
+                           "accessCode":  "A49C5D6FED6BD029B18F525D8A8B0F5E",
+                           "category":  "Short Series",
+                           "homeLinks":  {
+                                             "showAll":  [
+                                                             {
+                                                                 "label":  "Pilihan Populer",
+                                                                 "url":  "https://dramawave.goodbos.online/api/recommend?lang=in\u0026next=1"
+                                                             }
+                                                         ],
+                                             "showOnClick":  [
+                                                                 {
+                                                                     "label":  "Pilihan Populer",
+                                                                     "url":  "https://dramawave.goodbos.online/api/recommend?lang=in\u0026next=1"
+                                                                 },
+                                                                 {
+                                                                     "label":  "Anime",
+                                                                     "url":  "https://dramawave.goodbos.online/api/anime?lang=in\u0026next=1"
+                                                                 }
+                                                             ]
+                                         }
+                       },
+                       {
+                           "id":  "dotdrama-compat",
+                           "name":  "DotDrama",
+                           "version":  "1.0.0",
+                           "contentTypes":  [
+                                                "SERIES"
+                                            ],
+                           "capabilities":  [
+                                                "HOME",
+                                                "SEARCH",
+                                                "DETAIL",
+                                                "PLAYBACK",
+                                                "SUBTITLES"
+                                            ],
+                           "entry":  "compat/dotdrama/catalog.json",
+                           "bundleUrl":  "asset://tetonova/extensions/bundles/dotdrama-compat.json",
+                           "upstreamUrl":  "https://dotdrama.goodbos.online",
+                           "apiBaseUrl":  "https://dotdrama.goodbos.online",
+                           "webBaseUrl":  "https://dotdrama.goodbos.online",
+                           "healthProbeUrl":  "https://dotdrama.goodbos.online/api.html",
+                           "accessCode":  "A49C5D6FED6BD029B18F525D8A8B0F5E",
+                           "category":  "Short Series",
+                           "homeLinks":  {
+                                             "showAll":  [
+                                                             {
+                                                                 "label":  "Terbaru",
+                                                                 "url":  "https://dotdrama.goodbos.online/api/drama/list?lang=id\u0026page=1\u0026limit=18"
+                                                             }
+                                                         ],
+                                             "showOnClick":  [
+                                                                 {
+                                                                     "label":  "Terbaru",
+                                                                     "url":  "https://dotdrama.goodbos.online/api/drama/list?lang=id\u0026page=1\u0026limit=18"
+                                                                 }
+                                                             ]
+                                         }
+                       },
+                       {
+                           "id":  "goodshort-compat",
+                           "name":  "GoodShort",
+                           "version":  "1.0.0",
+                           "contentTypes":  [
+                                                "SERIES"
+                                            ],
+                           "capabilities":  [
+                                                "HOME",
+                                                "SEARCH",
+                                                "DETAIL",
+                                                "PLAYBACK",
+                                                "SUBTITLES"
+                                            ],
+                           "entry":  "compat/goodshort/catalog.json",
+                           "bundleUrl":  "asset://tetonova/extensions/bundles/goodshort-compat.json",
+                           "upstreamUrl":  "https://goodshort.goodbos.online",
+                           "apiBaseUrl":  "https://goodshort.goodbos.online",
+                           "webBaseUrl":  "https://goodshort.goodbos.online",
+                           "healthProbeUrl":  "https://goodshort.goodbos.online/api.html",
+                           "accessCode":  "A49C5D6FED6BD029B18F525D8A8B0F5E",
+                           "category":  "Short Series",
+                           "homeLinks":  {
+                                             "showAll":  [
+                                                             {
+                                                                 "label":  "Terbaru",
+                                                                 "url":  "https://goodshort.goodbos.online/home?lang=in\u0026channel=563\u0026page=1\u0026size=20"
+                                                             }
+                                                         ],
+                                             "showOnClick":  [
+                                                                 {
+                                                                     "label":  "Tren",
+                                                                     "url":  "https://goodshort.goodbos.online/home?lang=in\u0026channel=-1\u0026page=1\u0026size=20"
+                                                                 },
+                                                                 {
+                                                                     "label":  "Terbaru",
+                                                                     "url":  "https://goodshort.goodbos.online/home?lang=in\u0026channel=563\u0026page=1\u0026size=20"
+                                                                 },
+                                                                 {
+                                                                     "label":  "Anime",
+                                                                     "url":  "https://goodshort.goodbos.online/home?lang=in\u0026channel=656\u0026page=1\u0026size=20"
+                                                                 },
+                                                                 {
+                                                                     "label":  "Dubing",
+                                                                     "url":  "https://goodshort.goodbos.online/home?lang=in\u0026channel=567\u0026page=1\u0026size=20"
+                                                                 }
+                                                             ]
+                                         }
+                       },
+                       {
+                           "id":  "happyshort-compat",
+                           "name":  "HappyShort",
+                           "version":  "1.0.0",
+                           "contentTypes":  [
+                                                "SERIES"
+                                            ],
+                           "capabilities":  [
+                                                "HOME",
+                                                "SEARCH",
+                                                "DETAIL",
+                                                "PLAYBACK",
+                                                "SUBTITLES"
+                                            ],
+                           "entry":  "compat/happyshort/catalog.json",
+                           "bundleUrl":  "asset://tetonova/extensions/bundles/happyshort-compat.json",
+                           "upstreamUrl":  "https://happyshort.goodbos.online",
+                           "apiBaseUrl":  "https://happyshort.goodbos.online",
+                           "webBaseUrl":  "https://happyshort.goodbos.online",
+                           "healthProbeUrl":  "https://happyshort.goodbos.online/api",
+                           "accessCode":  "A49C5D6FED6BD029B18F525D8A8B0F5E",
+                           "category":  "Short Series",
+                           "homeLinks":  {
+                                             "showAll":  [
+                                                             {
+                                                                 "label":  "Terbaru",
+                                                                 "url":  "https://happyshort.goodbos.online/api/hs/home?page=1\u0026size=20\u0026lang=id"
+                                                             }
+                                                         ],
+                                             "showOnClick":  [
+                                                                 {
+                                                                     "label":  "Terbaru",
+                                                                     "url":  "https://happyshort.goodbos.online/api/hs/home?page=1\u0026size=20\u0026lang=id"
+                                                                 },
+                                                                 {
+                                                                     "label":  "Rekomendasi",
+                                                                     "url":  "https://happyshort.goodbos.online/api/hs/foryou?lang=id"
+                                                                 }
+                                                             ]
+                                         }
+                       },
+                       {
+                           "id":  "dramanova-compat",
+                           "name":  "DramaNova",
+                           "version":  "1.0.0",
+                           "contentTypes":  [
+                                                "SERIES"
+                                            ],
+                           "capabilities":  [
+                                                "HOME",
+                                                "SEARCH",
+                                                "DETAIL",
+                                                "PLAYBACK",
+                                                "SUBTITLES"
+                                            ],
+                           "entry":  "compat/dramanova/catalog.json",
+                           "bundleUrl":  "asset://tetonova/extensions/bundles/dramanova-compat.json",
+                           "upstreamUrl":  "https://dramanova.goodbos.online",
+                           "apiBaseUrl":  "https://dramanova.goodbos.online",
+                           "webBaseUrl":  "https://dramanova.goodbos.online",
+                           "healthProbeUrl":  "https://dramanova.goodbos.online/api.html",
+                           "accessCode":  "A49C5D6FED6BD029B18F525D8A8B0F5E",
+                           "category":  "Short Series",
+                           "homeLinks":  {
+                                             "showAll":  [
+                                                             {
+                                                                 "label":  "Terbaru",
+                                                                 "url":  "https://dramanova.goodbos.online/api/home?lang=id\u0026page=1\u0026sort=views"
+                                                             }
+                                                         ],
+                                             "showOnClick":  [
+                                                                 {
+                                                                     "label":  "Terbaru",
+                                                                     "url":  "https://dramanova.goodbos.online/api/home?lang=id\u0026page=1\u0026sort=views"
+                                                                 },
+                                                                 {
+                                                                     "label":  "Hot",
+                                                                     "url":  "https://dramanova.goodbos.online/api/hot?lang=id\u0026page=1\u0026sort=views"
+                                                                 }
+                                                             ]
+                                         }
+                       },
+                       {
+                           "id":  "cubetv-compat",
+                           "name":  "CubeTV",
+                           "version":  "1.0.0",
+                           "contentTypes":  [
+                                                "SERIES"
+                                            ],
+                           "capabilities":  [
+                                                "HOME",
+                                                "SEARCH",
+                                                "DETAIL",
+                                                "PLAYBACK",
+                                                "SUBTITLES"
+                                            ],
+                           "entry":  "compat/cubetv/catalog.json",
+                           "bundleUrl":  "asset://tetonova/extensions/bundles/cubetv-compat.json",
+                           "upstreamUrl":  "https://cubetv.goodbos.online",
+                           "apiBaseUrl":  "https://cubetv.goodbos.online",
+                           "webBaseUrl":  "https://cubetv.goodbos.online",
+                           "healthProbeUrl":  "https://cubetv.goodbos.online/api.html",
+                           "accessCode":  "A49C5D6FED6BD029B18F525D8A8B0F5E",
+                           "category":  "Short Series",
+                           "homeLinks":  {
+                                             "showAll":  [
+                                                             {
+                                                                 "label":  "Rekomendasi Populer",
+                                                                 "url":  "https://cubetv.goodbos.online/api/module?lang=id\u0026moduleid=PaEpZ7\u0026page=1"
+                                                             }
+                                                         ],
+                                             "showOnClick":  [
+                                                                 {
+                                                                     "label":  "Drama Pilihan",
+                                                                     "url":  "https://cubetv.goodbos.online/api/module?lang=id\u0026moduleid=9vb8aR\u0026page=1"
+                                                                 },
+                                                                 {
+                                                                     "label":  "Rekomendasi Populer",
+                                                                     "url":  "https://cubetv.goodbos.online/api/module?lang=id\u0026moduleid=PaEpZ7\u0026page=1"
+                                                                 }
+                                                             ]
+                                         }
+                       },
+                       {
+                           "id":  "shortmax-compat",
+                           "name":  "ShortMax",
+                           "version":  "1.0.0",
+                           "contentTypes":  [
+                                                "SERIES"
+                                            ],
+                           "capabilities":  [
+                                                "HOME",
+                                                "SEARCH",
+                                                "DETAIL",
+                                                "PLAYBACK",
+                                                "SUBTITLES"
+                                            ],
+                           "entry":  "compat/shortmax/catalog.json",
+                           "bundleUrl":  "asset://tetonova/extensions/bundles/shortmax-compat.json",
+                           "upstreamUrl":  "https://shortmax.goodbos.online",
+                           "apiBaseUrl":  "https://shortmax.goodbos.online",
+                           "webBaseUrl":  "https://shortmax.goodbos.online",
+                           "healthProbeUrl":  "https://shortmax.goodbos.online/api.html",
+                           "accessCode":  "A49C5D6FED6BD029B18F525D8A8B0F5E",
+                           "category":  "Short Series",
+                           "homeLinks":  {
+                                             "showAll":  [
+                                                             {
+                                                                 "label":  "Baru",
+                                                                 "url":  "https://shortmax.goodbos.online/api/v1/new?lang=id\u0026page=1"
+                                                             }
+                                                         ],
+                                             "showOnClick":  [
+                                                                 {
+                                                                     "label":  "Baru",
+                                                                     "url":  "https://shortmax.goodbos.online/api/v1/new?lang=id\u0026page=1"
+                                                                 },
+                                                                 {
+                                                                     "label":  "Populer",
+                                                                     "url":  "https://shortmax.goodbos.online/api/v1/popular?lang=id\u0026page=1"
+                                                                 },
+                                                                 {
+                                                                     "label":  "Hot",
+                                                                     "url":  "https://shortmax.goodbos.online/api/v1/hot?lang=id\u0026page=1"
+                                                                 },
+                                                                 {
+                                                                     "label":  "Peringkat",
+                                                                     "url":  "https://shortmax.goodbos.online/api/v1/ranking?lang=id\u0026type=monthly"
+                                                                 }
+                                                             ]
+                                         }
+                       },
+                       {
+                           "id":  "reelshort-compat",
+                           "name":  "ReelShort",
+                           "version":  "1.0.0",
+                           "contentTypes":  [
+                                                "SERIES"
+                                            ],
+                           "capabilities":  [
+                                                "HOME",
+                                                "SEARCH",
+                                                "DETAIL",
+                                                "PLAYBACK",
+                                                "SUBTITLES"
+                                            ],
+                           "entry":  "compat/reelshort/catalog.json",
+                           "bundleUrl":  "asset://tetonova/extensions/bundles/reelshort-compat.json",
+                           "upstreamUrl":  "https://reelshort.goodbos.online",
+                           "apiBaseUrl":  "https://reelshort.goodbos.online",
+                           "webBaseUrl":  "https://reelshort.goodbos.online",
+                           "healthProbeUrl":  "https://reelshort.goodbos.online/trending?lang=in",
+                           "accessCode":  "A49C5D6FED6BD029B18F525D8A8B0F5E",
+                           "category":  "Short Series",
+                           "homeLinks":  {
+                                             "showAll":  [
+                                                             {
+                                                                 "label":  "Populer",
+                                                                 "url":  "https://reelshort.goodbos.online/home?tab=populer\u0026lang=in"
+                                                             }
+                                                         ],
+                                             "showOnClick":  [
+                                                                 {
+                                                                     "label":  "Populer",
+                                                                     "url":  "https://reelshort.goodbos.online/home?tab=populer\u0026lang=in"
+                                                                 },
+                                                                 {
+                                                                     "label":  "Terbaru",
+                                                                     "url":  "https://reelshort.goodbos.online/home?tab=terbaru\u0026lang=in"
+                                                                 },
+                                                                 {
+                                                                     "label":  "Ranking",
+                                                                     "url":  "https://reelshort.goodbos.online/home?tab=ranking\u0026lang=in"
+                                                                 },
+                                                                 {
+                                                                     "label":  "Asia",
+                                                                     "url":  "https://reelshort.goodbos.online/home?tab=asia\u0026lang=in"
+                                                                 },
+                                                                 {
+                                                                     "label":  "Pria",
+                                                                     "url":  "https://reelshort.goodbos.online/home?tab=pria\u0026lang=in"
+                                                                 },
+                                                                 {
+                                                                     "label":  "Wanita",
+                                                                     "url":  "https://reelshort.goodbos.online/home?tab=wanita\u0026lang=in"
+                                                                 }
+                                                             ]
+                                         }
+                       },
+                       {
+                           "id":  "netshort-compat",
+                           "name":  "Netshort",
+                           "version":  "1.0.0",
+                           "contentTypes":  [
+                                                "SERIES"
+                                            ],
+                           "capabilities":  [
+                                                "HOME",
+                                                "SEARCH",
+                                                "DETAIL",
+                                                "PLAYBACK",
+                                                "SUBTITLES"
+                                            ],
+                           "entry":  "compat/netshort/catalog.json",
+                           "bundleUrl":  "asset://tetonova/extensions/bundles/netshort-compat.json",
+                           "upstreamUrl":  "https://netshort.goodbos.online",
+                           "apiBaseUrl":  "https://netshort.goodbos.online",
+                           "webBaseUrl":  "https://netshort.goodbos.online",
+                           "healthProbeUrl":  "https://netshort.goodbos.online/api.html",
+                           "category":  "Short Series",
+                           "accessCode":  "A49C5D6FED6BD029B18F525D8A8B0F5E",
+                           "homeLinks":  {
+                                             "showAll":  [
+                                                             {
+                                                                 "label":  "Terbaru",
+                                                                 "url":  "https://netshort.goodbos.online/api/home/1?lang=in"
+                                                             }
+                                                         ],
+                                             "showOnClick":  [
+                                                                 {
+                                                                     "label":  "Terbaru",
+                                                                     "url":  "https://netshort.goodbos.online/api/home/1?lang=in"
+                                                                 },
+                                                                 {
+                                                                     "label":  "Populer",
+                                                                     "url":  "https://netshort.goodbos.online/api/list/1?lang=in"
+                                                                 },
+                                                                 {
+                                                                     "label":  "Banner",
+                                                                     "url":  "https://netshort.goodbos.online/api/banner?lang=in"
+                                                                 }
+                                                             ]
+                                         }
+                       },
+                       {
+                           "id":  "bilitv-compat",
+                           "name":  "BiliTV",
+                           "version":  "1.0.0",
+                           "contentTypes":  [
+                                                "SERIES"
+                                            ],
+                           "capabilities":  [
+                                                "HOME",
+                                                "SEARCH",
+                                                "DETAIL",
+                                                "PLAYBACK",
+                                                "SUBTITLES"
+                                            ],
+                           "entry":  "compat/bilitv/catalog.json",
+                           "bundleUrl":  "asset://tetonova/extensions/bundles/bilitv-compat.json",
+                           "upstreamUrl":  "https://bilitv.goodbos.online",
+                           "apiBaseUrl":  "https://bilitv.goodbos.online",
+                           "webBaseUrl":  "https://bilitv.goodbos.online",
+                           "healthProbeUrl":  "https://bilitv.goodbos.online/api.html",
+                           "accessCode":  "A49C5D6FED6BD029B18F525D8A8B0F5E",
+                           "category":  "Short Series",
+                           "homeLinks":  {
+                                             "showAll":  [
+                                                             {
+                                                                 "label":  "Terbaru",
+                                                                 "url":  "https://bilitv.goodbos.online/api/home?page=1\u0026limit=20\u0026lang=id"
+                                                             }
+                                                         ],
+                                             "showOnClick":  [
+                                                                 {
+                                                                     "label":  "Terbaru",
+                                                                     "url":  "https://bilitv.goodbos.online/api/home?page=1\u0026limit=20\u0026lang=id"
+                                                                 }
+                                                             ]
+                                         }
+                       },
+                       {
+                           "id":  "idrama-compat",
+                           "name":  "iDrama",
+                           "version":  "1.0.0",
+                           "contentTypes":  [
+                                                "SERIES"
+                                            ],
+                           "capabilities":  [
+                                                "HOME",
+                                                "SEARCH",
+                                                "DETAIL",
+                                                "PLAYBACK",
+                                                "SUBTITLES"
+                                            ],
+                           "entry":  "compat/idrama/catalog.json",
+                           "bundleUrl":  "asset://tetonova/extensions/bundles/idrama-compat.json",
+                           "upstreamUrl":  "https://idrama.goodbos.online",
+                           "apiBaseUrl":  "https://idrama.goodbos.online",
+                           "webBaseUrl":  "https://idrama.goodbos.online",
+                           "healthProbeUrl":  "https://idrama.goodbos.online/api.html",
+                           "accessCode":  "A49C5D6FED6BD029B18F525D8A8B0F5E",
+                           "category":  "Short Series",
+                           "homeLinks":  {
+                                             "showAll":  [
+                                                             {
+                                                                 "label":  "Terbaru",
+                                                                 "url":  "https://idrama.goodbos.online/tab/channel_7e89a1a2?lang=id"
+                                                             }
+                                                         ],
+                                             "showOnClick":  [
+                                                                 {
+                                                                     "label":  "Terbaru",
+                                                                     "url":  "https://idrama.goodbos.online/tab/channel_7e89a1a2?lang=id"
+                                                                 },
+                                                                 {
+                                                                     "label":  "Populer",
+                                                                     "url":  "https://idrama.goodbos.online/tab/channel_022dd4f1?lang=id\u0026section=section_bccf2ae7,section_b5c35a7c"
+                                                                 },
+                                                                 {
+                                                                     "label":  "Sedang Tren",
+                                                                     "url":  "https://idrama.goodbos.online/tab/channel_f4904f0b?lang=id\u0026section=section_d557ba94"
+                                                                 },
+                                                                 {
+                                                                     "label":  "Hits Terbaru",
+                                                                     "url":  "https://idrama.goodbos.online/tab/channel_a57c8658?lang=id\u0026section=section_37f1f85e"
+                                                                 }
+                                                             ]
+                                         }
+                       },
+                       {
+                           "id":  "stardusttv-compat",
+                           "name":  "StardustTV",
+                           "version":  "1.0.0",
+                           "contentTypes":  [
+                                                "SERIES"
+                                            ],
+                           "capabilities":  [
+                                                "HOME",
+                                                "SEARCH",
+                                                "DETAIL",
+                                                "PLAYBACK",
+                                                "SUBTITLES"
+                                            ],
+                           "entry":  "compat/stardusttv/catalog.json",
+                           "bundleUrl":  "asset://tetonova/extensions/bundles/stardusttv-compat.json",
+                           "upstreamUrl":  "https://stardusttv2.goodbos.online",
+                           "apiBaseUrl":  "https://stardusttv2.goodbos.online",
+                           "webBaseUrl":  "https://stardusttv2.goodbos.online",
+                           "healthProbeUrl":  "https://stardusttv2.goodbos.online/api.html",
+                           "accessCode":  "A49C5D6FED6BD029B18F525D8A8B0F5E",
+                           "category":  "Short Series",
+                           "homeLinks":  {
+                                             "showAll":  [
+                                                             {
+                                                                 "label":  "Terbaru",
+                                                                 "url":  "https://stardusttv2.goodbos.online/api/v1/videos?page=1\u0026per_page=18\u0026lang=id"
+                                                             }
+                                                         ],
+                                             "showOnClick":  [
+                                                                 {
+                                                                     "label":  "Terbaru",
+                                                                     "url":  "https://stardusttv2.goodbos.online/api/v1/videos?page=1\u0026per_page=18\u0026lang=id"
+                                                                 },
+                                                                 {
+                                                                     "label":  "Trending",
+                                                                     "url":  "https://stardusttv2.goodbos.online/api/v1/trending?lang=id"
+                                                                 }
+                                                             ]
+                                         }
+                       },
+                       {
+                           "id":  "velolo-compat",
+                           "name":  "Velolo",
+                           "version":  "1.0.0",
+                           "contentTypes":  [
+                                                "SERIES"
+                                            ],
+                           "capabilities":  [
+                                                "HOME",
+                                                "SEARCH",
+                                                "DETAIL",
+                                                "PLAYBACK",
+                                                "SUBTITLES"
+                                            ],
+                           "entry":  "compat/velolo/catalog.json",
+                           "bundleUrl":  "asset://tetonova/extensions/bundles/velolo-compat.json",
+                           "upstreamUrl":  "https://velolo.goodbos.online",
+                           "apiBaseUrl":  "https://velolo.goodbos.online",
+                           "webBaseUrl":  "https://velolo.goodbos.online",
+                           "healthProbeUrl":  "https://velolo.goodbos.online/api.html",
+                           "accessCode":  "A49C5D6FED6BD029B18F525D8A8B0F5E",
+                           "category":  "Short Series",
+                           "homeLinks":  {
+                                             "showAll":  [
+                                                             {
+                                                                 "label":  "Baru",
+                                                                 "url":  "https://velolo.goodbos.online/new?lang=id\u0026page=1\u0026page_size=18"
+                                                             }
+                                                         ],
+                                             "showOnClick":  [
+                                                                 {
+                                                                     "label":  "Baru",
+                                                                     "url":  "https://velolo.goodbos.online/new?lang=id\u0026page=1\u0026page_size=18"
+                                                                 },
+                                                                 {
+                                                                     "label":  "Hot",
+                                                                     "url":  "https://velolo.goodbos.online/hot?lang=id"
+                                                                 }
+                                                             ]
+                                         }
+                       },
+                       {
+                           "id":  "reelife-compat",
+                           "name":  "Reelife",
+                           "version":  "1.0.0",
+                           "contentTypes":  [
+                                                "SERIES"
+                                            ],
+                           "capabilities":  [
+                                                "HOME",
+                                                "SEARCH",
+                                                "DETAIL",
+                                                "PLAYBACK",
+                                                "SUBTITLES"
+                                            ],
+                           "entry":  "compat/reelife/catalog.json",
+                           "bundleUrl":  "asset://tetonova/extensions/bundles/reelife-compat.json",
+                           "upstreamUrl":  "https://reelife.goodbos.online",
+                           "apiBaseUrl":  "https://reelife.goodbos.online",
+                           "webBaseUrl":  "https://reelife.goodbos.online",
+                           "healthProbeUrl":  "https://reelife.goodbos.online/api.html",
+                           "category":  "Short Series",
+                           "accessCode":  "A49C5D6FED6BD029B18F525D8A8B0F5E",
+                           "homeLinks":  {
+                                             "showAll":  [
+                                                             {
+                                                                 "label":  "Terbaru",
+                                                                 "url":  "https://reelife.goodbos.online/api/v1/home?page=1\u0026lang=in"
+                                                             }
+                                                         ],
+                                             "showOnClick":  [
+                                                                 {
+                                                                     "label":  "Terbaru",
+                                                                     "url":  "https://reelife.goodbos.online/api/v1/home?page=1\u0026lang=in"
+                                                                 },
+                                                                 {
+                                                                     "label":  "Sedang Tren",
+                                                                     "url":  "https://reelife.goodbos.online/api/v1/rank?type=trending\u0026lang=in"
+                                                                 }
+                                                             ]
+                                         }
+                       },
+                       {
+                           "id":  "dramabite-compat",
+                           "name":  "DramaBite",
+                           "version":  "1.0.0",
+                           "contentTypes":  [
+                                                "SERIES"
+                                            ],
+                           "capabilities":  [
+                                                "HOME",
+                                                "SEARCH",
+                                                "DETAIL",
+                                                "PLAYBACK",
+                                                "SUBTITLES"
+                                            ],
+                           "entry":  "compat/dramabite/catalog.json",
+                           "bundleUrl":  "asset://tetonova/extensions/bundles/dramabite-compat.json",
+                           "upstreamUrl":  "https://dramabite.goodbos.online",
+                           "apiBaseUrl":  "https://dramabite.goodbos.online",
+                           "webBaseUrl":  "https://dramabite.goodbos.online",
+                           "healthProbeUrl":  "https://dramabite.goodbos.online/api.html",
+                           "accessCode":  "A49C5D6FED6BD029B18F525D8A8B0F5E",
+                           "category":  "Short Series",
+                           "homeLinks":  {
+                                             "showAll":  [
+                                                             {
+                                                                 "label":  "Paling Populer",
+                                                                 "url":  "https://dramabite.goodbos.online/home?lang=id"
+                                                             }
+                                                         ],
+                                             "showOnClick":  [
+                                                                 {
+                                                                     "label":  "Paling Populer",
+                                                                     "url":  "https://dramabite.goodbos.online/home?lang=id"
+                                                                 },
+                                                                 {
+                                                                     "label":  "Rekomendasi",
+                                                                     "url":  "https://dramabite.goodbos.online/module?page=1\u0026lang=id"
+                                                                 }
+                                                             ]
+                                         }
+                       },
+                       {
+                           "id":  "flextv-compat",
+                           "name":  "FlexTV",
+                           "version":  "1.0.0",
+                           "contentTypes":  [
+                                                "SERIES"
+                                            ],
+                           "capabilities":  [
+                                                "HOME",
+                                                "SEARCH",
+                                                "DETAIL",
+                                                "PLAYBACK",
+                                                "SUBTITLES"
+                                            ],
+                           "entry":  "compat/flextv/catalog.json",
+                           "bundleUrl":  "asset://tetonova/extensions/bundles/flextv-compat.json",
+                           "upstreamUrl":  "https://flextv.goodbos.online",
+                           "apiBaseUrl":  "https://flextv.goodbos.online",
+                           "webBaseUrl":  "https://flextv.goodbos.online",
+                           "healthProbeUrl":  "https://flextv.goodbos.online/api/drama/tabs?lang=id",
+                           "accessCode":  "A49C5D6FED6BD029B18F525D8A8B0F5E",
+                           "category":  "Short Series",
+                           "homeLinks":  {
+                                             "showAll":  [
+                                                             {
+                                                                 "label":  "Baru",
+                                                                 "url":  "https://flextv.goodbos.online/api/drama/list?classify_id=18\u0026lang=id"
+                                                             }
+                                                         ],
+                                             "showOnClick":  [
+                                                                 {
+                                                                     "label":  "Baru",
+                                                                     "url":  "https://flextv.goodbos.online/api/drama/list?classify_id=18\u0026lang=id"
+                                                                 },
+                                                                 {
+                                                                     "label":  "Semua Episode",
+                                                                     "url":  "https://flextv.goodbos.online/api/drama/list?classify_id=18\u0026lang=id\u0026template=4"
+                                                                 },
+                                                                 {
+                                                                     "label":  "Pilihan Editor",
+                                                                     "url":  "https://flextv.goodbos.online/api/drama/list?classify_id=17\u0026lang=id\u0026floor=Pilihan%20Editor"
+                                                                 },
+                                                                 {
+                                                                     "label":  "Populer",
+                                                                     "url":  "https://flextv.goodbos.online/api/drama/list?classify_id=17\u0026lang=id\u0026floor=Populer"
+                                                                 },
+                                                                 {
+                                                                     "label":  "Pria",
+                                                                     "url":  "https://flextv.goodbos.online/api/drama/list?classify_id=20\u0026lang=id"
+                                                                 },
+                                                                 {
+                                                                     "label":  "Wanita",
+                                                                     "url":  "https://flextv.goodbos.online/api/drama/list?classify_id=21\u0026lang=id"
+                                                                 }
+                                                             ]
+                                         }
+                       },
+                       {
+                           "id":  "freereels-compat",
+                           "name":  "FreeReels",
+                           "version":  "1.0.0",
+                           "contentTypes":  [
+                                                "SERIES"
+                                            ],
+                           "capabilities":  [
+                                                "HOME",
+                                                "SEARCH",
+                                                "DETAIL",
+                                                "PLAYBACK",
+                                                "SUBTITLES"
+                                            ],
+                           "entry":  "compat/freereels/catalog.json",
+                           "bundleUrl":  "asset://tetonova/extensions/bundles/freereels-compat.json",
+                           "upstreamUrl":  "https://drakula.goodbos.online",
+                           "apiBaseUrl":  "https://drakula.goodbos.online",
+                           "webBaseUrl":  "https://drakula.goodbos.online",
+                           "healthProbeUrl":  "https://drakula.goodbos.online/freereels-api.html",
+                           "category":  "Short Series",
+                           "homeLinks":  {
+                                             "showAll":  [
+                                                             {
+                                                                 "label":  "New",
+                                                                 "url":  "https://drakula.goodbos.online/api/freereels/new?lang=id"
+                                                             }
+                                                         ],
+                                             "showOnClick":  [
+                                                                 {
+                                                                     "label":  "New",
+                                                                     "url":  "https://drakula.goodbos.online/api/freereels/new?lang=id"
+                                                                 },
+                                                                 {
+                                                                     "label":  "For You",
+                                                                     "url":  "https://drakula.goodbos.online/api/freereels/foryou?lang=id"
+                                                                 },
+                                                                 {
+                                                                     "label":  "Popular",
+                                                                     "url":  "https://drakula.goodbos.online/api/freereels/popular?lang=id"
+                                                                 }
+                                                             ]
+                                         }
+                       },
+                       {
+                           "id":  "fundrama-compat",
+                           "name":  "FunDrama",
+                           "version":  "1.0.0",
+                           "contentTypes":  [
+                                                "SERIES"
+                                            ],
+                           "capabilities":  [
+                                                "HOME",
+                                                "SEARCH",
+                                                "DETAIL",
+                                                "PLAYBACK",
+                                                "SUBTITLES"
+                                            ],
+                           "entry":  "compat/fundrama/catalog.json",
+                           "bundleUrl":  "asset://tetonova/extensions/bundles/fundrama-compat.json",
+                           "upstreamUrl":  "https://drakula.goodbos.online/fundrama",
+                           "apiBaseUrl":  "https://drakula.goodbos.online/fundrama",
+                           "webBaseUrl":  "https://drakula.goodbos.online/fundrama",
+                           "healthProbeUrl":  "https://drakula.goodbos.online/fundrama-api.html",
+                           "accessCode":  "A49C5D6FED6BD029B18F525D8A8B0F5E",
+                           "category":  "Short Series",
+                           "homeLinks":  {
+                                             "showAll":  [
+                                                             {
+                                                                 "label":  "Terbaru",
+                                                                 "url":  "https://drakula.goodbos.online/api/fundrama/dramas?lang=id\u0026page=1\u0026limit=20"
+                                                             }
+                                                         ],
+                                             "showOnClick":  [
+                                                                 {
+                                                                     "label":  "Terbaru",
+                                                                     "url":  "https://drakula.goodbos.online/api/fundrama/dramas?lang=id\u0026page=1\u0026limit=20"
+                                                                 }
+                                                             ]
+                                         }
+                       },
+                       {
+                           "id":  "microdrama-compat",
+                           "name":  "Micro Drama",
+                           "version":  "1.0.0",
+                           "contentTypes":  [
+                                                "SERIES"
+                                            ],
+                           "capabilities":  [
+                                                "HOME",
+                                                "SEARCH",
+                                                "DETAIL",
+                                                "PLAYBACK",
+                                                "SUBTITLES"
+                                            ],
+                           "entry":  "compat/microdrama/catalog.json",
+                           "bundleUrl":  "asset://tetonova/extensions/bundles/microdrama-compat.json",
+                           "upstreamUrl":  "https://drakula.goodbos.online/microdrama",
+                           "apiBaseUrl":  "https://drakula.goodbos.online/microdrama",
+                           "webBaseUrl":  "https://drakula.goodbos.online/microdrama",
+                           "healthProbeUrl":  "https://drakula.goodbos.online/microdrama-api.html",
+                           "category":  "Short Series",
+                           "accessCode":  "A49C5D6FED6BD029B18F525D8A8B0F5E",
+                           "homeLinks":  {
+                                             "showAll":  [
+                                                             {
+                                                                 "label":  "Terbaru",
+                                                                 "url":  "https://drakula.goodbos.online/api/microdrama/list?lang=id\u0026page=1\u0026limit=20"
+                                                             }
+                                                         ],
+                                             "showOnClick":  [
+                                                                 {
+                                                                     "label":  "Terbaru",
+                                                                     "url":  "https://drakula.goodbos.online/api/microdrama/list?lang=id\u0026page=1\u0026limit=20"
+                                                                 }
+                                                             ]
+                                         }
+                       },
+                       {
+                           "id":  "starshort-compat",
+                           "name":  "StarShort",
+                           "version":  "1.0.0",
+                           "contentTypes":  [
+                                                "SERIES"
+                                            ],
+                           "capabilities":  [
+                                                "HOME",
+                                                "SEARCH",
+                                                "DETAIL",
+                                                "PLAYBACK",
+                                                "SUBTITLES"
+                                            ],
+                           "entry":  "compat/starshort/catalog.json",
+                           "bundleUrl":  "asset://tetonova/extensions/bundles/starshort-compat.json",
+                           "upstreamUrl":  "https://drakula.dramabos.my.id/starshort",
+                           "apiBaseUrl":  "https://drakula.dramabos.my.id/starshort/api/v1",
+                           "webBaseUrl":  "https://drakula.dramabos.my.id/starshort",
+                           "healthProbeUrl":  "https://drakula.dramabos.my.id/starshort-api.html",
+                           "category":  "Dracin/Drakor"
+                       },
+                       {
+                           "id":  "vigloo-compat",
+                           "name":  "Vigloo",
+                           "version":  "1.0.0",
+                           "contentTypes":  [
+                                                "SERIES"
+                                            ],
+                           "capabilities":  [
+                                                "HOME",
+                                                "SEARCH",
+                                                "DETAIL",
+                                                "PLAYBACK",
+                                                "SUBTITLES"
+                                            ],
+                           "entry":  "compat/vigloo/catalog.json",
+                           "bundleUrl":  "asset://tetonova/extensions/bundles/vigloo-compat.json",
+                           "upstreamUrl":  "https://drakula.dramabos.my.id/vigloo",
+                           "apiBaseUrl":  "https://drakula.dramabos.my.id/vigloo/api/v1",
+                           "webBaseUrl":  "https://drakula.dramabos.my.id/vigloo",
+                           "healthProbeUrl":  "https://drakula.dramabos.my.id/vigloo-api.html",
+                           "category":  "Dracin/Drakor"
+                       },
+                       {
+                           "id":  "reelala-compat",
+                           "name":  "Reelala",
+                           "version":  "1.0.0",
+                           "contentTypes":  [
+                                                "SERIES"
+                                            ],
+                           "capabilities":  [
+                                                "HOME",
+                                                "SEARCH",
+                                                "DETAIL",
+                                                "PLAYBACK",
+                                                "SUBTITLES"
+                                            ],
+                           "entry":  "compat/reelala/catalog.json",
+                           "bundleUrl":  "asset://tetonova/extensions/bundles/reelala-compat.json",
+                           "upstreamUrl":  "https://drakula.dramabos.my.id/reelala",
+                           "apiBaseUrl":  "https://drakula.dramabos.my.id/reelala/api/v1",
+                           "webBaseUrl":  "https://drakula.dramabos.my.id/reelala",
+                           "healthProbeUrl":  "https://drakula.dramabos.my.id/reelala.html",
+                           "category":  "Dracin/Drakor"
+                       }
+                   ],
+    "defaultQualityPriority":  [
+                                   "1080p",
+                                   "720p",
+                                   "480p",
+                                   "360p"
+                               ],
+    "totalExtensions":  44
 }

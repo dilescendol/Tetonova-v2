@@ -1,0 +1,79 @@
+package com.tetonova.app.data
+
+import kotlin.math.roundToInt
+import kotlin.math.roundToLong
+
+/** 30 days in seconds — the unit the panel uses for a "monthly" plan (`app_plans.monthly`). */
+private const val SECONDS_PER_MONTH = 2_592_000.0
+
+/** Offline/not-signed-in fallback so the Langganan screen always has plans to show. Mirrors the
+ *  panel seed (monthly/quarterly/yearly); real prices come live from `GET /api/v1/me/plans`. */
+val FALLBACK_PLANS: List<BillingPlan> = listOf(
+    BillingPlan("monthly", "Bulanan", 2_592_000L, 15_000L),
+    BillingPlan("quarterly", "3 Bulan", 7_776_000L, 40_000L),
+    BillingPlan("yearly", "Tahunan", 31_536_000L, 120_000L),
+)
+
+/**
+ * A plan ready to render: the raw [plan] plus the figures **derived client-side** from its
+ * `priceIdr` + `durationSeconds`, so the panel only ever sets a price and the per-month + "Hemat %"
+ * follow automatically (no manual discount math, no app rebuild).
+ *
+ * - [perMonthLabel] — "≈ Rp X/bln", only present when the plan spans more than one month.
+ * - [savingsPercent] — vs the 1-month baseline; 0 when there's no saving (or no baseline).
+ * - [best] — the plan with the highest saving (auto "Terpopuler"/best-value badge).
+ */
+data class PlanView(
+    val plan: BillingPlan,
+    val perMonthLabel: String?,
+    val savingsPercent: Int,
+    val best: Boolean,
+) {
+    val priceLabel: String get() = rupiah(plan.priceIdr)
+    /** "/bln", "/3 bln", "/thn" — derived from the duration in whole months. */
+    val perLabel: String get() = when (val m = months(plan)) {
+        1 -> "/bln"
+        12 -> "/thn"
+        else -> "/$m bln"
+    }
+    val savingsLabel: String? get() = if (savingsPercent > 0) "Hemat $savingsPercent%" else null
+}
+
+/** Format whole rupiah as "Rp 13.300" (dot thousands separator, id-style). */
+fun rupiah(n: Long): String = "Rp " + "%,d".format(n).replace(',', '.')
+
+private fun months(p: BillingPlan): Int =
+    (p.durationSeconds / SECONDS_PER_MONTH).roundToInt().coerceAtLeast(1)
+
+private fun perMonth(p: BillingPlan): Double {
+    val m = p.durationSeconds / SECONDS_PER_MONTH
+    return if (m <= 0.0) p.priceIdr.toDouble() else p.priceIdr / m
+}
+
+/**
+ * Project a price list into renderable [PlanView]s. Baseline for the discount is the 1-month plan
+ * (`durationSeconds == 2_592_000`); if none is present we fall back to the highest per-month price so
+ * a saving can still be expressed relative to the priciest tier.
+ */
+fun planViews(plans: List<BillingPlan>): List<PlanView> {
+    if (plans.isEmpty()) return emptyList()
+    val baselinePerMonth = plans.firstOrNull { months(it) == 1 }?.let { perMonth(it) }
+        ?: plans.maxOf { perMonth(it) }
+
+    val withSavings = plans.map { plan ->
+        val pm = perMonth(plan)
+        val savings = if (baselinePerMonth > 0.0 && pm < baselinePerMonth)
+            ((1.0 - pm / baselinePerMonth) * 100).roundToInt() else 0
+        val perMonthLabel = if (months(plan) > 1) "≈ ${rupiah((pm / 100).roundToLong() * 100)}/bln" else null
+        Triple(plan, savings, perMonthLabel)
+    }
+    val bestSavings = withSavings.maxOf { it.second }
+    return withSavings.map { (plan, savings, perMonthLabel) ->
+        PlanView(
+            plan = plan,
+            perMonthLabel = perMonthLabel,
+            savingsPercent = savings,
+            best = savings > 0 && savings == bestSavings,
+        )
+    }
+}

@@ -35,7 +35,7 @@ object SkipResolver {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    private val client = OkHttpClient.Builder()
+    private val client = TnHttp.client.newBuilder()
         .connectTimeout(8, TimeUnit.SECONDS)
         .readTimeout(8, TimeUnit.SECONDS)
         .build()

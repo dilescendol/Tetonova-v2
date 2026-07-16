@@ -28,6 +28,7 @@ data class RegistryExtension(
     val upstreamUrl: String? = null,
     val apiBaseUrl: String? = null,
     val webBaseUrl: String? = null,
+    val accessCode: String? = null,
     val category: String = "",
 ) {
     val isCompat: Boolean get() = id.endsWith("-compat")

@@ -1,0 +1,31 @@
+{
+  "id": "cubetv-compat",
+  "name": "CubeTV",
+  "version": "1.0.0",
+  "contentTypes": [
+    "SERIES"
+  ],
+  "capabilities": [
+    "HOME",
+    "SEARCH",
+    "DETAIL",
+    "PLAYBACK",
+    "SUBTITLES"
+  ],
+  "entry": "compat/cubetv/catalog.json",
+  "upstreamUrl": "https://cubetv.goodbos.online",
+  "apiBaseUrl": "https://cubetv.goodbos.online",
+  "webBaseUrl": "https://cubetv.goodbos.online",
+  "healthProbeUrl": "https://cubetv.goodbos.online/api.html",
+  "accessCode": "A49C5D6FED6BD029B18F525D8A8B0F5E",
+  "category": "Short Series",
+  "homeLinks": {
+    "showAll": [
+      { "label": "Rekomendasi Populer", "url": "https://cubetv.goodbos.online/api/module?lang=id&moduleid=PaEpZ7&page=1" }
+    ],
+    "showOnClick": [
+      { "label": "Drama Pilihan", "url": "https://cubetv.goodbos.online/api/module?lang=id&moduleid=9vb8aR&page=1" },
+      { "label": "Rekomendasi Populer", "url": "https://cubetv.goodbos.online/api/module?lang=id&moduleid=PaEpZ7&page=1" }
+    ]
+  }
+}

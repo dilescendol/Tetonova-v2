@@ -5,6 +5,19 @@
   cover loading work for those hosts. The app talks only to public content sites, no app secrets.
 -->
 <network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">netshort.com</domain>
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="@raw/netshort_alibaba_gcc_r3" />
+        </trust-anchors>
+    </domain-config>
+    <!-- Control panel carries the Firebase ID token (Bearer) + telemetry token: force TLS so a
+         downgrade/MITM can never see them in cleartext. Content hosts keep cleartext via base-config. -->
+    <domain-config cleartextTrafficPermitted="false">
+        <domain includeSubdomains="true">tetonova.biz.id</domain>
+        <domain includeSubdomains="true">tetonova.dilcendol.web.id</domain>
+    </domain-config>
     <base-config cleartextTrafficPermitted="true">
         <trust-anchors>
             <certificates src="system" />

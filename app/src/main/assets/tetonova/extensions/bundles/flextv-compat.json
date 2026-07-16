@@ -13,9 +13,23 @@
     "SUBTITLES"
   ],
   "entry": "compat/flextv/catalog.json",
-  "upstreamUrl": "https://drakula.dramabos.my.id/flextv",
-  "apiBaseUrl": "https://drakula.dramabos.my.id/flextv/api/v1",
-  "webBaseUrl": "https://drakula.dramabos.my.id/flextv",
-  "healthProbeUrl": "https://drakula.dramabos.my.id/flextv-api.html",
-  "category": "Dracin/Drakor"
+  "upstreamUrl": "https://flextv.goodbos.online",
+  "apiBaseUrl": "https://flextv.goodbos.online",
+  "webBaseUrl": "https://flextv.goodbos.online",
+  "healthProbeUrl": "https://flextv.goodbos.online/api/drama/tabs?lang=id",
+  "accessCode": "A49C5D6FED6BD029B18F525D8A8B0F5E",
+  "category": "Short Series",
+  "homeLinks": {
+    "showAll": [
+      { "label": "Baru", "url": "https://flextv.goodbos.online/api/drama/list?classify_id=18&lang=id" }
+    ],
+    "showOnClick": [
+      { "label": "Baru", "url": "https://flextv.goodbos.online/api/drama/list?classify_id=18&lang=id" },
+      { "label": "Semua Episode", "url": "https://flextv.goodbos.online/api/drama/list?classify_id=18&lang=id&template=4" },
+      { "label": "Pilihan Editor", "url": "https://flextv.goodbos.online/api/drama/list?classify_id=17&lang=id&floor=Pilihan%20Editor" },
+      { "label": "Populer", "url": "https://flextv.goodbos.online/api/drama/list?classify_id=17&lang=id&floor=Populer" },
+      { "label": "Pria", "url": "https://flextv.goodbos.online/api/drama/list?classify_id=20&lang=id" },
+      { "label": "Wanita", "url": "https://flextv.goodbos.online/api/drama/list?classify_id=21&lang=id" }
+    ]
+  }
 }

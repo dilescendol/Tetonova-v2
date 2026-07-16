@@ -1,6 +1,7 @@
 package com.tetonova.app.data
 
 import com.tetonova.app.BuildConfig
+import com.tetonova.app.Secrets
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -21,13 +22,13 @@ import java.util.concurrent.TimeUnit
  */
 object ReportApi {
 
-    private val client = OkHttpClient.Builder()
+    private val client = TnHttp.client.newBuilder()
         .connectTimeout(8, TimeUnit.SECONDS)
         .readTimeout(8, TimeUnit.SECONDS)
         .build()
 
     suspend fun submit(message: String, contact: String): Result<Unit> = withContext(Dispatchers.IO) {
-        val base = BuildConfig.TETONOVA_CONTROL_PANEL_URL.trim().trimEnd('/')
+        val base = Secrets.controlPanelUrl.trim().trimEnd('/')
         val token = TnData.telemetryToken
         if (base.isEmpty() || token.isBlank()) {
             return@withContext Result.failure(IllegalStateException("report endpoint not configured"))
