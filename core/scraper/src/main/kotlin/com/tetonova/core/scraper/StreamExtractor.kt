@@ -5,6 +5,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
+import okhttp3.FormBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
@@ -35,18 +36,62 @@ object StreamExtractor {
     /** Hosts to hide from the picker — file-lockers / gated pages that won't yield a video stream
      *  even via the WebView sniffer. Everything else is shown and resolved by static extractor →
      *  WebView sniffer → WebView embed. */
-    private val DEAD = listOf("terabox", "streamwish", "wishfast", "mega.nz", "krakenfiles", "drive.google", "racaty")
+    private val DEAD = listOf(
+        "terabox", "streamwish", "wishfast", "mega.nz", "krakenfiles", "drive.google", "racaty",
+        // File-lockers that Samehadaku and other sites commonly use (but Mega works via WebView)
+        "streamsb", "ssbstream", "sbplay", "streamtape", "uqload",
+        "filerio", "fastclick", "子上" // Japanese ad redirects
+    )
 
     fun isPlayable(embedUrl: String): Boolean {
         val u = embedUrl.lowercase()
         return DEAD.none { it in u }
     }
 
+    /** Friendly label from an embed URL (for fallback naming when server name is blank). */
+    fun playableHostLabel(url: String): String {
+        val h = url.lowercase()
+        return when {
+            "ok.ru" in h || "odnoklassniki" in h -> "OK.ru"
+            "dailymotion" in h -> "Dailymotion"
+            "rumble" in h -> "Rumble"
+            "videoplayer.vip" in h -> "Player VIP"
+            "dood" in h || "playmogo" in h || "myvidplay" in h -> "DoodStream"
+            "blogger.com" in h || "blogspot.com" in h -> "Blogger"
+            "4meplayer" in h -> "4MePlayer"
+            "playeriframe.sbs" in h -> "PlayerIframe"
+            "filedon" in h -> "Filedon"
+            "pixeldrain" in h -> "PixelDrain"
+            "desustream" in h -> "Desustream"
+            "kotakanime" in h -> "KotaAnime"
+            "kuramanime" in h || "kuramadrive" in h -> "Kuramanime"
+            "anixcafe" in h -> "AnixCafe"
+            "oploverz" in h -> "Oploverz"
+            "otakudesu" in h -> "Otakudesu"
+            else -> runCatching {
+                java.net.URI(url).host.orEmpty().removePrefix("www.").split(".").firstOrNull()?.replaceFirstChar { it.uppercase() } ?: "Embed"
+            }.getOrDefault("Embed")
+        }
+    }
+
     /** True when the URL is itself a directly-playable stream (path ends in a media extension before
      *  any query) rather than an embed host page — e.g. kuramadrive's signed .mp4. */
     private fun isDirectVideo(url: String): Boolean {
-        val path = url.substringBefore('?').substringBefore('#').lowercase()
-        return path.endsWith(".mp4") || path.endsWith(".m3u8") || path.endsWith(".mkv")
+        val low = url.lowercase()
+        val path = low.substringBefore('?').substringBefore('#')
+        return path.endsWith(".mp4") ||
+            path.endsWith(".m3u8") ||
+            path.endsWith(".mkv") ||
+            "awscdn.netshort.com" in low ||
+            "mime_type=video_mp4" in low ||
+            ("bilitv.goodbos.online/api/proxy" in low && ".m3u8" in low) ||
+            ("goodshort.goodbos.online" in low && "/hls/" in path) ||
+            ("cdn.dramabos.video/api/" in low && "/hls" in path) ||
+            "videotv.vividshort.com" in low ||
+            "videotv.dramaexpo.com" in low ||
+            "montagehub.xyz" in low ||
+            "janzhoutec.com" in low ||
+            ("kesbayar.sbs" in low && Regex("\\.\\d{3,4}p$").containsMatchIn(path))
     }
 
     /** DoodStream family domains (anixcafe ships it as "playmogo.com"; kuramanime as "myvidplay.com"). */
@@ -60,9 +105,17 @@ object StreamExtractor {
     /** Resolve a single embed-host iframe URL into direct stream variants + the headers its CDN needs. */
     private suspend fun extractEmbed(embedUrl: String, referer: String): ExtractResult = runCatching {
         val u = embedUrl
-        when {
+        System.out.println("[StreamExtractor] extractEmbed: $u")
+        val result = when {
             // Already a direct, playable stream (kuramadrive's per-resolution .mp4) — pass it through.
-            isDirectVideo(u) -> ExtractResult(listOf(StreamVariant("Auto", u)))
+            isDirectVideo(u) -> {
+                // Wibufile serves .mp4 but needs the wibufile.com referer to play
+                if ("wibufile.com" in u) {
+                    ExtractResult(listOf(StreamVariant("Auto", u)), mapOf("Referer" to "https://www.wibufile.com/"))
+                } else {
+                    ExtractResult(listOf(StreamVariant("Auto", u)))
+                }
+            }
             "kotakanimeid.link/video-embed" in u -> kotakanime(u, referer)
             "ok.ru" in u || "odnoklassniki" in u -> ExtractResult(okru(u), originHeaders(u))
             // Dailymotion verifies the embedder: fetch metadata AS the real embedder (anixcafe) to get a
@@ -74,10 +127,22 @@ object StreamExtractor {
             "rumble.com" in u -> ExtractResult(rumble(u), originHeaders(u))
             isDoodHost(u) -> dood(u)
             "filedon" in u -> ExtractResult(filedon(u, referer)) // presigned R2 URL → no headers
+            "mega.nz" in u -> ExtractResult(emptyList()) // Mega embed works via WebView (token-gated)
             "pixeldrain.com" in u -> ExtractResult(listOf(StreamVariant("Auto", pixeldrainDirect(u)))) // range-served file → no headers
             "desustream" in u -> desustream(u, referer) // googlevideo plays raw → no headers
+            "hownetwork.xyz" in u -> hownetwork(u, referer)
+            // Wibufile API embed (api.wibufile.com/embed/<uuid>): a JWPlayer whose inline `"file":"…mp4"`
+            // is the SAME s0.wibufile.com .mp4 the "720p/1080p" direct rows expose — crack it so the
+            // "480p" server plays in ExoPlayer instead of taking a WebView hop. Needs the wibufile referer.
+            "wibufile.com" in u -> wibufile(u, referer)
+            // Samehadaku common hosts: blogger (Google WIZ), 4meplayer (JWPlayer), videoplayer.vip (JWPlayer)
+            "blogger.com" in u || "blogspot.com" in u -> ExtractResult(emptyList()) // Blogger WIZ is JS-only, no static stream → WebView
+            "4meplayer" in u -> ExtractResult(emptyList()) // JWPlayer with betting ads → WebView with controls
+            "videoplayer.vip" in u -> ExtractResult(emptyList()) // JWPlayer → WebPlayerStage (already handled in PlayerScreen)
             else -> generic(u, referer).let { ExtractResult(it, if (it.isEmpty()) emptyMap() else originHeaders(u)) }
         }
+        System.out.println("[StreamExtractor] extractEmbed result: ${result.variants.size} variants")
+        result
     }.getOrElse { ExtractResult(emptyList()) }
 
     /**
@@ -101,6 +166,27 @@ object StreamExtractor {
     private fun originHeaders(embedUrl: String): Map<String, String> {
         val origin = runCatching { java.net.URI(embedUrl).let { "${it.scheme}://${it.host}" } }.getOrNull() ?: return emptyMap()
         return mapOf("Referer" to "$origin/", "Origin" to origin)
+    }
+
+    private suspend fun hownetwork(embedUrl: String, referer: String): ExtractResult = withContext(Dispatchers.IO) {
+        val id = Regex("[?&]id=([^&#]+)").find(embedUrl)?.groupValues?.get(1) ?: return@withContext ExtractResult(emptyList())
+        val origin = "https://cloud.hownetwork.xyz"
+        val body = FormBody.Builder()
+            .add("r", referer.ifBlank { "https://playeriframe.sbs/" })
+            .add("d", "cloud.hownetwork.xyz")
+            .build()
+        val req = Request.Builder()
+            .url("$origin/api2.php?id=${java.net.URLEncoder.encode(id, "UTF-8")}")
+            .header("User-Agent", UA)
+            .header("Referer", embedUrl)
+            .post(body)
+            .build()
+        val json = runCatching { http.newCall(req).execute().use { it.body?.string() } }.getOrNull()
+            ?: return@withContext ExtractResult(emptyList())
+        val file = runCatching { JSONObject(json).optString("file") }.getOrNull()
+            ?.takeIf { it.startsWith("http") }
+            ?: return@withContext ExtractResult(emptyList())
+        ExtractResult(listOf(StreamVariant("Auto", file)), mapOf("Referer" to "$origin/", "Origin" to origin))
     }
 
     private suspend fun fetch(url: String, referer: String? = null): String? = withContext(Dispatchers.IO) {
@@ -211,16 +297,42 @@ object StreamExtractor {
         return "https://pixeldrain.com/api/file/$id"
     }
 
-    // ---- filedon.co: a presigned Cloudflare-R2 .mp4 in a JSON `"url":"…"` field. Entity-escaped
-    //      (&quot;) and with \/-escaped slashes; the presigned query self-authenticates so no headers. ----
+    // ---- filedon.co: historically a presigned Cloudflare-R2 .mp4/.mkv in a JSON `"url":"…"` field
+    //      (still used by oploverz — entity-escaped `&quot;`, `\/`-escaped, self-authenticating query).
+    //      Newer files (samehadaku) are a Laravel SPA that streams `media/<slug>/hls.m3u8` instead; that
+    //      route only exists once the server-side transcode is done (`hls_status` flips from "pending"),
+    //      so we probe it and only return it when it's actually live — otherwise empty → WebView. ----
     private suspend fun filedon(embedUrl: String, referer: String): List<StreamVariant> {
         val html = fetch(embedUrl, referer.ifBlank { embedUrl }) ?: LiveClient.getHtml(embedUrl) ?: return emptyList()
         val text = org.jsoup.parser.Parser.unescapeEntities(html, false)
         // Filedon serves the file in its native container — often `.mkv` (e.g. oploverz 1080p), not just
         // `.mp4`. Media3 plays Matroska/WebM directly, so accept those too instead of dropping to the
         // ad-laden Filedon web player.
-        val direct = Regex(""""(https?:[^"]+?\.(?:mp4|mkv|webm)[^"]*)"""").find(text)?.groupValues?.get(1) ?: return emptyList()
-        return listOf(StreamVariant("Auto", direct.replace("\\/", "/")))
+        Regex(""""(https?:[^"]+?\.(?:mp4|mkv|webm)[^"]*)"""").find(text)?.groupValues?.get(1)?.let {
+            return listOf(StreamVariant("Auto", it.replace("\\/", "/")))
+        }
+        // No inline direct file → try the HLS master for this embed slug, but only if it's transcoded.
+        val slug = Regex("filedon\\.co/embed/([^/?#]+)").find(embedUrl)?.groupValues?.get(1) ?: return emptyList()
+        val hls = "https://filedon.co/media/$slug/hls.m3u8"
+        val ok = withContext(Dispatchers.IO) {
+            runCatching {
+                http.newCall(Request.Builder().url(hls).header("User-Agent", UA).header("Referer", "https://filedon.co/").build())
+                    .execute().use { it.isSuccessful && (it.header("Content-Type")?.contains("mpegurl", true) == true || it.code == 200) }
+            }.getOrDefault(false)
+        }
+        return if (ok) listOf(StreamVariant("Auto", hls)) else emptyList()
+    }
+
+    // ---- api.wibufile.com/embed/<uuid>: a JWPlayer whose inline `"file":"https://s0.wibufile.com/…mp4"`
+    //      is a direct progressive .mp4 (the exact file the "720p/1080p" rows link straight to). Media3
+    //      streams it with the wibufile.com Referer; without the extractor this fell back to a WebView. ----
+    private suspend fun wibufile(embedUrl: String, referer: String): ExtractResult {
+        val html = fetch(embedUrl, referer.ifBlank { embedUrl }) ?: LiveClient.getHtml(embedUrl)
+            ?: return ExtractResult(emptyList())
+        val text = org.jsoup.parser.Parser.unescapeEntities(html, false)
+        val file = Regex(""""file"\s*:\s*"([^"]+?\.(?:mp4|m3u8)[^"]*)"""").find(text)?.groupValues?.get(1)?.replace("\\/", "/")
+            ?: return ExtractResult(emptyList()) // no inline file → WebPlayerStage handles it with referer
+        return ExtractResult(listOf(StreamVariant("Auto", file)), mapOf("Referer" to "https://www.wibufile.com/"))
     }
 
     // ---- desustream.info: otakudesu's own player. The `ondesu/new/hd` player serves a direct
@@ -268,9 +380,16 @@ object StreamExtractor {
 
     private fun findStream(html: String): String? {
         val text = (unpack(html) ?: "") + "\n" + html
-        Regex("https?://[^\"'\\\\\\s]+\\.m3u8[^\"'\\\\\\s]*").find(text)?.let { return it.value }
+        System.out.println("[StreamExtractor] findStream: looking in ${text.length} chars")
+        Regex("https?://[^\"'\\\\\\s]+\\.m3u8[^\"'\\\\\\s]*").find(text)?.let {
+            System.out.println("[StreamExtractor] Found m3u8: ${it.value.take(80)}")
+            return it.value
+        }
         Regex("file\\s*:\\s*\"([^\"]+)\"").find(text)?.groupValues?.get(1)
-            ?.takeIf { it.contains(".m3u8") || it.contains(".mp4") }?.let { return it }
+            ?.takeIf { it.contains(".m3u8") || it.contains(".mp4") }?.let {
+                System.out.println("[StreamExtractor] Found file: $it")
+                return it
+            }
         return null
     }
 

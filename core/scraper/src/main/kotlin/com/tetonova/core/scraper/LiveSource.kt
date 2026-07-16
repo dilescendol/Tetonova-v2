@@ -1,6 +1,7 @@
 package com.tetonova.core.scraper
 
 import org.jsoup.Jsoup
+import java.net.URI
 import java.net.URLEncoder
 
 /**
@@ -23,7 +24,11 @@ object LiveSource {
             DramaWaveSource.isDramaWave(url) || DramaBiteSource.isDramaBite(url) ||
             MeloloSource.isMelolo(url) || FlickReelsSource.isFlickReels(url) ||
             GoodShortSource.isGoodShort(url) || FunDramaSource.isFunDrama(url) ||
-            IDramaSource.isIDrama(url)
+            MicroDramaSource.isMicroDrama(url) || NetShortSource.isNetShort(url) ||
+            ReelifeSource.isReelife(url) || IDramaSource.isIDrama(url) ||
+            ShortMaxSource.isShortMax(url) || StardustTvSource.isStardustTv(url) ||
+            VeloloSource.isVelolo(url) || HappyShortSource.isHappyShort(url) ||
+            DramaNovaSource.isDramaNova(url) || CubeTvSource.isCubeTv(url)
 
     /** True when [baseUrl] has a dedicated `search()` endpoint (JSON API) — i.e. any host that
      *  [search] dispatches to *before* the generic WordPress `/?s=` fallback. Such sources search
@@ -37,7 +42,11 @@ object LiveSource {
             FlexTvSource.isFlexTv(b) || ReelShortSource.isReelShort(b) ||
             MeloloSource.isMelolo(b) || FlickReelsSource.isFlickReels(b) ||
             GoodShortSource.isGoodShort(b) || FunDramaSource.isFunDrama(b) ||
-            IDramaSource.isIDrama(b) ||
+            MicroDramaSource.isMicroDrama(b) || NetShortSource.isNetShort(b) ||
+            ReelifeSource.isReelife(b) || IDramaSource.isIDrama(b) ||
+            ShortMaxSource.isShortMax(b) || StardustTvSource.isStardustTv(b) ||
+            VeloloSource.isVelolo(b) || HappyShortSource.isHappyShort(b) ||
+            DramaNovaSource.isDramaNova(b) || CubeTvSource.isCubeTv(b) ||
             OploverzSource.isOploverz(b)
     }
 
@@ -48,7 +57,16 @@ object LiveSource {
         if (DramaBiteSource.isDramaBite(url)) return runCatching { DramaBiteSource.list(url) }.getOrDefault(emptyList())
         if (GoodShortSource.isGoodShort(url)) return runCatching { GoodShortSource.list(url) }.getOrDefault(emptyList())
         if (FunDramaSource.isFunDrama(url)) return runCatching { FunDramaSource.list(url) }.getOrDefault(emptyList())
+        if (MicroDramaSource.isMicroDrama(url)) return runCatching { MicroDramaSource.list(url) }.getOrDefault(emptyList())
+        if (NetShortSource.isNetShort(url)) return runCatching { NetShortSource.list(url) }.getOrDefault(emptyList())
+        if (ReelifeSource.isReelife(url)) return runCatching { ReelifeSource.list(url) }.getOrDefault(emptyList())
         if (IDramaSource.isIDrama(url)) return runCatching { IDramaSource.list(url) }.getOrDefault(emptyList())
+        if (ShortMaxSource.isShortMax(url)) return runCatching { ShortMaxSource.list(url) }.getOrDefault(emptyList())
+        if (StardustTvSource.isStardustTv(url)) return runCatching { StardustTvSource.list(url) }.getOrDefault(emptyList())
+        if (VeloloSource.isVelolo(url)) return runCatching { VeloloSource.list(url) }.getOrDefault(emptyList())
+        if (HappyShortSource.isHappyShort(url)) return runCatching { HappyShortSource.list(url) }.getOrDefault(emptyList())
+        if (DramaNovaSource.isDramaNova(url)) return runCatching { DramaNovaSource.list(url) }.getOrDefault(emptyList())
+        if (CubeTvSource.isCubeTv(url)) return runCatching { CubeTvSource.list(url) }.getOrDefault(emptyList())
         if (BiliTvSource.isBiliTv(url)) return runCatching { BiliTvSource.list(url) }.getOrDefault(emptyList())
         if (DotDramaSource.isDotDrama(url)) return runCatching { DotDramaSource.list(url) }.getOrDefault(emptyList())
         if (DramaBoxSource.isDramaBox(url)) return runCatching { DramaBoxSource.list(url) }.getOrDefault(emptyList())
@@ -69,7 +87,16 @@ object LiveSource {
         if (DramaBiteSource.isDramaBite(url)) return runCatching { DramaBiteSource.listPage(url) }.getOrDefault(LivePage(emptyList()))
         if (GoodShortSource.isGoodShort(url)) return runCatching { GoodShortSource.listPage(url) }.getOrDefault(LivePage(emptyList()))
         if (FunDramaSource.isFunDrama(url)) return runCatching { FunDramaSource.listPage(url) }.getOrDefault(LivePage(emptyList()))
+        if (MicroDramaSource.isMicroDrama(url)) return runCatching { MicroDramaSource.listPage(url) }.getOrDefault(LivePage(emptyList()))
+        if (NetShortSource.isNetShort(url)) return runCatching { NetShortSource.listPage(url) }.getOrDefault(LivePage(emptyList()))
+        if (ReelifeSource.isReelife(url)) return runCatching { ReelifeSource.listPage(url) }.getOrDefault(LivePage(emptyList()))
         if (IDramaSource.isIDrama(url)) return runCatching { IDramaSource.listPage(url) }.getOrDefault(LivePage(emptyList()))
+        if (ShortMaxSource.isShortMax(url)) return runCatching { ShortMaxSource.listPage(url) }.getOrDefault(LivePage(emptyList()))
+        if (StardustTvSource.isStardustTv(url)) return runCatching { StardustTvSource.listPage(url) }.getOrDefault(LivePage(emptyList()))
+        if (VeloloSource.isVelolo(url)) return runCatching { VeloloSource.listPage(url) }.getOrDefault(LivePage(emptyList()))
+        if (HappyShortSource.isHappyShort(url)) return runCatching { HappyShortSource.listPage(url) }.getOrDefault(LivePage(emptyList()))
+        if (DramaNovaSource.isDramaNova(url)) return runCatching { DramaNovaSource.listPage(url) }.getOrDefault(LivePage(emptyList()))
+        if (CubeTvSource.isCubeTv(url)) return runCatching { CubeTvSource.listPage(url) }.getOrDefault(LivePage(emptyList()))
         if (BiliTvSource.isBiliTv(url)) return runCatching { BiliTvSource.listPage(url) }.getOrDefault(LivePage(emptyList()))
         if (DotDramaSource.isDotDrama(url)) return runCatching { DotDramaSource.listPage(url) }.getOrDefault(LivePage(emptyList()))
         if (DramaBoxSource.isDramaBox(url)) return runCatching { DramaBoxSource.listPage(url) }.getOrDefault(LivePage(emptyList()))
@@ -94,7 +121,16 @@ object LiveSource {
         if (DramaBiteSource.isDramaBite(url)) return runCatching { DramaBiteSource.servers(url) }.getOrDefault(emptyList())
         if (GoodShortSource.isGoodShort(url)) return runCatching { GoodShortSource.servers(url) }.getOrDefault(emptyList())
         if (FunDramaSource.isFunDrama(url)) return runCatching { FunDramaSource.servers(url) }.getOrDefault(emptyList())
+        if (MicroDramaSource.isMicroDrama(url)) return runCatching { MicroDramaSource.servers(url) }.getOrDefault(emptyList())
+        if (NetShortSource.isNetShort(url)) return runCatching { NetShortSource.servers(url) }.getOrDefault(emptyList())
+        if (ReelifeSource.isReelife(url)) return runCatching { ReelifeSource.servers(url) }.getOrDefault(emptyList())
         if (IDramaSource.isIDrama(url)) return runCatching { IDramaSource.servers(url) }.getOrDefault(emptyList())
+        if (ShortMaxSource.isShortMax(url)) return runCatching { ShortMaxSource.servers(url) }.getOrDefault(emptyList())
+        if (StardustTvSource.isStardustTv(url)) return runCatching { StardustTvSource.servers(url) }.getOrDefault(emptyList())
+        if (VeloloSource.isVelolo(url)) return runCatching { VeloloSource.servers(url) }.getOrDefault(emptyList())
+        if (HappyShortSource.isHappyShort(url)) return runCatching { HappyShortSource.servers(url) }.getOrDefault(emptyList())
+        if (DramaNovaSource.isDramaNova(url)) return runCatching { DramaNovaSource.servers(url) }.getOrDefault(emptyList())
+        if (CubeTvSource.isCubeTv(url)) return runCatching { CubeTvSource.servers(url) }.getOrDefault(emptyList())
         if (BiliTvSource.isBiliTv(url)) return runCatching { BiliTvSource.servers(url) }.getOrDefault(emptyList())
         if (DotDramaSource.isDotDrama(url)) return runCatching { DotDramaSource.servers(url) }.getOrDefault(emptyList())
         if (DramaBoxSource.isDramaBox(url)) return runCatching { DramaBoxSource.servers(url) }.getOrDefault(emptyList())
@@ -116,6 +152,9 @@ object LiveSource {
             return if (h != null) KuramanimeSource.servers(h) else emptyList()
         }
         val html = LiveClient.getHtml(url) ?: return emptyList()
+        if (LayarKaca21Source.isLayarKaca21(url)) {
+            LayarKaca21Source.servers(html, url).let { if (it.isNotEmpty()) return it }
+        }
         // Otakudesu hides its mirrors behind admin-ajax and groups them by resolution — resolve them
         // into host→[reso] servers. Falls through to the generic parser (which still finds the default
         // #pembed iframe) when otakudesu's AJAX flow yields nothing.
@@ -128,23 +167,32 @@ object LiveSource {
         if (NontonAnimeIDSource.isNontonAnimeID(html)) {
             NontonAnimeIDSource.servers(html, url).let { if (it.isNotEmpty()) return it }
         }
+        // PusatFilm (muvipro) embeds a single kotakajaib.me/embed hub whose `button.server-item[data-frame]`
+        // list holds the real per-host embeds (Base64). Expand it into the full server picker; falls
+        // through to the generic parser (which still finds the bare kotakajaib iframe) when it yields nothing.
+        if (PusatFilmSource.isPusatFilm(html)) {
+            PusatFilmSource.servers(html, url).let { if (it.isNotEmpty()) return it }
+        }
         // Samehadaku: check if this is an index page and derive the watch URL
         if (url.contains("samehadaku", ignoreCase = true)) {
-            if (url.contains("-index", ignoreCase = true) || (url.contains("/anime/") && !url.contains("-episode-") && !url.contains("-movie-"))) {
-                System.out.println("[LiveSource.servers] Samehadaku index page detected: $url")
-                val watchUrl = SamehadakuSource.deriveWatchUrl(url)
-                if (watchUrl != null) {
-                    System.out.println("[LiveSource.servers] Fetching derived watch URL: $watchUrl")
-                    val watchHtml = LiveClient.getHtml(watchUrl)
-                    if (watchHtml != null) {
-                        System.out.println("[LiveSource.servers] Watch HTML length: ${watchHtml.length}")
-                        if (SamehadakuSource.isSamehadaku(watchHtml, watchUrl)) {
-                            System.out.println("[LiveSource.servers] Watch page confirmed as Samehadaku, extracting servers...")
-                            val servers = SamehadakuSource.servers(watchHtml, watchUrl)
-                            if (servers.isNotEmpty()) {
-                                System.out.println("[LiveSource.servers] Found ${servers.size} servers from derived watch URL")
-                                return servers
-                            }
+            // A `/anime/{slug}/` URL is ALWAYS a detail page (series OR movie) — its player options live on
+            // a root-level watch page linked from its episode list, never inline here. The watch slug is
+            // NOT the detail slug for movies (…/the-movie-4/ → /…-youre-next/), and a slug containing
+            // "movie"/"episode" (e.g. "…-movie-2-…") used to fool the old suffix heuristic into scraping the
+            // detail page directly (0 servers). So route every `/anime/` URL through the episode-list links.
+            if (url.contains("/anime/")) {
+                System.out.println("[LiveSource.servers] Samehadaku detail page detected: $url")
+                val candidates = SamehadakuSource.episodeWatchLinks(html).ifEmpty {
+                    SamehadakuSource.deriveWatchUrl(url)?.let { listOf(it) } ?: emptyList()
+                }
+                System.out.println("[LiveSource.servers] Watch link candidates: $candidates")
+                for (watchUrl in candidates) {
+                    val watchHtml = LiveClient.getHtml(watchUrl) ?: continue
+                    if (SamehadakuSource.isSamehadaku(watchHtml, watchUrl)) {
+                        val servers = SamehadakuSource.servers(watchHtml, watchUrl)
+                        if (servers.isNotEmpty()) {
+                            System.out.println("[LiveSource.servers] Found ${servers.size} servers from watch URL: $watchUrl")
+                            return servers
                         }
                     }
                 }
@@ -153,8 +201,24 @@ object LiveSource {
                 SamehadakuSource.servers(html, url).let { if (it.isNotEmpty()) return it }
             }
         }
+        // Anoboy groups players per server (Btube/YUp/KrakenFiles/…) with resolution buttons; parse them
+        // into the Source→Resolusi picker model instead of the flat generic list.
+        if (isAnoboy(url)) {
+            LiveParser.parseAnoboyServers(html, url).let { if (it.isNotEmpty()) return it }
+        }
         System.out.println("[LiveSource.servers] Falling through to LiveParser.parseServers")
-        return LiveParser.parseServers(html)
+        return LiveParser.parseServers(html).let { servers ->
+            if (isAnimeXin(url)) servers.animeXinIndoOnly() else servers
+        }
+    }
+
+    private fun isAnimeXin(url: String): Boolean =
+        runCatching { URI(url).host.orEmpty().lowercase().contains("animexin") }
+            .getOrDefault(false) || "animexin" in url.lowercase()
+
+    private fun List<VideoServer>.animeXinIndoOnly(): List<VideoServer> {
+        val filtered = filter { it.name.contains("indo", ignoreCase = true) }
+        return filtered.ifEmpty { this }
     }
 
     suspend fun detail(url: String): LiveDetail? {
@@ -164,7 +228,16 @@ object LiveSource {
         if (DramaBiteSource.isDramaBite(url)) return runCatching { DramaBiteSource.detail(url) }.getOrNull()
         if (GoodShortSource.isGoodShort(url)) return runCatching { GoodShortSource.detail(url) }.getOrNull()
         if (FunDramaSource.isFunDrama(url)) return runCatching { FunDramaSource.detail(url) }.getOrNull()
+        if (MicroDramaSource.isMicroDrama(url)) return runCatching { MicroDramaSource.detail(url) }.getOrNull()
+        if (NetShortSource.isNetShort(url)) return runCatching { NetShortSource.detail(url) }.getOrNull()
+        if (ReelifeSource.isReelife(url)) return runCatching { ReelifeSource.detail(url) }.getOrNull()
         if (IDramaSource.isIDrama(url)) return runCatching { IDramaSource.detail(url) }.getOrNull()
+        if (ShortMaxSource.isShortMax(url)) return runCatching { ShortMaxSource.detail(url) }.getOrNull()
+        if (StardustTvSource.isStardustTv(url)) return runCatching { StardustTvSource.detail(url) }.getOrNull()
+        if (VeloloSource.isVelolo(url)) return runCatching { VeloloSource.detail(url) }.getOrNull()
+        if (HappyShortSource.isHappyShort(url)) return runCatching { HappyShortSource.detail(url) }.getOrNull()
+        if (DramaNovaSource.isDramaNova(url)) return runCatching { DramaNovaSource.detail(url) }.getOrNull()
+        if (CubeTvSource.isCubeTv(url)) return runCatching { CubeTvSource.detail(url) }.getOrNull()
         if (BiliTvSource.isBiliTv(url)) return runCatching { BiliTvSource.detail(url) }.getOrNull()
         if (DotDramaSource.isDotDrama(url)) return runCatching { DotDramaSource.detail(url) }.getOrNull()
         if (DramaBoxSource.isDramaBox(url)) return runCatching { DramaBoxSource.detail(url) }.getOrNull()
@@ -194,6 +267,9 @@ object LiveSource {
         }
 
         val html = LiveClient.getHtml(url) ?: return null
+        if (LayarKaca21Source.isLayarKaca21(url)) {
+            return LayarKaca21Source.detail(html, url).takeIf(usable)
+        }
         val d = parsePaged(url, html)
         // Old Anoboy title hubs expose separate [Download] and [Streaming] cards. Follow the
         // streaming post before returning the hub/download parse, otherwise Detail shows 1 episode.
@@ -205,11 +281,14 @@ object LiveSource {
                 }
             }
         }
-        // Cards on episode-based sites (AnimeSail/Anoboy) land on an episode page that lacks the
-        // series synopsis + full episode list — follow the breadcrumb to the series page for those.
+        // Cards on episode-based sites (AnimeSail/Anoboy) land on an episode page whose synopsis + full
+        // episode list live on the series page — follow the breadcrumb there. Gate it on being an ACTUAL
+        // episode page (or a genuinely empty parse): a normal series/movie page also has a breadcrumb,
+        // but its top crumb is a genre/category ("Action", "Anime-Movie") — following that overwrites the
+        // real title + episode with junk (the reason a movie showed a phantom E2 and titles read "Action").
         val series = d.seriesUrl
-        val needsSeries = d.synopsis.isNullOrBlank() ||
-            d.episodes.isEmpty() ||
+        val onEpisodePage = Regex("-episode-\\d+|/episode/\\d+", RegexOption.IGNORE_CASE).containsMatchIn(url)
+        val needsSeries = onEpisodePage || d.synopsis.isNullOrBlank() || d.episodes.isEmpty() ||
             (isNekopoi(url) && !url.contains("/hentai/", ignoreCase = true) && d.episodes.size <= 1)
         if (series != null && series != url && needsSeries) {
             LiveClient.getHtml(series)?.let { sHtml ->
@@ -220,11 +299,48 @@ object LiveSource {
                     // union the current page's episode(s) in (series URLs win on overlap) instead of
                     // replacing, so the latest episode never disappears after hydration.
                     val merged = (sd.episodes + d.episodes).distinctBy { it.num }.sortedBy { it.num }
-                    return if (merged.size > sd.episodes.size) sd.copy(episodes = merged) else sd
+                    val hydrated = if (merged.size > sd.episodes.size) sd.copy(episodes = merged) else sd
+                    return hydrateNekopoiSearchEpisodes(hydrated)
                 }
             }
         }
-        return d.takeIf(usable)
+        return hydrateNekopoiSearchEpisodes(d).takeIf(usable)
+    }
+
+    private suspend fun hydrateNekopoiSearchEpisodes(detail: LiveDetail): LiveDetail {
+        if (!isNekopoi(detail.url) || detail.episodes.size > 1) return detail
+        val slug = nekopoiSeriesSlug(detail.url) ?: return detail
+        val base = runCatching { URI(detail.url).let { "${it.scheme}://${it.host}" } }.getOrNull() ?: return detail
+        val query = detail.title.ifBlank { slug.replace('-', ' ') }
+        val searchUrl = "$base/search/${URLEncoder.encode(query, "UTF-8")}"
+        val html = LiveClient.getHtml(searchUrl) ?: return detail
+        val eps = Jsoup.parse(html, searchUrl).select("a[href*=-episode-]").mapNotNull { a ->
+            val epUrl = a.absUrl("href").ifBlank { return@mapNotNull null }
+            val epSlug = nekopoiSeriesSlug(epUrl) ?: return@mapNotNull null
+            if (epSlug != slug) return@mapNotNull null
+            val n = Regex("-episode-(\\d+)", RegexOption.IGNORE_CASE)
+                .find(epUrl)?.groupValues?.get(1)?.toIntOrNull() ?: return@mapNotNull null
+            LiveEpisode(n, "Episode $n", epUrl)
+        }.distinctBy { it.num }.sortedBy { it.num }
+        val generated = nekopoiContiguousEpisodes(detail, slug)
+        if (eps.size <= detail.episodes.size && generated.size <= detail.episodes.size) return detail
+        val merged = (eps + generated + detail.episodes).distinctBy { it.num }.sortedBy { it.num }
+        return detail.copy(episodes = merged)
+    }
+
+    private fun nekopoiContiguousEpisodes(detail: LiveDetail, slug: String): List<LiveEpisode> {
+        val latest = detail.episodes.maxByOrNull { it.num } ?: return emptyList()
+        if (latest.num <= 1) return emptyList()
+        val uri = runCatching { URI(latest.url) }.getOrNull() ?: return emptyList()
+        val path = uri.path.orEmpty()
+        val epSlug = path.trim('/').substringAfterLast('/')
+        val suffix = Regex("-episode-\\d+(.*)$", RegexOption.IGNORE_CASE)
+            .find(epSlug)?.groupValues?.getOrNull(1).orEmpty()
+        val dir = path.substringBeforeLast('/', "")
+        val prefix = "${uri.scheme}://${uri.host}${if (dir.isBlank()) "" else dir}/"
+        return (1..latest.num).map { n ->
+            LiveEpisode(n, "Episode $n", "$prefix$slug-episode-$n$suffix/")
+        }
     }
 
     /**
@@ -253,6 +369,21 @@ object LiveSource {
             val top = minOf(latest, start + 3000) // sanity bound against a mislabeled "newest"
             val full = (start..top).map { n -> have[n] ?: LiveEpisode(n, "Episode $n", "$base/episode/$n") }
             return first.copy(episodes = full)
+        }
+
+        // Anoboy/WordPress LCP episode lists paginate via `?lcp_page0=N`, newest page first — so page 1
+        // shows the latest slice and E1 lives on a later page. Follow the extra pages and merge so the
+        // list starts at episode 1 (Tokusatsu: Gotchard/Zero-One showed E3+ only before this).
+        val lcpPages = LiveParser.lcpPageNumbers(firstHtml).filter { it >= 2 }
+        if (lcpPages.isNotEmpty()) {
+            val episodes = LinkedHashMap<Int, LiveEpisode>()
+            first.episodes.forEach { episodes[it.num] = it }
+            for (p in lcpPages.sorted().take(10)) {
+                val pageUrl = if ('?' in url) "$url&lcp_page0=$p" else "$url?lcp_page0=$p"
+                val html = LiveClient.getHtml(pageUrl) ?: continue
+                LiveParser.parseDetail(html, url).episodes.forEach { episodes.putIfAbsent(it.num, it) }
+            }
+            return first.copy(episodes = episodes.values.sortedBy { it.num })
         }
 
         val queue = ArrayDeque(LiveParser.episodePageNumbers(firstHtml, url).filter { it != pageOf(url) })
@@ -293,7 +424,16 @@ object LiveSource {
         if (DramaBiteSource.isDramaBite(base)) return runCatching { DramaBiteSource.search(base, query) }.getOrDefault(emptyList())
         if (GoodShortSource.isGoodShort(base)) return runCatching { GoodShortSource.search(base, query) }.getOrDefault(emptyList())
         if (FunDramaSource.isFunDrama(base)) return runCatching { FunDramaSource.search(base, query) }.getOrDefault(emptyList())
+        if (MicroDramaSource.isMicroDrama(base)) return runCatching { MicroDramaSource.search(base, query) }.getOrDefault(emptyList())
+        if (NetShortSource.isNetShort(base)) return runCatching { NetShortSource.search(base, query) }.getOrDefault(emptyList())
+        if (ReelifeSource.isReelife(base)) return runCatching { ReelifeSource.search(base, query) }.getOrDefault(emptyList())
         if (IDramaSource.isIDrama(base)) return runCatching { IDramaSource.search(base, query) }.getOrDefault(emptyList())
+        if (ShortMaxSource.isShortMax(base)) return runCatching { ShortMaxSource.search(base, query) }.getOrDefault(emptyList())
+        if (StardustTvSource.isStardustTv(base)) return runCatching { StardustTvSource.search(base, query) }.getOrDefault(emptyList())
+        if (VeloloSource.isVelolo(base)) return runCatching { VeloloSource.search(base, query) }.getOrDefault(emptyList())
+        if (HappyShortSource.isHappyShort(base)) return runCatching { HappyShortSource.search(base, query) }.getOrDefault(emptyList())
+        if (DramaNovaSource.isDramaNova(base)) return runCatching { DramaNovaSource.search(base, query) }.getOrDefault(emptyList())
+        if (CubeTvSource.isCubeTv(base)) return runCatching { CubeTvSource.search(base, query) }.getOrDefault(emptyList())
         if (BiliTvSource.isBiliTv(base)) return runCatching { BiliTvSource.search(base, query) }.getOrDefault(emptyList())
         if (DotDramaSource.isDotDrama(base)) return runCatching { DotDramaSource.search(base, query) }.getOrDefault(emptyList())
         if (DramaBoxSource.isDramaBox(base)) return runCatching { DramaBoxSource.search(base, query) }.getOrDefault(emptyList())
@@ -400,4 +540,14 @@ object LiveSource {
     private fun isAnoboy(url: String): Boolean = "anoboy" in url.lowercase()
 
     private fun isNekopoi(url: String): Boolean = "nekopoi" in url.lowercase()
+
+    private fun nekopoiSeriesSlug(url: String): String? {
+        val path = runCatching { URI(url).path.orEmpty().lowercase() }.getOrDefault("")
+        Regex("^/hentai/([^/?#]+)/?$").find(path)?.let { return it.groupValues[1] }
+        val slug = path.trim('/').substringAfterLast('/')
+        if (!slug.contains("-episode-")) return null
+        return slug.replace(Regex("-episode-\\d+.*$", RegexOption.IGNORE_CASE), "")
+            .replace(Regex("^(?:preview|new-release|uncensored|premium|batch)-", RegexOption.IGNORE_CASE), "")
+            .takeIf { it.isNotBlank() }
+    }
 }

@@ -39,7 +39,16 @@ data class LiveDetail(
     val country: String? = null,
 )
 
-data class LiveEpisode(val num: Int, val title: String, val url: String, val thumb: String? = null)
+data class LiveEpisode(
+    val num: Int,
+    val title: String,
+    val url: String,
+    val thumb: String? = null,
+    /** Season + episode-within-season when the source stacks seasons on one page (PusatFilm `/tv/`);
+     *  null on flat single-season lists. Carried through to the app's Detail season-accordion. */
+    val season: Int? = null,
+    val epInSeason: Int? = null,
+)
 
 /** One playable mirror/server scraped from a watch page. [embedUrl] is the host iframe URL
  *  (ok.ru / dailymotion / filelions / …) — played in a WebView, since these are embeds, not
@@ -50,10 +59,18 @@ data class LiveEpisode(val num: Int, val title: String, val url: String, val thu
  *  [StreamExtractor] resolves each variant to a direct stream so the player's Resolusi picker offers
  *  them — i.e. the "Source → Resolusi" model. [embedUrl] then mirrors the top variant (highest reso)
  *  so host checks / the WebView fallback still work. Empty for ordinary single-embed hosts. */
-data class VideoServer(val name: String, val embedUrl: String, val variants: List<ServerVariant> = emptyList())
+data class VideoServer(
+    val name: String,
+    val embedUrl: String,
+    val variants: List<ServerVariant> = emptyList(),
+    val subtitles: List<SubtitleTrack> = emptyList(),
+)
 
 /** A resolution choice within a [VideoServer] (e.g. "720p" → that host's 720p iframe URL). */
 data class ServerVariant(val label: String, val embedUrl: String)
+
+/** External subtitle sidecar for a playable server, usually SRT/VTT from short-drama APIs. */
+data class SubtitleTrack(val label: String, val url: String, val language: String? = null)
 
 /**
  * Parser for the "tsthemes" / Dooplay WordPress theme shared by virtually every source in the
@@ -110,6 +127,108 @@ object LiveParser {
         }
         return groupResolutionServers(out.values.toList())
     }
+
+    /**
+     * Anoboy groups its players as `<div class="vmiror">{Server} | <a data-video>{reso}</a>…`, one div
+     * per server (Btube, YUp, KrakenFiles, Gofile, M4U, Mirror), each holding that server's resolution
+     * buttons. Map each to a VideoServer whose resolution buttons become variants — the Source→Resolusi
+     * model the player picker already renders, so the user gets grouped choices instead of a flat list.
+     * Redirector `data-video` paths (`/uploads/adsbatch720.php?…`, `/uploads/yup…`) are made absolute so
+     * the WebView player can follow them; direct embeds (krakenfiles) pass through unchanged.
+     */
+    fun parseAnoboyServers(html: String, pageUrl: String): List<VideoServer> {
+        val doc = Jsoup.parse(html, pageUrl)
+        val out = LinkedHashMap<String, VideoServer>()
+        doc.select("div.vmiror").forEach { box ->
+            val label = box.ownText().substringBefore('|').trim()
+            val name = anoboyServerName(label)
+            val variants = box.children()
+                .filter { it.tagName() == "a" && it.hasAttr("data-video") }
+                .flatMap { anoboyVariantsFor(it) }
+                .distinctBy { it.label.lowercase() }
+                .sortedWith(compareByDescending { resoRank(it.label) })
+            if (variants.isEmpty()) return@forEach
+            val top = variants.first()
+            out.putIfAbsent(name.lowercase(), VideoServer(name, top.embedUrl, variants))
+        }
+        return out.values.toList()
+    }
+
+    /**
+     * Resolve one anoboy `data-video` button to playable embed variant(s). Anoboy wraps its real hosts
+     * behind two redirector paths whose tokens are right in the query — resolve them without a fetch so
+     * the player's WebView sniffer sees a real player (the raw `/uploads/…php` page auto-plays nothing,
+     * which is why extraction returned 0 and the app showed "no source"):
+     *   - `/uploads/adsbatch720.php?url=TOKEN`            → Blogger video (`blogger.com/video.g?token=`)
+     *   - `/uploads/yup/data.php?data=A&data2=B&data3=C…` → yourupload embeds at 240/360/480/720p
+     * Direct embeds (krakenfiles etc.) pass through; the DEAD-host filter drops the genuinely dead ones.
+     */
+    private fun anoboyVariantsFor(a: Element): List<ServerVariant> {
+        val raw = a.attr("data-video").trim()
+        if (raw.isBlank() || raw.equals("none", ignoreCase = true)) return emptyList()
+        val abs = when {
+            raw.startsWith("http") -> raw
+            raw.startsWith("//") -> "https:$raw"
+            else -> a.absUrl("data-video")
+        }
+        if (abs.isBlank()) return emptyList()
+        val bloggerToken = Regex("adsbatch[^?]*\\?url=([^&]+)", RegexOption.IGNORE_CASE).find(abs)?.groupValues?.get(1)
+        if (bloggerToken != null) {
+            return listOf(ServerVariant(anoboyReso(a.text()), "https://www.blogger.com/video.g?token=$bloggerToken"))
+        }
+        if (abs.contains("yup/data.php", ignoreCase = true) || abs.contains("yupbatch", ignoreCase = true)) {
+            val params = HashMap<String, String>()
+            for (pair in abs.substringAfter('?', "").split('&')) {
+                val eq = pair.indexOf('=')
+                if (eq > 0) params[pair.substring(0, eq)] = pair.substring(eq + 1)
+            }
+            val out = ArrayList<ServerVariant>()
+            for ((key, label) in listOf("data" to "240p", "data2" to "360p", "data3" to "480p", "data4" to "720p")) {
+                val id = params[key]
+                if (!id.isNullOrBlank() && !id.equals("none", ignoreCase = true)) {
+                    out.add(ServerVariant(label, "https://www.yourupload.com/embed/$id"))
+                }
+            }
+            if (out.isNotEmpty()) return out
+        }
+        return listOf(ServerVariant(anoboyReso(a.text()), abs))
+    }
+
+    private fun anoboyServerName(label: String): String {
+        val l = label.lowercase()
+        return when {
+            "btube" in l || "b-tube" in l -> "Btube"
+            "yup" in l -> "YUp"
+            "kra" in l -> "KrakenFiles"
+            "gofile" in l -> "Gofile"
+            "m4u" in l -> "M4U"
+            "mirror" in l -> "Mirror"
+            "pc" in l -> "PCloud"
+            label.isBlank() -> "Server"
+            else -> label.replaceFirstChar { it.uppercase() }
+        }
+    }
+
+    private fun anoboyReso(label: String): String {
+        val t = label.trim()
+        if (Regex("\\d+\\s*[-–]\\s*\\d+").containsMatchIn(t)) return "Auto" // e.g. yup "240-720"
+        Regex("(2160|1440|1080|720|480|360|240)").find(t)?.value?.let { return "${it}p" }
+        if (t.contains("1K", ignoreCase = true)) return "1080p"
+        return t.ifBlank { "Auto" }
+    }
+
+    /**
+     * WordPress "List Category Posts" pagination (`?lcp_page0=N`) — anoboy paginates long episode lists
+     * (Tokusatsu: Gotchard, Zero-One) newest-page-first, so page 1 shows the latest ~48 and the oldest
+     * (E1, E2…) live on later pages. Returns the distinct page numbers reachable from the pager so
+     * [LiveSource] can fetch them and complete the list.
+     */
+    fun lcpPageNumbers(html: String): List<Int> =
+        Regex("lcp_page0=(\\d+)", RegexOption.IGNORE_CASE).findAll(html)
+            .mapNotNull { it.groupValues[1].toIntOrNull() }
+            .filter { it >= 1 }
+            .distinct()
+            .toList()
 
     private data class ServerNameParts(val key: String, val display: String, val resolution: String?)
 
@@ -240,6 +359,7 @@ object LiveParser {
             ".nk-hentai-grid li", // nekopoi homepage series grid
             ".animeseries",       // nontonanimeid homepage grid
             "a:has(div.amv)",     // anoboy homepage grid (anchor-wrapped)
+            "article[itemtype*=Movie]", // LK21 / Nonton Drama category grids
             ".chivsrc > li",      // otakudesu search
             ".product__item",     // kuramanime
             ".listupd .bsx", "div.bsx",                       // tsthemes (anichin, animexin, samehadaku search…)
@@ -332,29 +452,41 @@ object LiveParser {
         // then generic ones, and take the first with real text — skipping empty `<meta description>`
         // and the SEO boilerplate ("Nonton Streaming … download … Subtitle Indonesia terbaru di …")
         // that several sites (samehadaku/anoboy/animesail) put in itemprop/entry-content.
-        val synopsis = sequenceOf(
-            ".sinopc",                    // otakudesu
-            ".synopsis-prose",            // nontonanimeid
-            ".mli-desc",                  // winbu
-            ".contentdeks",               // anoboy
-            ".entry-content.serial-info", // AnimeSail
-            ".desc",                      // samehadaku + many
-            "[itemprop=description]",      // anichin (real synopsis lives here)
-            ".entry-content.entry-content-single",
-            ".synp .entry-content",
-            ".anime__details__text",      // kuramanime
-            ".entry-content",
-        ).mapNotNull { doc.selectFirst(it)?.text() }
-            .map { cleanSynopsis(it, title) }
-            .firstOrNull { it.length > 20 && !isSeoBlurb(it) }
+        val synopsis = (if (isNekopoi(url)) nekopoiSynopsis(doc, title) else null)
+            ?: localizedSynopsis(doc)
+            ?: if (isAnimeXin(url)) null else sequenceOf(
+                ".sinopc",                    // otakudesu
+                ".synopsis-prose",            // nontonanimeid
+                ".mli-desc",                  // winbu
+                ".desc.mindes",               // Donghub real synopsis (before generic SEO .desc)
+                ".mindes",                    // Donghub episode page
+                ".bixbox.synp .entry-content",
+                ".synp .entry-content",
+                ".contentdeks",               // anoboy (episode pages)
+                ".unduhan",                   // anoboy (series/movie/live-action pages — real synopsis,
+                                              // NOT the Yoast SEO <meta description> the app fell back to)
+                ".entry-content.serial-info", // AnimeSail
+                ".desc",                      // samehadaku + many
+                "[itemprop=description]",      // anichin (real synopsis lives here)
+                ".entry-content.entry-content-single",
+                ".synp .entry-content",
+                "#synopsisField",             // kuramanime
+                ".entry-content",
+            ).mapNotNull { doc.selectFirst(it)?.text() }
+                .map { cleanSynopsis(it, title) }
+                .firstOrNull { it.length > 20 && !isSeoBlurb(it) }
+            ?: labeledSynopsis(doc, title)
 
-        val genres = doc.select(".genxed a, .gnr a, .mgen a").map { it.text().trim() }.filter { it.isNotBlank() }.distinct()
+        val genres = kuramanimeGenres(doc)
+            .ifEmpty { doc.select(".genxed a, .gnr a, .mgen a, .anime-card__genres a").map { it.text().trim() }.filter { it.isNotBlank() }.distinct() }
+            .ifEmpty { labeledList(doc, "genre", "genres") }
 
         // Origin country — kuramanime links it as `…/properties/country/CN` (donghua) or `…/JP`.
         val country = doc.selectFirst("a[href*=/country/]")?.text()?.trim()?.takeIf { it.isNotBlank() }
 
         // `.info-content .spe span` rows like `<b>Status:</b> Ongoing`.
         val info = HashMap<String, String>()
+        info.putAll(kuramanimeInfo(doc))
         doc.select(".info-content .spe span, .spe span, .info span").forEach { sp ->
             val key = sp.selectFirst("b")?.text()?.trim()?.trimEnd(':')?.lowercase().orEmpty()
             if (key.isBlank()) return@forEach
@@ -378,6 +510,86 @@ object LiveParser {
         )
     }
 
+    private fun localizedSynopsis(doc: Document): String? {
+        val paragraphs = doc.select(".bixbox.synp .entry-content p, .synp .entry-content p")
+        for (i in 0 until paragraphs.size) {
+            if (!isIndonesianLabel(paragraphs[i].text())) continue
+            for (j in i + 1 until paragraphs.size) {
+                val text = paragraphs[j].text().replace(Regex("\\s+"), " ").trim()
+                if (text.length > 20 && !isLanguageLabel(text) && !isSeoBlurb(text)) return text
+            }
+        }
+        return null
+    }
+
+    private fun nekopoiSynopsis(doc: Document, title: String): String? {
+        doc.select(".as-synopsis, .nk-synopsis, .entry-content p, .post-content p, .postbody p, .content p, p")
+            .map { cleanNekopoiSynopsis(it.text(), title) }
+            .firstOrNull { isUsefulNekopoiSynopsis(it) }
+            ?.let { return it }
+
+        doc.select("p, div, span, b, strong").forEach { label ->
+            if (!label.ownText().contains("sinopsis", ignoreCase = true)) return@forEach
+            cleanNekopoiSynopsis(label.ownText().substringAfter(':', ""), title)
+                .takeIf(::isUsefulNekopoiSynopsis)
+                ?.let { return it }
+            var next = label.nextElementSibling()
+            repeat(4) {
+                val text = cleanNekopoiSynopsis(next?.text().orEmpty(), title)
+                if (isUsefulNekopoiSynopsis(text)) return text
+                next = next?.nextElementSibling()
+            }
+        }
+        return null
+    }
+
+    private fun cleanNekopoiSynopsis(raw: String, title: String): String =
+        cleanSynopsis(raw, title)
+            .replace(Regex("^\\s*synopsis\\s*:?\\s*", RegexOption.IGNORE_CASE), "")
+            .replace(Regex("\\s+(?:genre|anime|producers?|producer|duration|durasi|size|judul|jepang|jenis|episode|status|tayang|skor)\\s*:\\s*.*$", RegexOption.IGNORE_CASE), "")
+            .trim()
+
+    private fun isUsefulNekopoiSynopsis(s: String): Boolean =
+        s.length > 40 && !isSeoBlurb(s) && !s.contains("download", true) && !s.contains("streaming", true)
+
+    private fun kuramanimeGenres(doc: Document): List<String> =
+        doc.select(".anime__details__widget a[href*=/properties/genre/]")
+            .map { it.text().trim().trimEnd(',') }
+            .filter { it.isNotBlank() }
+            .distinct()
+
+    private fun kuramanimeInfo(doc: Document): Map<String, String> {
+        val out = LinkedHashMap<String, String>()
+        doc.select(".anime__details__widget li .row").forEach { row ->
+            val key = row.selectFirst(".col-3 span")?.text()?.trim()?.trimEnd(':')?.lowercase().orEmpty()
+            if (key.isBlank()) return@forEach
+            val valueEl = row.selectFirst(".col-9") ?: return@forEach
+            val value = valueEl.text().replace(Regex("\\s+"), " ").trim()
+            if (value.isNotBlank()) out.putIfAbsent(key, value)
+        }
+        return out
+    }
+
+    private fun labeledSynopsis(doc: Document, title: String): String? {
+        val body = doc.body()?.text()?.replace(Regex("\\s+"), " ")?.trim().orEmpty()
+        val match = Regex(
+            "(?i)(?:jalan\\s+cerita\\s+)?sinopsis\\s+(.+?)(?=\\s+(?:serial\\s+televisi|tonton\\s+streaming|watch\\s+streaming|watch\\s+the|download\\s+free|download\\s+the|download\\s+video|related\\s+episodes|recommended\\s+series|episode\\s+list|first\\s+episode|new\\s+episode|jadwal\\s+update|orang\\s+hebat|komentari)\\b)",
+        ).find(body) ?: return null
+        var text = match.groupValues[1].trim()
+        if (title.isNotBlank() && text.startsWith(title, ignoreCase = true)) text = text.drop(title.length).trim()
+        return cleanSynopsis(text, title).takeIf { it.length > 20 && !isSeoBlurb(it) }
+    }
+
+    private fun isAnimeXin(url: String): Boolean = url.contains("animexin", ignoreCase = true)
+
+    private fun isNekopoi(url: String): Boolean = url.contains("nekopoi", ignoreCase = true)
+
+    private fun isIndonesianLabel(s: String): Boolean =
+        s.trim().lowercase() in setOf("indonesia", "indonesian", "bahasa indonesia")
+
+    private fun isLanguageLabel(s: String): Boolean =
+        s.trim().lowercase() in setOf("english", "eng", "indonesia", "indonesian", "bahasa indonesia")
+
     private fun detailTitle(doc: Document, url: String): String {
         // Winbu and Nekopoi often expose generic headings ("Nonton Serial Film", "Informasi Anime ...")
         // before the real title, so prefer site-specific detail/info blocks and metadata first.
@@ -393,7 +605,10 @@ object LiveParser {
         )
         return candidates.firstNotNullOfOrNull { raw ->
             cleanTitle(raw.orEmpty())
-                .replace(Regex("\\s*[-|]\\s*(Winbu|Nekopoi|NekoPoi).*$", RegexOption.IGNORE_CASE), "")
+                // Strip the trailing site name several sources append to og:title / <title>: AnimeSail's
+                // "– AnimeSail", Anoboy's "– anoBoy" (en-dash), Winbu/Nekopoi's "| Winbu". Handle both
+                // hyphen and en-dash separators.
+                .replace(Regex("\\s*[-–|]\\s*(Winbu|Nekopoi|NekoPoi|anoBoy|AnimeSail)\\b.*$", RegexOption.IGNORE_CASE), "")
                 .replace(Regex("^Nonton\\s+", RegexOption.IGNORE_CASE), "")
                 .trim()
                 .takeIf(::isGoodDetailTitle)
@@ -544,6 +759,10 @@ object LiveParser {
         parseSamehadakuEpisodes(doc).takeIf { it.isNotEmpty() }?.let { return it }
         parseWinbuEpisodes(doc).takeIf { it.isNotEmpty() }?.let { return it }
         parseAnoboyEpisodes(doc).takeIf { it.isNotEmpty() }?.let { return it }
+        parseDaftarEpisodes(doc).takeIf { it.isNotEmpty() }?.let { return it }
+        // PusatFilm (muvipro) stacks all seasons into one `a.s-eps` accordion — the generic scan below
+        // would keep only the largest season (season is part of the slug) and collide episode numbers.
+        PusatFilmSource.episodes(doc).takeIf { it.isNotEmpty() }?.let { return it }
 
         // Kuramanime hides its full episode list inside the `data-content` attribute of the "Daftar
         // Episode" popover (#episodeLists) on the anime page. Jsoup keeps attribute values as raw
@@ -639,13 +858,16 @@ object LiveParser {
         val path = runCatching { URI(base).path.orEmpty() }.getOrDefault("")
         val looksSeriesPage = Regex("^/hentai/[^/?#]+/?$", RegexOption.IGNORE_CASE).matches(path)
         if (!looksSeriesPage) return emptyList()
+        val seriesSlug = path.trim('/').substringAfterLast('/').lowercase()
 
         return doc.select(
             "a.nk-episode-card[href], .nk-episode-card a[href], .nk-episodes a[href], .nk-episode-list a[href], " +
-                ".episode-list a[href], .daftar-episode a[href], a[href*=-episode-][href*=subtitle-indonesia]",
+                ".episode-list a[href], .daftar-episode a[href], a[href*=-episode-]",
         ).mapNotNull { a ->
             val url = a.absUrl("href").ifBlank { return@mapNotNull null }
             if (!url.contains("nekopoi", ignoreCase = true) || !url.contains("-episode-", ignoreCase = true)) return@mapNotNull null
+            val episodeSlug = runCatching { URI(url).path.orEmpty().trim('/').substringAfterLast('/').lowercase() }.getOrDefault("")
+            if (!episodeSlug.startsWith("$seriesSlug-episode-")) return@mapNotNull null
             // Prefer the card's DISPLAYED number ("Ep 9" / "Episode 9") over the URL's — nekopoi admins
             // sometimes mislabel a slug (Ep 9's card links to a "…-episode-8…" URL), which would collide
             // with the real Ep 8 under `distinctBy { num }` and drop Ep 9 entirely.
@@ -695,6 +917,8 @@ object LiveParser {
 
             // Common selectors for episode/movie watch links on Samehadaku
             val selectors = listOf(
+                // Real samehadaku episode-list markup first (same as SamehadakuSource.episodeWatchLinks)
+                "div.lstepsiode a[href]", "div.lchx a[href]", "div.episodelist a[href]",
                 ".list-eps li a", ".eps-list li a", ".episode-list li a", ".eps li a",
                 ".eps-list a[href]", ".episode-list a[href]", ".list-eps a[href]",
                 "a[href*=-episode-]", "a[href*=-movie-]", "a[href*=_movie]", "a[href*=-ona-]",
@@ -715,6 +939,15 @@ object LiveParser {
                         val url = rawUrl
                         if (!url.contains("samehadaku", ignoreCase = true)) continue
                         if (url == base || url == base.trimEnd('/')) continue
+                        // Nav/category/batch links leak in through the permissive selectors below
+                        // (a[href*='movie'] etc.) — same exclusions as SamehadakuSource.episodeWatchLinks,
+                        // plus "batch" anywhere (batch slugs look like /…-batch-episode-1-21/).
+                        if ("/anime/" in url) continue
+                        val lower = url.lowercase()
+                        if (listOf("/genre/", "/daftar", "/jadwal", "batch", "/anime-terbaru", "/movie-terbaru", "/populer")
+                                .any { it in lower } ||
+                            a.text().contains("batch", ignoreCase = true)
+                        ) continue
 
                         System.out.println("[SamehadakuParser] Found episode link: $url | ${a.text().take(30)}")
 
@@ -785,6 +1018,29 @@ object LiveParser {
         return listOf(LiveEpisode(num, "Episode $num", base, thumb))
     }
 
+    /**
+     * AnimeSail (and other tsthemes sites) list episodes in `<ul class="daftar"><li><a>…`. Movies and
+     * some single entries link as `{slug}-N/` WITHOUT the `-episode-` keyword the generic scan keys on,
+     * so those detail pages parsed to zero episodes ("Episode belum tersedia dari sumber"). This
+     * container is a curated per-series episode list — every `li a` is one episode — so take the number
+     * from `-episode-N`, else a trailing `-N/` slug, else the newest-first DOM position.
+     */
+    private fun parseDaftarEpisodes(doc: Document): List<LiveEpisode> {
+        val anchors = doc.select("ul.daftar li a[href]")
+            .filter { a -> a.absUrl("href").let { it.startsWith("http") && !it.contains("/anime/", ignoreCase = true) } }
+        if (anchors.isEmpty()) return emptyList()
+        val n = anchors.size
+        return anchors.mapIndexedNotNull { i, a ->
+            val url = a.absUrl("href")
+            val slug = url.trimEnd('/').substringAfterLast('/')
+            val num = Regex("-(?:episode|chapter)-(\\d+)", RegexOption.IGNORE_CASE).find(slug)?.groupValues?.get(1)?.toIntOrNull()
+                ?: Regex("(?:episode|chapter)\\s*(\\d+)", RegexOption.IGNORE_CASE).find(a.text())?.groupValues?.get(1)?.toIntOrNull()
+                ?: Regex("-(\\d+)$").find(slug)?.groupValues?.get(1)?.toIntOrNull()
+                ?: (n - i)
+            LiveEpisode(num, "Episode $num", url)
+        }.distinctBy { it.num }.sortedBy { it.num }
+    }
+
     /** Winbu detail pages keep episode buttons as plain `/{slug}-episode-N/` links. */
     private fun parseWinbuEpisodes(doc: Document): List<LiveEpisode> {
         val base = doc.baseUri()
@@ -827,47 +1083,65 @@ object LiveParser {
      * detail list is 1..N + specials once, instead of duplicating the same episode across mirrors.
      */
     private fun parseAnoboyEpisodes(doc: Document): List<LiveEpisode> {
-        if (!doc.baseUri().contains("anoboy", ignoreCase = true) && doc.select("a#allvideo[data-video]").isEmpty()) {
-            return emptyList()
-        }
+        val base = doc.baseUri()
+        val isAnoboy = base.contains("anoboy", ignoreCase = true)
+        if (!isAnoboy && doc.select("a#allvideo[data-video]").isEmpty()) return emptyList()
+
+        // Streaming/batch pages carry the real episode grid as data-video buttons labeled "EP NN"/OVA,
+        // each server repeating the full 1..N list. Pick one server group so we list each episode once.
         val grouped = listOf("satu", "dua", "tiga", "empat", "lima", "enam")
             .map { cls -> doc.select("div.$cls a[data-video]").toList() }
         val anchors = grouped.firstOrNull { group ->
             group.count { anoboyEpisodeNumber(it.text()) != null || anoboySpecialLabel(it.text()) != null } >= 2
         } ?: doc.select("a#allvideo[data-video], a[data-video]").toList().takeIf { group ->
             group.count { anoboyEpisodeNumber(it.text()) != null || anoboySpecialLabel(it.text()) != null } >= 2
-        } ?: return emptyList()
-
-        data class Raw(val num: Int?, val special: String?, val url: String)
-
-        val raw = anchors.mapNotNull { a ->
-            val text = a.text().replace(Regex("\\s+"), " ").trim()
-            val special = anoboySpecialLabel(text)
-            val num = if (special == null) anoboyEpisodeNumber(text) else null
-            if (num == null && special == null) return@mapNotNull null
-            val url = a.attr("abs:data-video").ifBlank { a.absUrl("data-video") }.ifBlank { a.attr("data-video") }
-                .trim()
-                .let { if (it.startsWith("//")) "https:$it" else it }
-                .takeIf { it.startsWith("http") } ?: return@mapNotNull null
-            Raw(num, special, url)
         }
-        if (raw.isEmpty()) return emptyList()
 
-        val normal = raw.filter { it.num != null }
-            .distinctBy { it.num }
-            .map { LiveEpisode(it.num!!, "Episode ${it.num}", it.url) }
-            .sortedBy { it.num }
-        val maxNormal = normal.maxOfOrNull { it.num } ?: 0
-        val specials = raw.filter { it.special != null }
-            .distinctBy { it.special!!.lowercase() }
-            .mapIndexed { index, r -> LiveEpisode(maxNormal + index + 1, r.special!!, r.url) }
-        return normal + specials
+        if (anchors != null) {
+            data class Raw(val num: Int?, val special: String?, val url: String)
+            val raw = anchors.mapNotNull { a ->
+                val text = a.text().replace(Regex("\\s+"), " ").trim()
+                val special = anoboySpecialLabel(text)
+                val num = if (special == null) anoboyEpisodeNumber(text) else null
+                if (num == null && special == null) return@mapNotNull null
+                val url = a.attr("abs:data-video").ifBlank { a.absUrl("data-video") }.ifBlank { a.attr("data-video") }
+                    .trim()
+                    .let { if (it.startsWith("//")) "https:$it" else it }
+                    .takeIf { it.startsWith("http") } ?: return@mapNotNull null
+                Raw(num, special, url)
+            }
+            if (raw.isNotEmpty()) {
+                val normal = raw.filter { it.num != null }
+                    .distinctBy { it.num }
+                    .map { LiveEpisode(it.num!!, "Episode ${it.num}", it.url) }
+                    .sortedBy { it.num }
+                val maxNormal = normal.maxOfOrNull { it.num } ?: 0
+                val specials = raw.filter { it.special != null }
+                    .distinctBy { it.special!!.lowercase() }
+                    .mapIndexed { index, r -> LiveEpisode(maxNormal + index + 1, r.special!!, r.url) }
+                return normal + specials
+            }
+        }
+
+        // No EP grid → a single-episode or MOVIE watch page (its data-video buttons are resolutions,
+        // not episodes). Emit ONE episode pointing at THIS page so movies are playable and episode
+        // pages have a self entry; number from the URL (`-episode-N`), else 1. The full series list is
+        // hydrated separately by LiveSource via the breadcrumb / [Streaming] link, then merged in.
+        if (isAnoboy && doc.select("a[data-video], iframe#mediaplayer, #fplay").isNotEmpty()) {
+            val n = Regex("-episode-(\\d+)", RegexOption.IGNORE_CASE).find(base)?.groupValues?.get(1)?.toIntOrNull() ?: 1
+            val label = if (n == 1 && base.contains("movie", ignoreCase = true)) "Movie" else "Episode $n"
+            return listOf(LiveEpisode(n, label, base.trimEnd('/') + "/"))
+        }
+        return emptyList()
     }
 
+    // Require the explicit "EP"/"Episode" keyword. The old bare-number fallback matched the resolution
+    // buttons on episode/movie WATCH pages ("360", "PC 720", "480P", "240-720") and turned them into
+    // phantom "Episode 360/480/720". Real episode grids (streaming/batch pages) always label buttons
+    // "EP NN"; modern series pages list episodes as `-episode-N` links handled by the generic scan.
     private fun anoboyEpisodeNumber(label: String): Int? =
         Regex("\\b(?:EP|Episode)\\s*0*(\\d{1,4})\\b", RegexOption.IGNORE_CASE)
             .find(label)?.groupValues?.get(1)?.toIntOrNull()
-            ?: Regex("\\b0*(\\d{1,4})\\b").find(label)?.groupValues?.get(1)?.toIntOrNull()
 
     private fun anoboySpecialLabel(label: String): String? {
         val match = Regex("\\b(OVA|ONA|Special|SP)\\s*0*(\\d*)\\b", RegexOption.IGNORE_CASE).find(label) ?: return null
@@ -937,6 +1211,22 @@ object LiveParser {
         }
     }
 
+    private fun labeledList(doc: Document, vararg labels: String): List<String> {
+        val body = doc.body()?.text()?.replace(Regex("\\s+"), " ")?.trim().orEmpty()
+        val stop = "(?=\\s+(?:episode\\s+list|terakhir\\s+nonton|download\\s+video|lapor\\s+error|jalan\\s+cerita|sinopsis|serial\\s+televisi|tonton\\s+streaming|jadwal\\s+update|orang\\s+hebat|komentari)\\b)"
+        return labels.firstNotNullOfOrNull { label ->
+            Regex("(?i)\\b${Regex.escape(label)}\\s*[:ï¼š]\\s*(.+?)$stop").find(body)
+                ?.groupValues
+                ?.getOrNull(1)
+                ?.trim()
+                ?: labeledValue(doc, label)
+        }
+            ?.split(',')
+            ?.map { it.trim() }
+            ?.filter { it.isNotBlank() && it.length <= 28 && !isSeoBlurb(it) && !it.contains("download", true) }
+            .orEmpty()
+    }
+
     private fun titleFromUrl(url: String): String? {
         val path = runCatching { URI(url).path.orEmpty().trim('/') }.getOrDefault("")
         val slug = path.substringAfterLast('/').replace(Regex("-episode-\\d+.*$", RegexOption.IGNORE_CASE), "")
@@ -977,6 +1267,7 @@ object LiveParser {
     private fun isSeoBlurb(s: String): Boolean {
         val l = s.lowercase()
         return ("streaming" in l && ("nonton film" in l || "nonton streaming" in l || "tonton streaming" in l)) ||
+            ("watch streaming" in l && "download" in l) ||
             "subtitle indonesia terbaru di" in l ||
             "trending viral" in l ||
             "gimana filmnya" in l
@@ -984,6 +1275,8 @@ object LiveParser {
 
     private fun cleanSynopsis(raw: String, title: String): String {
         var s = raw.replace(Regex("\\s+"), " ").trim()
+        s = s.replace(Regex("\\s*Catatan:\\s*Sinopsis\\s+diterjemahkan\\s+secara\\s+otomatis\\s+oleh\\s+Google\\s+Translate\\.?\\s*.*$", RegexOption.IGNORE_CASE), "")
+        s = s.replace(Regex("\\s*\\(Sumber:\\s*[^)]+\\)\\s*", RegexOption.IGNORE_CASE), " ")
         // Some sites prefix "<Title> – synopsis"; strip only when a separator follows, so titles that
         // legitimately start the sentence ("Needy Girl Overdose adalah…") aren't mangled.
         if (title.isNotBlank()) {

@@ -25,4 +25,5 @@ dependencies {
     // org.json is provided by the Android platform at runtime (and by the server's own classpath),
     // so keep it compile-only here to avoid a duplicate-class clash when the app bundles this module.
     compileOnly(libs.org.json)
+    testImplementation(kotlin("test"))
 }

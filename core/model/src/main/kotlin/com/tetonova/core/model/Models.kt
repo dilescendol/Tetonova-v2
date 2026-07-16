@@ -53,7 +53,18 @@ data class QuickChip(val title: String, val value: String, val icon: String, val
 
 /** Extensions screen. */
 data class ExtCategory(val id: String, val label: String, val count: Int)
-data class ExtItem(val name: String, val source: String, val live: Boolean)
+data class ExtItem(
+    val name: String,
+    val source: String,
+    val live: Boolean,
+    val premium: Boolean = false,
+    val locked: Boolean = false,
+    val iconUrl: String = "",
+    /** Panel sourceId — the key the Extensions screen toggles install state on. */
+    val sourceId: String = "",
+    /** Whether this source is currently installed (debug: default true, release: default false). */
+    val installed: Boolean = false,
+)
 
 /** Forum. */
 data class ForumCategory(val id: String, val label: String, val icon: String? = null)
@@ -105,6 +116,12 @@ data class Episode(
     val desc: String,
     val progress: Int,
     val art: Int,
+    /** Season number when the source stacks multiple seasons on one series page (PusatFilm `/tv/`);
+     *  null for single-season/anime sources. Drives the Detail season-accordion grouping. */
+    val season: Int? = null,
+    /** Episode number within [season] (source-relative). Falls back to [num] for display when the
+     *  list is a flat single sequence. */
+    val epInSeason: Int? = null,
     /** Upstream watch page for this episode (live sources) — opened by "Tonton". */
     val url: String? = null,
     /** Per-episode thumbnail scraped from the source list (when present); else the UI falls back

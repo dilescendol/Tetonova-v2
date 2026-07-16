@@ -47,6 +47,14 @@ object OploverzSource {
             .filter { seen.add(it.url) }
     }
 
+    suspend fun latestPage(frontUrl: String): LivePage {
+        val page = Regex("[?&]page=(\\d+)").find(frontUrl)?.groupValues?.get(1)?.toIntOrNull() ?: 1
+        val json = getJson("$API/episodes?page=$page") ?: return LivePage(emptyList())
+        val items = json.optJSONArray("data").objects().mapNotNull { episodeToItem(it) }.distinctBy { it.url }
+        val next = if (items.isNotEmpty()) withPage(frontUrl, page + 1) else null
+        return LivePage(items, next)
+    }
+
     suspend fun search(query: String): List<LiveItem> {
         if (query.isBlank()) return emptyList()
         val json = getJson("$API/series?q=" + URLEncoder.encode(query, "UTF-8")) ?: return emptyList()
@@ -185,6 +193,12 @@ object OploverzSource {
 
     private fun numOf(url: String): Int? =
         Regex("/episode/(\\d+)").find(url)?.groupValues?.get(1)?.toIntOrNull()
+
+    private fun withPage(url: String, page: Int): String {
+        val stripped = url.replace(Regex("([?&])page=\\d+&?"), "$1").trimEnd('?', '&')
+        val sep = if ('?' in stripped) "&" else "?"
+        return "$stripped${sep}page=$page"
+    }
 
     /** org.json arrays have no iterator — view a (possibly null) array as its object elements. */
     private fun JSONArray?.objects(): List<JSONObject> =
