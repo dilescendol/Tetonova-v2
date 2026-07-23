@@ -13,11 +13,13 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.material3.windowsizeclass.ExperimentalMaterial3WindowSizeClassApi
 import androidx.compose.material3.windowsizeclass.calculateWindowSizeClass
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import com.tetonova.app.ui.TetoNovaRoot
 import com.tetonova.app.ui.detailDeepLinkUri
 
 class MainActivity : ComponentActivity() {
     private val deepLink = mutableStateOf<Uri?>(null)
+    private val subscriptionRequest = mutableIntStateOf(0)
 
     @OptIn(ExperimentalMaterial3WindowSizeClassApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -34,6 +36,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         requestNotificationPermission()
         deepLink.value = intent.toDetailUri()
+        if (intent?.getBooleanExtra("open_subscription", false) == true) subscriptionRequest.intValue++
         setContent {
             val windowSizeClass = calculateWindowSizeClass(this)
             TetoNovaRoot(
@@ -42,6 +45,7 @@ class MainActivity : ComponentActivity() {
                 // app could launch playback of arbitrary web content in the JS-enabled player WebView.
                 debugPlayerUrl = if (BuildConfig.DEBUG) intent?.getStringExtra("player_url") else null,
                 deepLink = deepLink.value,
+                openSubscriptionRequest = subscriptionRequest.intValue,
             )
         }
     }
@@ -50,6 +54,7 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         deepLink.value = intent.toDetailUri()
+        if (intent.getBooleanExtra("open_subscription", false)) subscriptionRequest.intValue++
     }
 
     private fun Intent?.toDetailUri(): Uri? =

@@ -226,21 +226,8 @@ object ReelifeSource {
             ?: Regex("/api/v1/play/[^/?#]+/([^/?#]+)", RegexOption.IGNORE_CASE)
                 .find(url)?.groupValues?.getOrNull(1)?.dec()
 
-    private fun matchesQuery(title: String, query: String): Boolean {
-        val haystack = cleanTitleKey(title)
-        val needle = cleanTitleKey(query)
-        if (needle.isBlank()) return false
-        if (needle in haystack) return true
-        val words = needle.split(' ').filter { it.length >= 3 }
-        return words.isNotEmpty() && words.all { it in haystack }
-    }
-
-    private fun cleanTitleKey(value: String): String =
-        value.lowercase()
-            .replace(Regex("\\([^)]*\\)"), " ")
-            .replace(Regex("[^a-z0-9]+"), " ")
-            .replace(Regex("\\s+"), " ")
-            .trim()
+    private fun matchesQuery(title: String, query: String): Boolean =
+        LiveSource.matchesSearchQuery(title, query)
 
     private fun uniqueLabels(rows: List<Pair<String, String>>): List<Pair<String, String>> {
         val counts = HashMap<String, Int>()

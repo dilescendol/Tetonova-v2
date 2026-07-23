@@ -50,6 +50,7 @@ object WebViewGate {
                 suspendCancellableCoroutine { cont ->
                     val handler = Handler(Looper.getMainLooper())
                     val wv = WebView(context)
+                    WebViewCookieJar.enableWebViewCookies()
                     var settled = false
 
                     fun finish(result: String?) {
@@ -108,6 +109,7 @@ object WebViewGate {
                 suspendCancellableCoroutine { cont ->
                     val handler = Handler(Looper.getMainLooper())
                     val wv = WebView(context)
+                    WebViewCookieJar.enableWebViewCookies()
                     var settled = false
                     val out = LinkedHashMap<String, String>()
                     var lastEmbed = ""

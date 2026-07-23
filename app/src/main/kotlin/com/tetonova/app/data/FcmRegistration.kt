@@ -27,6 +27,7 @@ object FcmRegistration {
      * push stack. Registration only happens once the user opts into external push.
      */
     suspend fun registerToken(token: String, userId: String? = null): Result<Unit> = withContext(Dispatchers.IO) {
+        if (!AuthManager.signedIn) return@withContext Result.success(Unit)
         if (SettingsStore.getBool("push_local", false)) {
             return@withContext Result.success(Unit)
         }

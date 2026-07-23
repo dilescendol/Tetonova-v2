@@ -193,20 +193,8 @@ object DramaWaveSource {
     private fun needsCode(url: String): Boolean =
         canonicalPath(url).lowercase() in setOf("/api/new-drama", "/api/search", "/api/drama")
 
-    private fun matchesQuery(title: String, query: String): Boolean {
-        val haystack = cleanTitleKey(title)
-        val needle = cleanTitleKey(query)
-        if (needle.isBlank()) return false
-        if (needle in haystack) return true
-        val words = needle.split(' ').filter { it.length >= 3 }
-        return words.isNotEmpty() && words.all { it in haystack }
-    }
-
-    private fun cleanTitleKey(value: String): String =
-        value.lowercase()
-            .replace(Regex("[^a-z0-9]+"), " ")
-            .replace(Regex("\\s+"), " ")
-            .trim()
+    private fun matchesQuery(title: String, query: String): Boolean =
+        LiveSource.matchesSearchQuery(title, query)
 
     private fun detailUrl(id: String, lang: String): String =
         "$BASE/dramawave/detail/${encPath(id)}?lang=${enc(lang)}"

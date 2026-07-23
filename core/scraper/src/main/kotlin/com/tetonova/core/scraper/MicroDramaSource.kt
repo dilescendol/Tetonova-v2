@@ -175,21 +175,8 @@ object MicroDramaSource {
             ?: Regex("/api/microdrama/play/[^/?#]+/(\\d+)", RegexOption.IGNORE_CASE)
                 .find(url)?.groupValues?.getOrNull(1)?.toIntOrNull()
 
-    private fun matchesQuery(title: String, query: String): Boolean {
-        val haystack = cleanTitleKey(title)
-        val needle = cleanTitleKey(query)
-        if (needle.isBlank()) return false
-        if (needle in haystack) return true
-        val words = needle.split(' ').filter { it.length >= 3 }
-        return words.isNotEmpty() && words.all { it in haystack }
-    }
-
-    private fun cleanTitleKey(value: String): String =
-        value.lowercase()
-            .replace(Regex("\\([^)]*\\)"), " ")
-            .replace(Regex("[^a-z0-9]+"), " ")
-            .replace(Regex("\\s+"), " ")
-            .trim()
+    private fun matchesQuery(title: String, query: String): Boolean =
+        LiveSource.matchesSearchQuery(title, query)
 
     private fun qualityLabel(url: String): String =
         Regex("(\\d{3,4})p", RegexOption.IGNORE_CASE)

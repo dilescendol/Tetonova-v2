@@ -24,6 +24,7 @@ import androidx.media3.exoplayer.offline.DownloadRequest
 import androidx.media3.exoplayer.offline.DownloadService
 import androidx.media3.exoplayer.scheduler.Requirements
 import com.tetonova.app.data.SettingsStore
+import com.tetonova.app.data.TnData
 import com.tetonova.core.scraper.ExtractResult
 import com.tetonova.core.scraper.LiveSource
 import com.tetonova.core.scraper.StreamExtractor
@@ -89,6 +90,8 @@ object DownloadCenter {
 
     /** Per-host HTTP headers for the resolving data source (an HLS manifest + its segments share a host). */
     private val headersByHost = ConcurrentHashMap<String, Map<String, String>>()
+    private val retrying = ConcurrentHashMap.newKeySet<String>()
+    private val retryCount = ConcurrentHashMap<String, Int>()
 
     /** Live download rows (newest-first), rebuilt from the Media3 index + active downloads. */
     val items: SnapshotStateList<DlItem> = mutableStateListOf()
@@ -119,7 +122,17 @@ object DownloadCenter {
         m.requirements = currentRequirements()
         m.addListener(object : DownloadManager.Listener {
             override fun onInitialized(downloadManager: DownloadManager) = sync()
-            override fun onDownloadChanged(dm: DownloadManager, download: Download, ex: Exception?) = sync()
+            override fun onDownloadChanged(dm: DownloadManager, download: Download, ex: Exception?) {
+                sync()
+                when {
+                    download.state == Download.STATE_COMPLETED && isComplete(download) -> {
+                        retryCount.remove(download.request.id)
+                        retrying.remove(download.request.id)
+                    }
+                    download.state == Download.STATE_FAILED ||
+                        (download.state == Download.STATE_COMPLETED && !isComplete(download)) -> scheduleRetry(download)
+                }
+            }
             override fun onDownloadRemoved(dm: DownloadManager, download: Download) = sync()
         })
         manager = m
@@ -217,7 +230,8 @@ object DownloadCenter {
 
     private suspend fun resolveAndEnqueue(meta: DlMeta): Boolean {
         val referer = meta.episodeUrl
-        val servers = runCatching { LiveSource.servers(meta.episodeUrl) }.getOrDefault(emptyList())
+        TnData.preparePremiumProxy()
+        val servers = runCatching { TnData.servers(meta.episodeUrl) }.getOrDefault(emptyList())
             .filter { StreamExtractor.isPlayable(it.embedUrl) }
             .filterNot { isWebOnlyHost(it.embedUrl) }
             .sortedWith(compareBy({ downloadRank(it) }, { it.name }))
@@ -246,6 +260,25 @@ object DownloadCenter {
             .apply { if (isHlsUrl(streamUrl)) setMimeType(MimeTypes.APPLICATION_M3U8) }
             .build()
         DownloadService.sendAddDownload(appContext, TnDownloadService::class.java, req, false)
+    }
+
+    private fun isComplete(download: Download): Boolean =
+        download.bytesDownloaded > 0 &&
+            (download.contentLength <= 0 || download.bytesDownloaded >= download.contentLength)
+
+    private fun scheduleRetry(download: Download) {
+        val id = download.request.id
+        if (!retrying.add(id)) return
+        val attempt = retryCount.merge(id, 1, Int::plus) ?: 1
+        if (attempt > 2) { retrying.remove(id); return }
+        val meta = decodeMeta(download.request.data)
+        scope.launch {
+            delay(2_000L * attempt)
+            DownloadService.sendRemoveDownload(appContext, TnDownloadService::class.java, id, false)
+            delay(500)
+            retrying.remove(id)
+            startDownload(meta)
+        }
     }
 
     /** Rebuild the live [items] list from the Media3 index, overlaying live progress of active downloads. */

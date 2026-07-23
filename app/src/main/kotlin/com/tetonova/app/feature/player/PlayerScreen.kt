@@ -3,6 +3,8 @@ package com.tetonova.app.feature.player
 import android.app.Activity
 import android.content.Intent
 import android.content.pm.ActivityInfo
+import android.content.res.Configuration
+import android.widget.Toast
 import android.graphics.Color as AndroidColor
 import android.net.Uri
 import android.os.Handler
@@ -57,6 +59,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -70,6 +73,7 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.window.PopupProperties
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
@@ -92,11 +96,16 @@ import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.PlayerView
+import com.tetonova.app.BuildConfig
+import com.tetonova.core.scraper.DutamovieSource
+import com.tetonova.core.scraper.IndoMax21Source
+import com.tetonova.core.scraper.JavHeySource
 import com.tetonova.core.scraper.ExtractResult
 import com.tetonova.core.scraper.LiveSource
 import com.tetonova.core.scraper.ServerVariant
@@ -119,8 +128,22 @@ import kotlinx.coroutines.withContext
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 
-private val PlayerPopupProperties = PopupProperties(focusable = false)
+/**
+ * Popup props for the player's dropdowns (Source / Resolusi).
+ *
+ * On Android TV the popup MUST be focusable, otherwise it never takes window focus and every D-pad press
+ * falls through to the player's own key handler behind it — the menu opens but can't be navigated at all.
+ * On touch we keep it non-focusable (the original behaviour) so the popup doesn't disturb the player's
+ * immersive / controls-autohide state.
+ */
+@Composable
+private fun playerPopupProperties(): PopupProperties {
+    val isTv = (LocalConfiguration.current.uiMode and Configuration.UI_MODE_TYPE_MASK) ==
+        Configuration.UI_MODE_TYPE_TELEVISION
+    return remember(isTv) { PopupProperties(focusable = isTv) }
+}
 
 private data class SubtitleCue(val startMs: Long, val endMs: Long, val text: String)
 
@@ -251,9 +274,10 @@ fun PlayerScreen(
         loading = true
         if (offlineVariant != null) { loading = false; return@LaunchedEffect } // offline: no server scrape
         failed.clear()
+        TnData.preparePremiumProxy()
         // Every playable server, FASTEST-FIRST (pre-resolved direct streams → clean players → embeds),
         // so auto-pick plays the quickest source and failover walks the rest in that order.
-        var list = arg.url?.let { runCatching { LiveSource.servers(it) }.getOrNull() }.orEmpty()
+        var list = arg.url?.let { runCatching { TnData.servers(it) }.getOrNull() }.orEmpty()
             .filter { StreamExtractor.isPlayable(it.embedUrl) }
         val kuraUrl = arg.url?.takeIf { "kuramanime" in it.lowercase() }
         val kuramadriveOk = list.isNotEmpty() // false when kuramadrive's player token is throttled on a reopen
@@ -264,10 +288,30 @@ fun PlayerScreen(
                 .map { (name, embed) -> VideoServer(name, embed) }
                 .filter { StreamExtractor.isPlayable(it.embedUrl) }
         }
-        list = list.sortedWith(compareBy<VideoServer>({ speedRank(it) }, { -bestServerHeight(it) }, { it.name.lowercase() }))
+        // DutaMovie exposes a deliberate Server 1..N tab order. Preserve it in the player and picker;
+        // global speed sorting made those numbered website tabs appear shuffled.
+        val preserveWebsiteOrder = arg.url?.let { url ->
+            DutamovieSource.isDutamovie(url) || JavHeySource.isJavHey(url) || IndoMax21Source.isIndoMax21(url)
+        } == true
+        if (!preserveWebsiteOrder) {
+            list = list.sortedWith(compareBy<VideoServer>({ speedRank(it) }, { -bestServerHeight(it) }, { it.name.lowercase() }))
+        }
         servers = list
-        selected = list.firstOrNull() // auto-pick the fastest source
-        android.util.Log.i("TnPlayer", "servers (fastest-first): ${list.map { it.name }}; auto-pick '${list.firstOrNull()?.name}'")
+        // Debug smoke-test hook: lets ADB launch the real player on a specific website tab without
+        // changing release behaviour or reordering the user-facing Source list.
+        val debugServer = if (BuildConfig.DEBUG) {
+            (context as? Activity)?.intent?.getIntExtra("player_server", 0)?.also {
+                (context as? Activity)?.intent?.removeExtra("player_server")
+            } ?: 0
+        } else 0
+        // Keep JavHey's website order in the Source menu, but start on its native VidStack mirror when
+        // available. Otherwise Server 1 can be an ad/captcha embed and make the app look like it never
+        // reached our ExoPlayer even though a native HLS mirror is present later in the same six tabs.
+        val javHeyNative = if (arg.url?.let(JavHeySource::isJavHey) == true) {
+            list.minWithOrNull(compareBy<VideoServer>({ speedRank(it) }, { list.indexOf(it) }))
+        } else null
+        selected = list.getOrNull(debugServer - 1) ?: javHeyNative ?: list.firstOrNull()
+        android.util.Log.i("TnPlayer", "servers (website order): ${list.map { it.name }}; auto-pick '${selected?.name}'")
         loading = false
         // NOTE: kuramadrive's player token is aggressively rate-limited, so we deliberately do NOT
         // auto-enumerate the other servers here — that loaded kuramadrive a 2nd time per open and burned
@@ -292,6 +336,11 @@ fun PlayerScreen(
             .firstOrNull { keyOf(it) !in failed }
         if (next != null) selected = next
         android.util.Log.i("TnPlayer", "server '$failedName' failed -> ${next?.name ?: "none"}")
+        // Say WHY the source changed. Silent failover made a manual pick look like it was ignored — the
+        // player would just wander off to another server with no explanation.
+        if (failedName != null && next != null) {
+            Toast.makeText(context, "Source \"$failedName\" gagal — pindah ke \"${next.name}\"", Toast.LENGTH_SHORT).show()
+        }
         return next != null
     }
     // Manual pick starts a fresh attempt for that source; if it fails, failover walks forward from there.
@@ -351,21 +400,23 @@ private fun ServerPlayer(
     onVertical: (Boolean) -> Unit = {},
 ) {
     // Hosts whose token streams 404/403 ExoPlayer (browser-context anti-leech) but play fine in a
-    // WebView — JWPlayer (videoplayer.vip) and Dailymotion. Play them in the WebView with the host UI
-    // hidden and OUR controls overlaid, driven via the host's JS/postMessage API.
+    // WebView — JWPlayer (videoplayer.vip). Played in the WebView with the host UI hidden and OUR
+    // controls overlaid, driven via the host's JS/postMessage API.
+    //
+    // Dailymotion is deliberately NOT here: `dmPlayer` builds its wrapper around the Dailymotion SDK at
+    // `geo.dailymotion.com/libs/player/<playerId>.js`, and that player id is account+domain locked. The
+    // hardcoded default ("xir9o", anixcafe's) 403s for any other site — e.g. loaded with an anichin
+    // referer it returns "Forbidden", so createPlayer never exists, nothing plays, and the 12s watchdog
+    // silently failed the server. The metadata extractor handles Dailymotion properly instead
+    // (qualities.auto[] → a real #EXTM3U master), which also gets us our own controls + Resolusi picker.
     val webPlayer = when {
-        isJwPlayerHost(server.embedUrl) -> jwPlayer(server.embedUrl, referer)
-        isDailymotionHost(server.embedUrl) -> dmPlayer(server.embedUrl, referer)
+        isJwPlayerHost(server.embedUrl) || isHydraxEmbed(server.embedUrl) -> jwPlayer(server.embedUrl, referer)
         else -> null
     }
     if (webPlayer != null) {
         WebPlayerStage(webPlayer, server.embedUrl, arg.title, arg.episodeLabel, servers, server, onPickServer, onServerFailed, onBack, onExternal)
         return
     }
-    // Hydrax/Abyss (playhydrax.com): a proprietary encrypted player with NO sniffable direct stream —
-    // it plays only inside its own WebView player, exactly as the source site's browser player does.
-    // Route straight to the plain embed stage; extract→sniff always fails for these and would wrongly
-    // DROP an otherwise-reliable fallback (e.g. PusatFilm's Hydrax mirror still plays when Turbovip 404s).
     if (isEmbedOnlyHost(server.embedUrl)) {
         WebStage(server, arg, servers, referer, onPickServer, onBack, onExternal)
         return
@@ -376,22 +427,41 @@ private fun ServerPlayer(
         // 1) static extractor (ok.ru/dailymotion/rumble/filemoon) → 2) WebView sniffer → 3) WebView embed.
         val res = runCatching { StreamExtractor.extract(server, referer) }.getOrDefault(ExtractResult(emptyList()))
         android.util.Log.i("TnPlayer", "extract '${server.name}' (${server.embedUrl.take(64)}) → ${res.variants.size} variants ${res.variants.map { it.label }}${if (res.variants.isEmpty()) " → sniff" else ""}")
-        phase = if (res.variants.isNotEmpty()) Phase.Exo(res.variants, res.headers) else Phase.Sniffing
+        phase = if (res.variants.isNotEmpty()) Phase.Exo(res.variants, res.headers, res.subtitles) else Phase.Sniffing
     }
-    // A source that won't play is dropped from the picker and skipped. No plain embed fallback here:
-    // dead sources should not surface as a host-controlled player.
-    val onFail = { if (!onServerFailed()) phase = Phase.Dead }
+    // Hydrax's URL is browser-bound: the iframe plays it, while ExoPlayer can get a 403 for the same
+    // token. Keep that source in its working WebView instead of treating a direct-playback failure as
+    // a dead server and silently skipping to the next one.
+    val onFail = {
+        if (isHydraxEmbed(server.embedUrl)) phase = Phase.Web
+        else if (!onServerFailed()) phase = Phase.Dead
+    }
     when (val p = phase) {
         Phase.Extracting -> LoadingBox("Menyiapkan video…")
         Phase.Sniffing -> SniffStage(
             embedUrl = server.embedUrl, referer = referer,
-            onSniffed = { url, h -> phase = Phase.Exo(listOf(StreamVariant("Auto", url)), h) },
+            onSniffed = { variants, h -> phase = Phase.Exo(variants, h) },
             onFail = onFail,
         )
         is Phase.Exo ->
             // Melolo's encrypted MP4 (trips ExoPlayer's Mp4Extractor with "Invalid NAL length" raw) is
             // decrypted in-flight by MeloloDataSource — see the `#tnk=` netFactory branch in ExoStage.
-            ExoStage(p.variants, p.headers, arg, server, servers, onPickServer, onBack, onExternal, onError = onFail, hasNext = hasNext, onNext = onNext, hasPrev = hasPrev, onPrev = onPrev, onVertical = onVertical)
+            ExoStage(
+                p.variants,
+                p.headers,
+                arg,
+                server.copy(subtitles = (server.subtitles + p.subtitles).distinctBy { it.url }),
+                servers,
+                onPickServer,
+                onBack,
+                onExternal,
+                onError = onFail,
+                hasNext = hasNext,
+                onNext = onNext,
+                hasPrev = hasPrev,
+                onPrev = onPrev,
+                onVertical = onVertical,
+            )
         Phase.Dead -> NoSourceBox(onRetry = { phase = Phase.Extracting; retryExtract++ }, onExternal = onExternal, onBack = onBack)
         Phase.Web -> WebStage(server, arg, servers, referer, onPickServer, onBack, onExternal)
     }
@@ -405,7 +475,11 @@ private fun ServerPlayer(
 private sealed interface Phase {
     data object Extracting : Phase
     data object Sniffing : Phase
-    data class Exo(val variants: List<StreamVariant>, val headers: Map<String, String>) : Phase
+    data class Exo(
+        val variants: List<StreamVariant>,
+        val headers: Map<String, String>,
+        val subtitles: List<com.tetonova.core.scraper.SubtitleTrack> = emptyList(),
+    ) : Phase
     data object Dead : Phase
     data object Web : Phase
 }
@@ -440,24 +514,31 @@ private const val JW_SETUP_JS =
         "'.jwplayer,.jw-wrapper,.jw-aspect,#vplayer,#player{position:fixed!important;top:0!important;left:0!important;width:100%!important;height:100%!important;padding:0!important;max-width:none!important;}'+" +
         "'video{width:100%!important;height:100%!important;object-fit:contain!important;}';" +
         "document.head.appendChild(s);}catch(e){}try{jwplayer().setControls(false);jwplayer().resize(window.innerWidth,window.innerHeight);jwplayer().play();}catch(e){}})();"
-private const val JW_STATE_JS =
-    "(function(){try{if(!window.jwplayer)return '';var p=jwplayer();if(!p.getState)return '';" +
-        "try{p.setControls(false);}catch(e){}" +
-        // Kill full-screen fixed overlays that contain no <video> (ad/click-catchers covering the player).
-        "try{for(var i=0;i<8;i++){var t0=document.elementFromPoint(innerWidth/2,innerHeight/2);" +
-        "if(t0&&(t0.tagName=='DIV'||t0.tagName=='IFRAME')&&!t0.querySelector('video')){t0.style.display='none';}else break;}}catch(e){}" +
-        "try{p.resize(window.innerWidth,window.innerHeight);}catch(e){}" +
-        // Hide videoplayer.vip's \"Welcome back / resume watching?\" dialog (the small div holding that text).
-        "try{var dv=document.querySelectorAll('div');for(var j=0;j<dv.length;j++){var e=dv[j];var tx=(e.textContent||'');if(/resume watching|welcome back/i.test(tx)&&tx.length<170){e.style.display='none';}}}catch(e){}" +
-        "var q=[];var qi=0;try{var ql=p.getQualityLevels()||[];for(var k=0;k<ql.length;k++)q.push(ql[k].label||('Q'+k));qi=p.getCurrentQuality();}catch(e){}" +
-        "return JSON.stringify({st:p.getState(),pos:Math.floor(p.getPosition()||0),dur:Math.floor(p.getDuration()||0),q:q,qi:qi});}catch(e){return '';}})();"
+private const val JW_STATE_JS = """(function(){try{
+var w=window,d=document,p=null;
+try{var f=document.querySelector('iframe');if(f&&f.contentWindow){w=f.contentWindow;d=f.contentDocument||w.document;}}catch(e){}
+try{if(w.jwplayer)p=w.jwplayer();}catch(e){}
+var st='',pos=0,dur=0,q=[],qi=0;
+if(p){
+ try{p.setControls(false);}catch(e){}
+ try{p.resize(w.innerWidth,w.innerHeight);}catch(e){}
+ try{if(typeof p.getState==='function')st=p.getState()||'';}catch(e){}
+ try{if(typeof p.getPosition==='function')pos=p.getPosition()||0;else if(typeof p.getCurrentTime==='function')pos=p.getCurrentTime()||0;}catch(e){}
+ try{if(typeof p.getDuration==='function')dur=p.getDuration()||0;}catch(e){}
+ try{var ql=p.getQualityLevels?p.getQualityLevels():[];for(var k=0;k<ql.length;k++){var label=ql[k].label||('Q'+k);if(q.indexOf(label)<0)q.push(label);}qi=p.getCurrentQuality?p.getCurrentQuality():0;}catch(e){}
+}
+try{var v=d.querySelector('video');if(v){if(!pos)pos=v.currentTime||0;if(!dur||dur<0)dur=v.duration||0;if(!v.paused&&!v.ended&&v.readyState>=2)st='playing';}}catch(e){}
+if(!q.length){try{d.querySelectorAll('.jw-settings-submenu-quality .jw-settings-content-item').forEach(function(el){var label=(el.textContent||'').trim();if(label&&q.indexOf(label)<0)q.push(label);});}catch(e){}}
+try{var dv=d.querySelectorAll('div');for(var j=0;j<dv.length;j++){var el=dv[j],tx=(el.textContent||'');if(/resume watching|welcome back/i.test(tx)&&tx.length<170)el.style.display='none';}}catch(e){}
+return JSON.stringify({st:st,pos:Math.floor(pos||0),dur:Math.floor(dur||0),q:q,qi:qi});
+}catch(e){return JSON.stringify({st:'',pos:0,dur:0,q:[],qi:0});}})();"""
 
 private fun isJwPlayerHost(embedUrl: String): Boolean = "videoplayer.vip" in embedUrl
 private fun isDailymotionHost(embedUrl: String): Boolean = "dailymotion" in embedUrl
 
-/** Hosts that play ONLY inside their own WebView player — a proprietary encrypted stream with nothing
- *  sniffable (Hydrax/Abyss), or a native player our extractor/sniffer can't crack that still plays fine
- *  in its own iframe. Routed straight to [WebStage] so extract→sniff doesn't fail-and-DROP the server
+/** Hosts that play ONLY inside their own WebView player — a native player our extractor/sniffer can't
+ *  crack that still plays fine in its own iframe. Routed straight to [WebStage] so extract→sniff
+ *  doesn't fail-and-DROP the server
  *  (there is no plain-embed fallback after a failed sniff — a dropped server just disappears).
  *
  *  Samehadaku's OLD movies serve only these two hosts, so without this they sniff-fail → NoSource:
@@ -466,9 +547,11 @@ private fun isDailymotionHost(embedUrl: String): Boolean = "dailymotion" in embe
  *   - gdriveplayer.to: an obfuscated JWPlayer (XOR-decoded config via `file.js`) with ad-gated sources. */
 private fun isEmbedOnlyHost(embedUrl: String): Boolean {
     val h = embedUrl.lowercase()
-    return "playhydrax" in h || "hydrax" in h || "abyss.to" in h || "abyssplayer" in h ||
-        "gn1r5n" in h ||
+    return "gn1r5n" in h ||
         "file.fm" in h || "files.fm" in h || "gdriveplayer" in h || "playeriframe.sbs" in h ||
+        // Byse's current API uses browser fingerprint/captcha attestation. Its own embed remains the
+        // reliable path when the native AES-GCM handshake is rejected, so never auto-skip the mirror.
+        "byse" in h ||
         // Blogger (anoboy Btube): a Google WIZ player that only requests its googlevideo stream AFTER a
         // real play gesture — the background sniffer can't trigger that (synthetic .click() isn't a
         // trusted gesture), so it plays in its own WebView player (one tap). The app already ranks the
@@ -476,6 +559,27 @@ private fun isEmbedOnlyHost(embedUrl: String): Boolean {
         // Blogger is only the fallback for Btube-only episodes.
         "blogger.com/video.g" in h || "blogspot.com/video" in h
 }
+
+private fun isHydraxEmbed(embedUrl: String): Boolean {
+    val h = embedUrl.lowercase()
+    return "hydrax" in h || "abyss.to" in h || "abyssplayer" in h
+}
+
+private fun hydraxWrapperHtml(embedUrl: String): String {
+    val src = embedUrl.replace("&", "&amp;").replace("\"", "&quot;")
+    return """<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>html,body,iframe{margin:0;width:100%;height:100%;border:0;background:#000;overflow:hidden}iframe{display:block}</style>
+</head><body><iframe src="$src" allow="autoplay; fullscreen"></iframe></body></html>"""
+}
+
+private const val HYDRAX_READER_JS =
+    "(function(){try{var f=document.querySelector('iframe');var w=f&&f.contentWindow;" +
+        "if(!w||!w.jwplayer)return '[]';var p=w.jwplayer();" +
+        "var it=(p.getPlaylistItem&&p.getPlaylistItem())||null;var ss=(it&&it.sources)||[];var out=[];" +
+        "for(var i=0;i<ss.length;i++){var u=ss[i].file||'';if(u.indexOf('//')===0)u='https:'+u;" +
+        "if(/^https?:/.test(u))out.push({label:ss[i].label||'Auto',url:u});}" +
+        "out.sort(function(a,b){return(parseInt(b.label)||0)-(parseInt(a.label)||0);});" +
+        "return JSON.stringify(out);}catch(e){return '[]';}})();"
 
 // Dailymotion is cross-origin (no CSS/JS injection) and its raw iframe only posts benchmark telemetry
 // to the parent, not the Player API. So we host it via the official Dailymotion Player SDK inside OUR
@@ -544,15 +648,32 @@ private class WebPlayer(
     val allowHost: (String) -> Boolean,  // main-frame nav allowed for this host (else blocked as an ad)
 )
 
-private fun jwPlayer(embedUrl: String, referer: String) = WebPlayer(
-    load = { it.loadUrl(embedUrl, mapOf("Referer" to referer)) },
+private fun jwPlayer(embedUrl: String, referer: String): WebPlayer {
+    val framed = isHydraxEmbed(embedUrl)
+    val playerLookup =
+        "var f=document.querySelector('iframe');var w=(f&&f.contentWindow)||window;" +
+            "var p=w.jwplayer&&w.jwplayer();"
+    return WebPlayer(
+    load = {
+        if (framed) {
+            // Abyss redirects an embed opened as a top-level page to abyss.to. Keep it in the same-origin
+            // iframe shape used by DutaMovie so its player remains loaded and its JW API stays reachable.
+            it.loadDataWithBaseURL(embedUrl, hydraxWrapperHtml(embedUrl), "text/html", "UTF-8", embedUrl)
+        } else {
+            it.loadUrl(embedUrl, mapOf("Referer" to referer))
+        }
+    },
     setupJs = JW_SETUP_JS, stateJs = JW_STATE_JS,
-    playKick = "try{jwplayer().play(true);}catch(e){}",
-    toggle = "try{var p=jwplayer();p.getState()=='playing'?p.pause(true):p.play(true);}catch(e){}",
-    seekAbs = { "try{jwplayer().seek($it);}catch(e){}" },
-    setQuality = { "try{jwplayer().setCurrentQuality($it);}catch(e){}" },
-    allowHost = { it.endsWith("videoplayer.vip") },
+    playKick = "try{$playerLookup p&&p.play(true);}catch(e){}",
+    toggle = "try{$playerLookup if(p)p.getState()=='playing'?p.pause(true):p.play(true);}catch(e){}",
+    seekAbs = { "try{$playerLookup p&&p.seek($it);}catch(e){}" },
+    setQuality = { index ->
+        "try{$playerLookup if(p&&p.setCurrentQuality)p.setCurrentQuality($index);" +
+            "else{var d=(f&&f.contentDocument)||document;var q=d.querySelectorAll('.jw-settings-submenu-quality .jw-settings-content-item');if(q[$index])q[$index].click();}}catch(e){}"
+    },
+    allowHost = { it.endsWith("videoplayer.vip") || isHydraxEmbed(it) },
 )
+}
 
 private fun dmPlayer(embedUrl: String, referer: String) = WebPlayer(
     load = {
@@ -584,6 +705,36 @@ private fun isAdHost(host: String): Boolean = host.lowercase().let { h -> AD_HOS
 /** Empty 200 used to swallow a blocked ad request without erroring the page. */
 private fun emptyResponse() = WebResourceResponse("text/plain", "utf-8", java.io.ByteArrayInputStream(ByteArray(0)))
 
+private fun hydraxChromeClient(ctx: android.content.Context) = object : WebChromeClient() {
+    override fun onCreateWindow(view: WebView, isDialog: Boolean, isUserGesture: Boolean, resultMsg: android.os.Message): Boolean {
+        val parent = (ctx as? Activity)?.window?.decorView as? android.widget.FrameLayout ?: return false
+        val popup = WebView(ctx).apply {
+            settings.javaScriptEnabled = true
+            webViewClient = WebViewClient()
+        }
+        parent.addView(popup, android.widget.FrameLayout.LayoutParams(1, 1))
+        (resultMsg.obj as? WebView.WebViewTransport)?.webView = popup
+        resultMsg.sendToTarget()
+        popup.postDelayed({
+            (popup.parent as? ViewGroup)?.removeView(popup)
+            popup.destroy()
+        }, 1500)
+        return true
+    }
+}
+
+private fun hydraxVariants(result: String?): List<StreamVariant> = runCatching {
+    val json = org.json.JSONTokener(result.orEmpty()).nextValue() as? String ?: return@runCatching emptyList()
+    val array = org.json.JSONArray(json)
+    buildList {
+        for (i in 0 until array.length()) {
+            val item = array.optJSONObject(i) ?: continue
+            val url = item.optString("url")
+            if (url.startsWith("http")) add(StreamVariant(item.optString("label", "Auto"), url))
+        }
+    }.distinctBy { it.url }
+}.getOrDefault(emptyList())
+
 /**
  * JS injected into ad-heavy embeds (4meplayer/blogger) to strip injected betting overlays — the
  * full-screen "BONUS" modal and the floating draggable widget. Removal is tied to an ad URL signal
@@ -610,9 +761,17 @@ private const val SNIFF_KICK_JS =
         "var b=document.querySelector('.jw-icon-display,.vjs-big-play-button,.plyr__control--overlaid,button[aria-label*=\"lay\" i],.play-button,.play');if(b)b.click();" +
         "}catch(e){}})();"
 
+/** Ad manifests that LOOK like a stream. Dailymotion serves its VMAP ad-break manifest from
+ *  `dmxleo.dailymotion.com/...m3u8?...&af=[APIFRAMEWORKS]&vv=[VASTVERSIONS]` — it ends in `.m3u8` but
+ *  returns VMAP **XML**, so sniffing it fed ExoPlayer garbage ("Input does not start with the #EXTM3U
+ *  header") and the server got failed+skipped even though the real video was fine. */
+private fun isAdManifest(low: String): Boolean =
+    "dmxleo." in low || "[vastversions]" in low || "[apiframeworks]" in low
+
 private fun looksLikeStream(u: String): Boolean {
     val low = u.lowercase()
     val path = low.substringBefore('?')
+    if (isAdManifest(low)) return false
     // Extensions OR path markers (videoplayer.vip serves HLS at /hls/<token> with no .m3u8 suffix).
     return path.endsWith(".m3u8") || path.endsWith(".mp4") || path.endsWith(".mpd") ||
         path.endsWith(".mkv") || path.endsWith(".webm") ||
@@ -622,6 +781,8 @@ private fun looksLikeStream(u: String): Boolean {
         "videotv.dramaexpo.com" in low ||
         "montagehub.xyz" in low ||
         "janzhoutec.com" in low ||
+        // Hydrax's progressive MP4 endpoint is extensionless (`/sora/<id>/<token>`).
+        ("sssrr.org" in low && "/sora/" in path) ||
         // Blogger (anoboy Btube) streams from googlevideo's /videoplayback with no file extension
         // and `mime=video/mp4` (not `mime_type=`), so the checks above miss it.
         ("googlevideo.com" in low && "videoplayback" in path) ||
@@ -635,6 +796,7 @@ private fun isHls(u: String): Boolean {
     return ".m3u8" in low ||
         "/hls/" in path ||
         "/manifest" in path ||
+        ("majorplay.net" in low && Regex("/(?:config|data)-\\d+\\.json$").containsMatchIn(path)) ||
         ("cdn.dramabos.video/api/" in low && "/hls" in path) ||
         ("kesbayar.sbs" in low && Regex("\\.\\d{3,4}p$").containsMatchIn(path))
 }
@@ -705,18 +867,42 @@ private fun String.parseSrtTime(): Long? {
 }
 
 /**
- * Loads the embed in an ATTACHED, full-size WebView (hidden behind an opaque overlay so its ads/UI
- * aren't shown) and watches its traffic for a `.m3u8`/`.mp4`. Off-screen/orphan WebViews don't run
- * media, so it must be in the tree; a play-nudge kicks Playerjs/VPlayer-style players that need a
- * click. First stream → [onSniffed]; timeout → [onFail] (caller drops to a plain WebView embed).
+ * Loads the embed in an ATTACHED, full-size WebView and watches its traffic for a `.m3u8`/`.mp4`.
+ * Off-screen/orphan WebViews don't run media, so it must be in the tree; non-Hydrax players get a
+ * play-nudge while Hydrax stays tappable for its own gate. First stream → [onSniffed].
  */
 @Composable
-private fun SniffStage(embedUrl: String, referer: String, onSniffed: (String, Map<String, String>) -> Unit, onFail: () -> Unit) {
-    val done = remember { AtomicBoolean(false) }
-    var web by remember { mutableStateOf<WebView?>(null) }
-    LaunchedEffect(embedUrl) { delay(12_000); if (done.compareAndSet(false, true)) onFail() }
-    LaunchedEffect(web) {
+private fun SniffStage(embedUrl: String, referer: String, onSniffed: (List<StreamVariant>, Map<String, String>) -> Unit, onFail: () -> Unit) {
+    val hydrax = isHydraxEmbed(embedUrl)
+    val done = remember(embedUrl) { AtomicBoolean(false) }
+    val hydraxFirst = remember(embedUrl) { AtomicReference<Pair<String, Map<String, String>>?>(null) }
+    var web by remember(embedUrl) { mutableStateOf<WebView?>(null) }
+    LaunchedEffect(embedUrl) {
+        delay(if (hydrax) 30_000 else 12_000)
+        if (done.compareAndSet(false, true)) onFail()
+    }
+    LaunchedEffect(web, hydrax) {
         val wv = web ?: return@LaunchedEffect
+        if (hydrax) {
+            repeat(30) {
+                delay(500)
+                if (done.get()) return@LaunchedEffect
+                wv.evaluateJavascript(HYDRAX_READER_JS) { result ->
+                    val variants = hydraxVariants(result)
+                    if (variants.isEmpty()) return@evaluateJavascript
+                    val headers = hydraxFirst.get()?.second ?: buildMap {
+                        put("Referer", embedUrl)
+                        val origin = runCatching { java.net.URI(embedUrl).let { "${it.scheme}://${it.host}" } }.getOrNull()
+                        android.webkit.CookieManager.getInstance().getCookie(origin ?: embedUrl)?.let { put("Cookie", it) }
+                    }
+                    if (done.compareAndSet(false, true)) onSniffed(variants, headers)
+                }
+            }
+            hydraxFirst.get()?.let { (url, headers) ->
+                if (done.compareAndSet(false, true)) onSniffed(listOf(StreamVariant("Auto", url)), headers)
+            }
+            return@LaunchedEffect
+        }
         repeat(8) {
             delay(1200)
             if (done.get()) return@LaunchedEffect
@@ -731,7 +917,7 @@ private fun SniffStage(embedUrl: String, referer: String, onSniffed: (String, Ma
                         put("Referer", embedUrl)
                         cookie?.let { put("Cookie", it) } // NO Origin — media fetch is same-origin
                     }
-                    onSniffed(url, h)
+                    onSniffed(listOf(StreamVariant("Auto", url)), h)
                 }
             }
         }
@@ -750,19 +936,27 @@ private fun SniffStage(embedUrl: String, referer: String, onSniffed: (String, Ma
                     settings.domStorageEnabled = true
                     settings.mediaPlaybackRequiresUserGesture = false
                     settings.userAgentString = DESKTOP_UA
-                    webChromeClient = WebChromeClient()
+                    settings.setSupportMultipleWindows(hydrax)
+                    webChromeClient = if (hydrax) hydraxChromeClient(ctx) else WebChromeClient()
                     webViewClient = object : WebViewClient() {
                         override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
-                            if (isAdHost(request.url.host.orEmpty())) return emptyResponse()
                             val u = request.url.toString()
-                            if (looksLikeStream(u) && done.compareAndSet(false, true)) {
-                                val origin = runCatching { java.net.URI(embedUrl).let { "${it.scheme}://${it.host}" } }.getOrNull()
-                                val cookie = runCatching { android.webkit.CookieManager.getInstance().getCookie(origin ?: embedUrl) }.getOrNull()
-                                val h = HashMap(request.requestHeaders).apply {
-                                    putIfAbsent("Referer", referer) // request headers already carry the embed Referer
-                                    cookie?.let { put("Cookie", it) } // NO Origin — JWPlayer's media fetch doesn't send it
+                            if (isAdHost(request.url.host.orEmpty())) return emptyResponse()
+            if (looksLikeStream(u)) {
+                val origin = runCatching { java.net.URI(embedUrl).let { "${it.scheme}://${it.host}" } }.getOrNull()
+                val cookie = runCatching { android.webkit.CookieManager.getInstance().getCookie(origin ?: embedUrl) }.getOrNull()
+                val h = HashMap(request.requestHeaders).apply {
+                    putIfAbsent("Referer", if (hydrax) embedUrl else referer)
+                    cookie?.let { put("Cookie", it) } // NO Origin — JWPlayer's media fetch doesn't send it
+                }
+                if (hydrax) {
+                    hydraxFirst.compareAndSet(null, u to h)
+                    return null
+                }
+                if (!done.compareAndSet(false, true)) return null
+                Handler(Looper.getMainLooper()).post {
+                    onSniffed(listOf(StreamVariant("Auto", u)), h)
                                 }
-                                Handler(Looper.getMainLooper()).post { onSniffed(u, h) }
                                 // Block the WebView's own fetch so a single-use token stays unused → ExoPlayer gets a fresh hit.
                                 return WebResourceResponse("text/plain", "utf-8", java.io.ByteArrayInputStream(ByteArray(0)))
                             }
@@ -770,23 +964,31 @@ private fun SniffStage(embedUrl: String, referer: String, onSniffed: (String, Ma
                         }
                         override fun onPageFinished(view: WebView, url: String?) {
                             view.evaluateJavascript(STRIP_ADS_JS, null)
-                            view.evaluateJavascript(SNIFF_KICK_JS, null)
-                            view.evaluateJavascript(READER_JS, null)
+                            if (!hydrax) view.evaluateJavascript(SNIFF_KICK_JS, null)
                         }
                     }
-                    loadUrl(embedUrl, mapOf("Referer" to referer))
+                    if (hydrax) {
+                        val base = runCatching {
+                            java.net.URI(embedUrl).let { "${it.scheme}://${it.host}/" }
+                        }.getOrDefault(referer)
+                        loadDataWithBaseURL(base, hydraxWrapperHtml(embedUrl), "text/html", "UTF-8", null)
+                    } else {
+                        loadUrl(embedUrl, mapOf("Referer" to referer))
+                    }
                 }
             },
             update = { web = it },
             onRelease = { it.destroy() },
             modifier = Modifier.fillMaxSize(),
         )
-        // Opaque overlay so the embed's ad/UI stays hidden while sniffing.
-        Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                CircularProgressIndicator(color = Color.White)
-                Spacer(Modifier.height(14.dp))
-                Text("Menyiapkan video…", color = Color.White.copy(0.85f), fontSize = 13.sp)
+        if (!hydrax) {
+            // Opaque overlay so the embed's ad/UI stays hidden while sniffing.
+            Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    CircularProgressIndicator(color = Color.White)
+                    Spacer(Modifier.height(14.dp))
+                    Text("Menyiapkan video…", color = Color.White.copy(0.85f), fontSize = 13.sp)
+                }
             }
         }
     }
@@ -816,7 +1018,7 @@ private fun ExoStage(
 ) {
     val context = LocalContext.current
     // ── Watch telemetry: collect playback heartbeats → server XP engine (cultivation / Jalan Kultivasi).
-    // The server validates the deltas (skip/idle/background filtered), gates XP at 70% real watch time,
+    // The server validates the deltas (skip/idle/background filtered), gates XP at 50% real watch time,
     // and caps per item — see WatchSessionRepository. Plain mutableListOf (not snapshot state): mutated
     // only from the IO poll loop, never read by composition.
     val sessionId = remember(arg.url) { java.util.UUID.randomUUID().toString() }
@@ -825,9 +1027,10 @@ private fun ExoStage(
     var lastInteractionAt by remember(arg.url) { mutableLongStateOf(System.currentTimeMillis()) }
     val watchSourceId = remember(arg.url) { TnData.sourceIdForUrl(arg.url.orEmpty()) }
     val watchEpisodeId = remember(arg.url) { TnData.episodeIdForUrl(arg.url.orEmpty()) }
+    val watchIsShort = remember(arg.url) { TnData.isShortSource(arg.url) }
     fun flushHeartbeats() {
         if (heartbeats.size < 2) return
-        TnData.reportWatchSession(sessionId, watchEpisodeId, watchSourceId, heartbeats.toList())
+        TnData.reportWatchSession(sessionId, watchEpisodeId, watchSourceId, watchIsShort, heartbeats.toList())
         val last = heartbeats.last()
         heartbeats.clear()
         heartbeats.add(last) // keep the last beat so the next batch's cross-flush realtime delta still counts
@@ -845,11 +1048,23 @@ private fun ExoStage(
         val httpFactory = DefaultHttpDataSource.Factory()
             .setUserAgent(ua)
             .setDefaultRequestProperties(props.filterKeys { !it.equals("User-Agent", true) })
+        // Dailymotion's HLS `sec=` token is bound to the IP that fetched the metadata. The extractor
+        // fetches metadata over an IPv4-only OkHttp client, so play the stream through an IPv4-only OkHttp
+        // datasource too — otherwise ExoPlayer's HttpURLConnection can egress via IPv6 (a different public
+        // address) and the CDN 403s the token. Other hosts stay on DefaultHttpDataSource.
+        val isDailymotion = variants.any { val u = it.url.lowercase(); "dailymotion" in u || "dmcdn" in u }
+        val httpBase: DataSource.Factory = if (isDailymotion) {
+            OkHttpDataSource.Factory(playerOkHttp)
+                .setUserAgent(ua)
+                .setDefaultRequestProperties(props.filterKeys { !it.equals("User-Agent", true) })
+        } else httpFactory
         // wibufile's CDN throttles ANY ranged request (`Range: bytes=…`) to ~30 KB/s but serves a plain
         // full-file GET (no Range) at ~150 KB/s. ExoPlayer's progressive reader issues ranged reads, so its
         // moov fetch crawled and the watchdog killed every wibufile source. Strip the Range on the initial
         // (position-0) read so it takes the fast full-file path — the browser's `<video>` does the same.
-        val defaultFactory = DefaultDataSource.Factory(context, httpFactory)
+        val mediaHttp = if (variants.any { "turboviplay.com" in it.url.lowercase() })
+            TurboVipPngTsFactory(httpBase) else httpBase
+        val defaultFactory = DefaultDataSource.Factory(context, ParenLiteralFactory(mediaHttp))
         val netFactory: DataSource.Factory = dataSourceFactory
             // Melolo streams (marked by the `#tnk=` key fragment) are AES-CTR encrypted: download+decrypt.
             ?: if (variants.any { "#tnk=" in it.url }) MeloloDataSourceFactory(httpFactory)
@@ -891,7 +1106,6 @@ private fun ExoStage(
     var duration by remember { mutableLongStateOf(0L) }
     var controls by remember { mutableStateOf(true) }
     var menuOpen by remember { mutableStateOf(false) } // Source/Resolusi dropdown open → pause auto-hide
-    var sourceOpenTick by remember { mutableIntStateOf(0) } // D-pad Up bumps this → Source picker opens (TV)
     // AniSkip OP/ED timestamps. Only fetched for matched anime (malId>0, not donghua); stays null
     // otherwise → the manual heuristic chip below. `skip_op` governs whether a present span auto-seeks.
     var skip by remember(arg.url) { mutableStateOf<SkipTimes?>(null) }
@@ -905,6 +1119,11 @@ private fun ExoStage(
     var nextIn by remember(arg.url) { mutableStateOf(-1) } // >0 = countdown active
     var cancelNext by remember(arg.url) { mutableStateOf(false) }
     val focusRequester = remember { FocusRequester() }
+    // TV: explicit hand-offs into the overlay controls. Directional traversal can't reach them on its own
+    // because they're children of the fullscreen focusable Box (nothing is "above" it), so Up/Down jump
+    // focus straight to the Source pill / the transport row instead.
+    val topBarFocus = remember { FocusRequester() }
+    val transportFocus = remember { FocusRequester() }
     val preferredSubtitle = remember(server.subtitles) { preferredSubtitleTrack(server.subtitles) }
     var subtitleCues by remember(preferredSubtitle?.url) { mutableStateOf<List<SubtitleCue>>(emptyList()) }
     LaunchedEffect(preferredSubtitle?.url) {
@@ -1049,7 +1268,17 @@ private fun ExoStage(
             }
         }
     }
-    LaunchedEffect(controls, playing, menuOpen) { if (controls && playing && !menuOpen) { delay(4000); controls = false } }
+    // TV D-pad model. While the fullscreen Box itself holds focus the remote drives PLAYBACK
+    // (left/right = ∓10s, center = play/pause). Press Up/Down and we stop consuming, so Compose hands
+    // focus to the overlay controls — Source / Resolusi pills above, prev-next transport + seekbar below —
+    // where the rose TV focus ring shows the selection and center activates it. Back returns to playback.
+    var boxFocused by remember { mutableStateOf(false) }
+
+    // Auto-hide the controls after 4s — but never while the user is navigating them with the D-pad
+    // (focus outside the Box), or their focus would be stranded on a hidden control.
+    LaunchedEffect(controls, playing, menuOpen, boxFocused) {
+        if (controls && playing && !menuOpen && boxFocused) { delay(4000); controls = false }
+    }
 
     LaunchedEffect(menuOpen) { if (!menuOpen) focusRequester.requestFocus() } // re-grab focus after a dropdown closes
 
@@ -1058,54 +1287,54 @@ private fun ExoStage(
             .fillMaxSize()
             .background(Color.Black)
             .focusRequester(focusRequester)
+            .onFocusChanged { boxFocused = it.isFocused }
             .focusable()
             .onPreviewKeyEvent { ev ->
                 if (ev.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
-                when (ev.key) {
-                    Key.Back -> {
-                        if (menuOpen) false
-                        else if (controls) {
-                            controls = false
-                            true
-                        } else {
-                            onBack()
-                            true
-                        }
+                if (ev.key == Key.Back) {
+                    return@onPreviewKeyEvent when {
+                        menuOpen -> false
+                        !boxFocused -> { focusRequester.requestFocus(); true } // controls → back to playback
+                        controls -> { controls = false; true }
+                        else -> { onBack(); true }
                     }
+                }
+                if (ev.key == Key.MediaPlayPause || ev.key == Key.Spacebar) {
+                    exo.playWhenReady = !exo.playWhenReady
+                    controls = true
+                    lastInteractionAt = System.currentTimeMillis()
+                    return@onPreviewKeyEvent true
+                }
+                // Focus sits on an overlay control → the D-pad belongs to Compose traversal, not playback.
+                if (!boxFocused) return@onPreviewKeyEvent false
+                // Controls hidden: any D-pad press just reveals them.
+                if (!controls) {
+                    controls = true
+                    lastInteractionAt = System.currentTimeMillis()
+                    return@onPreviewKeyEvent true
+                }
+                when (ev.key) {
                     Key.DirectionLeft -> {
-                        // Single D-pad press = seek −10s (no need to open controls first).
+                        // Single press = seek −10s.
                         exo.seekTo((exo.currentPosition - 10_000).coerceAtLeast(0))
-                        controls = true
                         lastInteractionAt = System.currentTimeMillis()
                         true
                     }
                     Key.DirectionRight -> {
                         exo.seekTo(exo.currentPosition + 10_000)
-                        controls = true
                         lastInteractionAt = System.currentTimeMillis()
                         true
                     }
+                    // Hand focus to the overlay controls: Up = Source/Resolusi pills, Down = prev/play/next.
+                    // (Plain traversal can't get there — they live inside this fullscreen focusable Box.)
                     Key.DirectionUp -> {
-                        // Reveal controls and jump straight to the Source picker so the remote can switch server.
-                        controls = true
-                        lastInteractionAt = System.currentTimeMillis()
-                        sourceOpenTick++
-                        true
+                        runCatching { topBarFocus.requestFocus() }.isSuccess
                     }
                     Key.DirectionDown -> {
-                        controls = true
-                        lastInteractionAt = System.currentTimeMillis()
-                        true
+                        runCatching { transportFocus.requestFocus() }.isSuccess
                     }
                     Key.DirectionCenter, Key.Enter, Key.NumPadEnter -> {
-                        // Center toggles play/pause when the controls are already up; first press just reveals them.
-                        if (controls) exo.playWhenReady = !exo.playWhenReady else controls = true
-                        lastInteractionAt = System.currentTimeMillis()
-                        true
-                    }
-                    Key.MediaPlayPause, Key.Spacebar -> {
                         exo.playWhenReady = !exo.playWhenReady
-                        controls = true
                         lastInteractionAt = System.currentTimeMillis()
                         true
                     }
@@ -1168,7 +1397,7 @@ private fun ExoStage(
                 ),
             )
             TopBar(arg.title, arg.episodeLabel, onBack, background = Color.Transparent) {
-                SourcePill(servers, server, onPickServer, onExternal, onOpenChange = { menuOpen = it }, openTick = sourceOpenTick)
+                SourcePill(servers, server, onPickServer, onExternal, onOpenChange = { menuOpen = it }, modifier = Modifier.focusRequester(topBarFocus))
                 if (variants.size > 1) {
                     // Per-quality stream URLs (e.g. ok.ru, Rumble mp4 ladder).
                     Spacer(Modifier.width(8.dp))
@@ -1203,7 +1432,7 @@ private fun ExoStage(
                 }
                 BottomTransportRow(fmtTime(position), fmtTime(duration)) {
                     if (hasPrev) EpisodeStepButton("⏮") { onPrev() }
-                    PlayerToggleButton(playing) { exo.playWhenReady = !exo.playWhenReady }
+                    PlayerToggleButton(playing, Modifier.focusRequester(transportFocus)) { exo.playWhenReady = !exo.playWhenReady }
                     if (hasNext) EpisodeStepButton("⏭") { onNext() }
                 }
             }
@@ -1242,8 +1471,8 @@ private fun EpisodeStepButton(glyph: String, onClick: () -> Unit) {
 }
 
 @Composable
-private fun PlayerToggleButton(playing: Boolean, onClick: () -> Unit) {
-    Box(Modifier.size(42.dp).clickable(onClick = onClick).focusable(), contentAlignment = Alignment.Center) {
+private fun PlayerToggleButton(playing: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    Box(modifier.size(42.dp).clickable(onClick = onClick).focusable(), contentAlignment = Alignment.Center) {
         if (playing) Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             Box(Modifier.size(5.dp, 18.dp).clip(RoundedCornerShape(2.dp)).background(Color.White))
             Box(Modifier.size(5.dp, 18.dp).clip(RoundedCornerShape(2.dp)).background(Color.White))
@@ -1378,7 +1607,11 @@ private fun WebStage(
                         settings.mediaPlaybackRequiresUserGesture = false
                         settings.loadWithOverviewMode = true
                         settings.useWideViewPort = true
-                        webChromeClient = fullscreenChromeClient(ctx, { fullscreen = true }, { fullscreen = false })
+                        webChromeClient = fullscreenChromeClient(
+                            ctx,
+                            { fullscreen = true },
+                            { fullscreen = false },
+                        )
                         webViewClient = playerWebViewClient(allowHost)
                         loadUrl(server.embedUrl, mapOf("Referer" to referer))
                     }
@@ -1436,15 +1669,20 @@ private fun WebPlayerStage(
     var controls by remember { mutableStateOf(true) }
     var fullscreen by remember { mutableStateOf(false) }
     var menuOpen by remember { mutableStateOf(false) }
-    var sourceOpenTick by remember { mutableIntStateOf(0) } // D-pad Up opens the Source picker (TV)
     var qualities by remember { mutableStateOf<List<String>>(emptyList()) }
     var qualityIdx by remember { mutableStateOf(0) }
     var started by remember(embedUrl) { mutableStateOf(false) }
+    var bridgeLogged by remember(embedUrl) { mutableStateOf(false) }
     // No more servers to try AND this one never started — show a terminal state instead of an endless
     // "Menyiapkan video…" spinner.
     var dead by remember(embedUrl) { mutableStateOf(false) }
     var reload by remember(embedUrl) { mutableStateOf(0) }
     val focusRequester = remember { FocusRequester() }
+    // TV D-pad, mirroring ExoStage: explicit focus hand-offs into the overlay controls (directional
+    // traversal can't reach them — they're children of this fullscreen focusable Box).
+    val topBarFocus = remember { FocusRequester() }
+    val transportFocus = remember { FocusRequester() }
+    var boxFocused by remember { mutableStateOf(false) }
 
     // Watchdog: JWPlayer/Dailymotion can fail to play (e.g. JW error 232404 — dead/geo-blocked playlist)
     // with no JS error we can observe, so a time budget guards the load. If no frame has rolled, hand off
@@ -1453,6 +1691,18 @@ private fun WebPlayerStage(
     LaunchedEffect(embedUrl, reload) {
         delay(12_000)
         if (!started && !dead) { if (!onServerFailed()) dead = true }
+    }
+    // Abyss can start its native decoder while its JW compatibility shim stays silent. Do not throw
+    // away a healthy source solely because that shim omitted state callbacks: reveal the attached
+    // player after its normal startup window and keep manual Source switching available if it is dead.
+    LaunchedEffect(embedUrl, reload) {
+        if (isHydraxEmbed(embedUrl)) {
+            delay(8_000)
+            if (!started && !dead) {
+                started = true
+                android.util.Log.i("TnPlayer", "web source '${current.name}' revealed after Abyss startup grace")
+            }
+        }
     }
     if (dead) {
         NoSourceBox(onRetry = { started = false; dead = false; reload++ }, onExternal = onExternal, onBack = onBack)
@@ -1465,22 +1715,50 @@ private fun WebPlayerStage(
         while (true) {
             delay(700)
             wv.evaluateJavascript(player.stateJs) { r ->
-                val json = r?.removeSurrounding("\"")?.replace("\\\"", "\"")?.takeIf { it.startsWith("{") }
+                // evaluateJavascript JSON-encodes a returned string. Decode the outer JSON value;
+                // hand-unescaping quotes silently discarded state on some WebView versions.
+                val json = runCatching {
+                    when (val decoded = org.json.JSONTokener(r.orEmpty()).nextValue()) {
+                        is String -> decoded
+                        is org.json.JSONObject -> decoded.toString()
+                        else -> null
+                    }
+                }.getOrNull()?.takeIf { it.startsWith("{") }
                 if (json != null) runCatching {
                     val o = org.json.JSONObject(json)
-                    playing = o.optString("st") == "playing"
+                    val state = o.optString("st")
+                    playing = state.equals("playing", ignoreCase = true)
                     o.optLong("dur").let { if (it > 0L) duration = it }
                     position = o.optLong("pos")
                     o.optJSONArray("q")?.let { a -> qualities = (0 until a.length()).map { a.optString(it) } }
                     qualityIdx = o.optInt("qi").coerceAtLeast(0)
-                    // Kick auto-play until it actually starts (the host's play() can fire before it's ready).
-                    // Reveal only once frames are rolling (pos>0) so the startup clutter stays behind the cover.
-                    if (!started) { if (playing && (position > 0L || duration > 0L)) started = true else wv.evaluateJavascript(player.playKick, null) }
+                    if (!bridgeLogged) {
+                        bridgeLogged = true
+                        android.util.Log.i("TnPlayer", "web bridge '${current.name}' state=$state pos=$position dur=$duration qualities=$qualities")
+                    }
+                    // A confirmed `playing` state is sufficient. Abyss can decode audio/video before its
+                    // getCurrentTime clock advances; requiring pos>0 produced a false watchdog failure and
+                    // skipped a healthy Server 2. Position/duration remain useful for seek/progress afterward.
+                    if (!started) {
+                        if (playing) {
+                            started = true
+                            android.util.Log.i(
+                                "TnPlayer",
+                                "web source '${current.name}' started state=$state pos=$position dur=$duration qualities=$qualities",
+                            )
+                        } else {
+                            wv.evaluateJavascript(player.playKick, null)
+                        }
+                    }
                 }
             }
         }
     }
-    LaunchedEffect(controls, playing, menuOpen) { if (controls && playing && !menuOpen) { delay(4000); controls = false } }
+    // Never auto-hide while the user is navigating the controls with the D-pad (focus outside the Box),
+    // or their focus would be stranded on a control that just disappeared.
+    LaunchedEffect(controls, playing, menuOpen, boxFocused) {
+        if (controls && playing && !menuOpen && boxFocused) { delay(4000); controls = false }
+    }
     LaunchedEffect(menuOpen) { if (!menuOpen) focusRequester.requestFocus() } // re-grab focus after a dropdown closes
 
     fun js(code: String) { web?.evaluateJavascript(code, null) }
@@ -1491,49 +1769,44 @@ private fun WebPlayerStage(
             .fillMaxSize()
             .background(Color.Black)
             .focusRequester(focusRequester)
+            .onFocusChanged { boxFocused = it.isFocused }
             .focusable()
             .onPreviewKeyEvent { ev ->
                 if (ev.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
-                when (ev.key) {
-                    Key.Back -> {
-                        if (menuOpen) false
-                        else if (controls && !fullscreen) {
-                            controls = false
-                            true
-                        } else {
-                            onBack()
-                            true
-                        }
+                if (ev.key == Key.Back) {
+                    return@onPreviewKeyEvent when {
+                        menuOpen -> false
+                        !boxFocused -> { focusRequester.requestFocus(); true } // controls → back to playback
+                        controls && !fullscreen -> { controls = false; true }
+                        else -> { onBack(); true }
                     }
+                }
+                if (ev.key == Key.MediaPlayPause || ev.key == Key.Spacebar) {
+                    toggle()
+                    controls = true
+                    return@onPreviewKeyEvent true
+                }
+                // Focus sits on an overlay control → the D-pad belongs to Compose traversal, not playback.
+                if (!boxFocused) return@onPreviewKeyEvent false
+                if (!controls) { // controls hidden: any D-pad press just reveals them
+                    controls = true
+                    return@onPreviewKeyEvent true
+                }
+                when (ev.key) {
                     Key.DirectionLeft -> {
-                        // Single D-pad press = seek −10s (no need to open controls first).
+                        // Single press = seek −10s.
                         js(player.seekAbs((position - 10).coerceAtLeast(0)))
-                        controls = true
                         true
                     }
                     Key.DirectionRight -> {
                         js(player.seekAbs(position + 10))
-                        controls = true
                         true
                     }
-                    Key.DirectionUp -> {
-                        // Reveal controls + jump straight to the Source picker so the remote can switch server.
-                        controls = true
-                        sourceOpenTick++
-                        true
-                    }
-                    Key.DirectionDown -> {
-                        controls = true
-                        true
-                    }
+                    // Hand focus to the overlay controls: Up = Source/Resolusi pills, Down = prev/play/next.
+                    Key.DirectionUp -> runCatching { topBarFocus.requestFocus() }.isSuccess
+                    Key.DirectionDown -> runCatching { transportFocus.requestFocus() }.isSuccess
                     Key.DirectionCenter, Key.Enter, Key.NumPadEnter -> {
-                        // Center toggles play/pause once controls are up; first press just reveals them.
-                        if (controls) toggle() else controls = true
-                        true
-                    }
-                    Key.MediaPlayPause, Key.Spacebar -> {
                         toggle()
-                        controls = true
                         true
                     }
                     else -> false
@@ -1557,12 +1830,25 @@ private fun WebPlayerStage(
                         settings.loadWithOverviewMode = true
                         settings.useWideViewPort = true
                         settings.userAgentString = DESKTOP_UA
-                        webChromeClient = fullscreenChromeClient(ctx, { fullscreen = true }, { fullscreen = false })
+                        // This screen is already immersive fullscreen. Reject the host's custom view so
+                        // it cannot cover TetoNova's Source/Resolusi overlay.
+                        webChromeClient = embeddedPlayerChromeClient()
                         webViewClient = object : WebViewClient() {
-                            override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? =
+                            override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
                                 if (isAdHost(request.url.host.orEmpty()))
-                                    WebResourceResponse("text/plain", "utf-8", java.io.ByteArrayInputStream(ByteArray(0)))
-                                else null
+                                    return WebResourceResponse("text/plain", "utf-8", java.io.ByteArrayInputStream(ByteArray(0)))
+                                val mediaUrl = request.url.toString()
+                                val low = mediaUrl.lowercase()
+                                if (looksLikeStream(mediaUrl) || "/sora/" in low || "/mediastorage/" in low) {
+                                    Handler(Looper.getMainLooper()).post {
+                                        if (!started) {
+                                            started = true
+                                            android.util.Log.i("TnPlayer", "web source '${current.name}' media request started: ${mediaUrl.take(96)}")
+                                        }
+                                    }
+                                }
+                                return null
+                            }
                             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean =
                                 request.isForMainFrame && !player.allowHost(request.url.host.orEmpty()) // block ad redirects
                             override fun onPageFinished(view: WebView, url: String?) {
@@ -1608,7 +1894,7 @@ private fun WebPlayerStage(
         if (controls && !fullscreen) {
             Box(Modifier.fillMaxSize().background(Color.Black.copy(0.25f)))
             TopBar(title, episodeLabel, onBack) {
-                SourcePill(servers, current, onPickServer, onExternal, onOpenChange = { menuOpen = it }, openTick = sourceOpenTick)
+                SourcePill(servers, current, onPickServer, onExternal, onOpenChange = { menuOpen = it }, modifier = Modifier.focusRequester(topBarFocus))
                 if (qualities.size > 1) {
                     Spacer(Modifier.width(8.dp))
                     Pill("Resolusi", qualities.getOrElse(qualityIdx) { "Auto" }, qualities.indices.toList(),
@@ -1638,7 +1924,7 @@ private fun WebPlayerStage(
                     )
                 }
                 BottomTransportRow(fmtTime(position * 1000), fmtTime(duration * 1000)) {
-                    PlayerToggleButton(playing) { toggle() }
+                    PlayerToggleButton(playing, Modifier.focusRequester(transportFocus)) { toggle() }
                 }
             }
         }
@@ -1738,16 +2024,15 @@ private fun SourcePill(
     onPick: (VideoServer) -> Unit,
     onExternal: () -> Unit,
     onOpenChange: (Boolean) -> Unit = {},
-    openTick: Int = 0,
+    modifier: Modifier = Modifier,
 ) {
     var open by remember { mutableStateOf(false) }
     val choices = remember(servers, current) { sourceProviderChoices(servers, current) }
     val currentLabel = remember(current) { serverProviderLabel(current) }
-    LaunchedEffect(openTick) { if (openTick > 0) open = true } // TV: D-pad Up opens the picker
     LaunchedEffect(open) { onOpenChange(open) } // let the player pause its controls auto-hide while open
     Box {
-        PillRow("Source", currentLabel) { open = true }
-        DropdownMenu(expanded = open, onDismissRequest = { open = false }, properties = PlayerPopupProperties) {
+        PillRow("Source", currentLabel, modifier) { open = true }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }, properties = playerPopupProperties()) {
             choices.forEach { choice ->
                 DropdownMenuItem(
                     text = { Text(choice.label + if (choice.label == currentLabel) "  ✓" else "") },
@@ -1799,7 +2084,7 @@ private fun <T> Pill(label: String, value: String, items: List<T>, itemLabel: (T
     LaunchedEffect(open) { onOpenChange(open) } // let the player pause its controls auto-hide while open
     Box {
         PillRow(label, value) { open = true }
-        DropdownMenu(expanded = open, onDismissRequest = { open = false }, properties = PlayerPopupProperties) {
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }, properties = playerPopupProperties()) {
             items.forEach { it2 ->
                 DropdownMenuItem(text = { Text(itemLabel(it2) + if (selected(it2)) "  ✓" else "") }, onClick = { onPick(it2); open = false })
             }
@@ -1808,9 +2093,9 @@ private fun <T> Pill(label: String, value: String, items: List<T>, itemLabel: (T
 }
 
 @Composable
-private fun PillRow(label: String, value: String, onClick: () -> Unit) {
+private fun PillRow(label: String, value: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
     Row(
-        Modifier.clip(RoundedCornerShape(50)).background(Color.White.copy(0.15f)).clickable { onClick() }.focusable().padding(horizontal = 10.dp, vertical = 7.dp),
+        modifier.clip(RoundedCornerShape(50)).background(Color.White.copy(0.15f)).clickable { onClick() }.focusable().padding(horizontal = 10.dp, vertical = 7.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(5.dp),
     ) {
@@ -1856,8 +2141,31 @@ private fun fmtTime(ms: Long): String {
     return if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%d:%02d".format(m, s)
 }
 
+/** Keep the app's own Source/Resolusi controls above embeds that request HTML5 fullscreen. */
+private fun embeddedPlayerChromeClient() = object : WebChromeClient() {
+    override fun onShowCustomView(
+        view: android.view.View,
+        callback: WebChromeClient.CustomViewCallback,
+    ) {
+        callback.onCustomViewHidden()
+    }
+
+    override fun onConsoleMessage(msg: android.webkit.ConsoleMessage): Boolean {
+        android.util.Log.i(
+            "WebStage",
+            "console ${msg.messageLevel()}: ${msg.message().take(300)} " +
+                "@${msg.sourceId()?.take(80)}:${msg.lineNumber()}",
+        )
+        return true
+    }
+}
+
 /** WebChromeClient supporting the embed's HTML5 fullscreen so our overlay bar can hide. */
-private fun fullscreenChromeClient(ctx: android.content.Context, onEnter: () -> Unit, onExit: () -> Unit) = object : WebChromeClient() {
+private fun fullscreenChromeClient(
+    ctx: android.content.Context,
+    onEnter: () -> Unit,
+    onExit: () -> Unit,
+) = object : WebChromeClient() {
     private var custom: android.view.View? = null
     private var cb: WebChromeClient.CustomViewCallback? = null
     private val decor get() = (ctx as? Activity)?.window?.decorView as? android.widget.FrameLayout
@@ -1902,7 +2210,7 @@ private fun playerWebViewClient(allowHost: String) = object : WebViewClient() {
     }
     override fun onPageFinished(view: WebView, url: String?) {
         view.evaluateJavascript(STRIP_ADS_JS, null)
-        // Autoplay nudge. Custom players (Hydrax/Abyss, JW) mount their <video> + big play-button
+        // Autoplay nudge. Custom players mount their <video> + big play-button
         // asynchronously AFTER onPageFinished, so a one-shot injection runs too early and finds nothing.
         // Poll every 400ms for ~12s: call video.play() (muted-retry when the browser blocks unmuted
         // autoplay), click any known play button, and dispatch a synthetic pointer click at the player's
@@ -1931,6 +2239,130 @@ private fun playerWebViewClient(allowHost: String) = object : WebViewClient() {
  *  GET at ~150 KB/s, so this lets its progressive mp4 (esp. ~1 GB movies with a 2+ MB moov) buffer in time
  *  instead of crawling until the watchdog fails it. Seeks (position>0) keep their Range as normal. */
 @OptIn(UnstableApi::class)
+/** IPv4-only OkHttp client for ExoPlayer's Dailymotion streams — must match the extractor's IPv4-only
+ *  metadata fetch so the IP-bound HLS token stays valid across resolve → playback (see ExoStage). */
+private val playerOkHttp: okhttp3.OkHttpClient by lazy {
+    okhttp3.OkHttpClient.Builder()
+        .dns(object : okhttp3.Dns {
+            override fun lookup(hostname: String): List<java.net.InetAddress> =
+                okhttp3.Dns.SYSTEM.lookup(hostname).filterIsInstance<java.net.Inet4Address>()
+                    .ifEmpty { okhttp3.Dns.SYSTEM.lookup(hostname) }
+        })
+        .build()
+}
+
+/**
+ * Keep `(` and `)` LITERAL in request URLs. Dailymotion's HLS child-playlist tokens are a path segment
+ * `sec2(<token>)/…`; ExoPlayer percent-encodes the parens to `%28`/`%29`, which the CDN rejects with 403
+ * (verified: literal → 200, encoded → 403, deterministic). The master playlist has no parens (its token
+ * is an alphanumeric query param), so it opens fine and only the child 403s — exactly the on-device
+ * symptom. Undo the encoding here, right before the HTTP open. No-op for URLs without those bytes.
+ */
+private class ParenLiteralFactory(private val delegate: DataSource.Factory) : DataSource.Factory {
+    override fun createDataSource(): DataSource {
+        val ds = delegate.createDataSource()
+        return object : DataSource by ds {
+            override fun open(dataSpec: DataSpec): Long {
+                val s = dataSpec.uri.toString()
+                val fixed = s.replace("%28", "(").replace("%29", ")")
+                return ds.open(if (fixed == s) dataSpec else dataSpec.buildUpon().setUri(Uri.parse(fixed)).build())
+            }
+        }
+    }
+}
+
+private const val TS_PACKET_SIZE = 188
+
+internal fun findTsPayloadOffset(data: ByteArray, length: Int = data.size): Int {
+    val end = length.coerceAtMost(data.size) - TS_PACKET_SIZE * 2
+    for (i in 0 until end) {
+        if (data[i] == 0x47.toByte() &&
+            data[i + TS_PACKET_SIZE] == 0x47.toByte() &&
+            data[i + TS_PACKET_SIZE * 2] == 0x47.toByte()
+        ) return i
+    }
+    return -1
+}
+
+/**
+ * TurboVIP stores each MPEG-TS segment after a small valid PNG file on Googleusercontent. Media3 sees
+ * the PNG signature and rejects the segment as malformed, so expose only the appended TS payload.
+ */
+private class TurboVipPngTsFactory(private val delegate: DataSource.Factory) : DataSource.Factory {
+    override fun createDataSource(): DataSource {
+        val ds = delegate.createDataSource()
+        var unwrap = false
+        var prepared = false
+        var buffered = ByteArray(0)
+        var bufferedAt = 0
+        var mediaSkip = 0L
+
+        fun prepare() {
+            val startup = ByteArray(16 * 1024)
+            var count = 0
+            while (count < startup.size) {
+                val read = ds.read(startup, count, startup.size - count)
+                if (read == C.RESULT_END_OF_INPUT) break
+                count += read
+                val payloadAt = findTsPayloadOffset(startup, count)
+                if (payloadAt < 0) continue
+
+                val from = payloadAt + minOf(mediaSkip, (count - payloadAt).toLong()).toInt()
+                mediaSkip -= from - payloadAt
+                buffered = startup.copyOfRange(from, count)
+                val scratch = ByteArray(8 * 1024)
+                while (mediaSkip > 0) {
+                    val skipped = ds.read(scratch, 0, minOf(mediaSkip, scratch.size.toLong()).toInt())
+                    if (skipped == C.RESULT_END_OF_INPUT) throw java.io.IOException("TurboVIP segment ended while seeking")
+                    mediaSkip -= skipped
+                }
+                prepared = true
+                return
+            }
+            throw java.io.IOException("TurboVIP MPEG-TS payload not found")
+        }
+
+        return object : DataSource by ds {
+            override fun open(dataSpec: DataSpec): Long {
+                unwrap = dataSpec.uri.host?.endsWith("googleusercontent.com", ignoreCase = true) == true
+                prepared = false
+                buffered = ByteArray(0)
+                bufferedAt = 0
+                mediaSkip = if (unwrap) dataSpec.position else 0L
+                val spec = if (unwrap)
+                    dataSpec.buildUpon().setPosition(0).setLength(C.LENGTH_UNSET.toLong()).build()
+                else dataSpec
+                val length = ds.open(spec)
+                return if (unwrap) C.LENGTH_UNSET.toLong() else length
+            }
+
+            override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+                if (length == 0) return 0
+                if (unwrap && !prepared) prepare()
+                if (bufferedAt < buffered.size) {
+                    val copied = minOf(length, buffered.size - bufferedAt)
+                    buffered.copyInto(buffer, offset, bufferedAt, bufferedAt + copied)
+                    bufferedAt += copied
+                    return copied
+                }
+                return ds.read(buffer, offset, length)
+            }
+
+            override fun close() {
+                try {
+                    ds.close()
+                } finally {
+                    unwrap = false
+                    prepared = false
+                    buffered = ByteArray(0)
+                    bufferedAt = 0
+                    mediaSkip = 0L
+                }
+            }
+        }
+    }
+}
+
 private class NoInitialRangeFactory(private val delegate: DataSource.Factory) : DataSource.Factory {
     override fun createDataSource(): DataSource {
         val ds = delegate.createDataSource()
@@ -1958,7 +2390,9 @@ private fun speedRank(s: VideoServer): Int {
         // googlevideo/.mp4/.m3u8 stream, so rank it with the other pre-resolved direct streams (not the
         // "else" bucket, where it would lose the default pick to a third-party ok.ru mirror).
         "desustream" in host || "filedon" in host || "googlevideo" in host ||
-            "kotakanimeid.link/video-embed" in host || host.substringBefore('?').endsWith(".mp4") -> 1
+            "kotakanimeid.link/video-embed" in host || "upns.live" in host ||
+            "embed4me.vip" in host || "playerp2p.online" in host || "seekplays.pro" in host ||
+            host.substringBefore('?').endsWith(".mp4") -> 1
         isJwPlayerHost(s.embedUrl) || "ok.ru" in host || "okru" in name ||
             // wibufile (Samehadaku): both the "720p/1080p" direct .mp4 rows (caught above) and the "480p"
             // api.wibufile.com/embed JWPlayer resolve to a progressive .mp4 in ExoPlayer, so rank the embed
@@ -1975,8 +2409,8 @@ private fun speedRank(s: VideoServer): Int {
             else -> 6
         }
         "p2p" in name || "hownetwork" in host -> 3
-        // Hydrax/Abyss: a proprietary WebView player with no sniffable stream, but it plays reliably in
-        // its own embed ([isEmbedOnlyHost] → WebStage). Rank it right after the direct stream so it's the
+        // Hydrax/Abyss exposes a progressive MP4 after its gate; the sniffer hands that URL to ExoPlayer.
+        // Rank it right after the direct stream so it's the
         // FIRST failover when Turbovip is dead (PusatFilm), ahead of the flaky packed-JS mirrors below.
         "playhydrax" in host || "hydrax" in host || "abyss.to" in host || "abyssplayer" in host || "gn1r5n" in host ||
             "filemoon" in host || "filelions" in host || "vidhide" in host || "lulustream" in host || "rumble" in host -> 3

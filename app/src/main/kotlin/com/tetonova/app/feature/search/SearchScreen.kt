@@ -48,6 +48,8 @@ fun SearchScreen(onOpenDetail: (DetailArg) -> Unit) {
     // The query that was actually submitted (Enter / search button / chip tap). Search + telemetry
     // only fire on submit — never per keystroke — so trending captures the FULL title, not prefixes.
     var submitted by rememberSaveable { mutableStateOf("") }
+    var typeFilter by rememberSaveable { mutableStateOf("Semua") }
+    var yearFilter by rememberSaveable { mutableStateOf("") }
     val focus = LocalFocusManager.current
     val runSearch: (String) -> Unit = { raw ->
         val q = raw.trim()
@@ -101,8 +103,19 @@ fun SearchScreen(onOpenDetail: (DetailArg) -> Unit) {
         val blank = submitted.isBlank()
         // Drop displayed result groups whose source was just uninstalled or 18+-hidden (keyed on
         // extStateVersion + list size so it re-filters instantly; new searches already use browsableSources).
-        val groups = remember(TnData.extStateVersion, TnData.liveSearchGroups.size) {
+        val rawGroups = remember(TnData.extStateVersion, TnData.liveSearchGroups.size) {
             TnData.liveSearchGroups.filter { TnData.isExtVisible(it.sourceId) }
+        }
+        val years = remember(rawGroups) { rawGroups.flatMap { it.posters }.mapNotNull(::posterYear).distinct().sortedDescending() }
+        // No cross-source dedup: rows are per-extension, and dropping a title because an earlier
+        // (alphabetical) source also has it left gaps like Anixverse missing its own series card.
+        val groups = remember(rawGroups, typeFilter, yearFilter) {
+            rawGroups.mapNotNull { group ->
+                val posters = group.posters.filter { poster ->
+                    matchesType(poster.badge, typeFilter) && (yearFilter.isBlank() || posterYear(poster) == yearFilter)
+                }
+                group.copy(posters = posters).takeIf { posters.isNotEmpty() }
+            }
         }
         val loading = TnData.liveSearchLoading
         if (blank) {
@@ -120,9 +133,27 @@ fun SearchScreen(onOpenDetail: (DetailArg) -> Unit) {
                     else -> "${groups.sumOf { it.posters.size }} judul"
                 },
             )
+            androidx.compose.foundation.lazy.LazyRow(
+                modifier = Modifier.bleedEnd(20.dp),
+                horizontalArrangement = Arrangement.spacedBy(9.dp),
+            ) {
+                items(listOf("Semua", "Film", "Series", "Anime").size) { i ->
+                    val label = listOf("Semua", "Film", "Series", "Anime")[i]
+                    TnChip(text = label, selected = typeFilter == label, onClick = { typeFilter = label })
+                }
+                items(years.size) { i ->
+                    val year = years[i]
+                    TnChip(text = year, selected = yearFilter == year, onClick = { yearFilter = if (yearFilter == year) "" else year })
+                }
+            }
             // One section per extension: source name header + a single horizontal poster row.
             groups.forEach { g ->
-                SectionHead(title = g.displayName, sub = "${g.posters.size} judul")
+                val status = when (TnData.searchSourceStatus(g.sourceId)) {
+                    "ok" -> "Aktif"
+                    "error", "unreachable" -> "Bermasalah"
+                    else -> "Belum dicek"
+                }
+                SectionHead(title = g.displayName, sub = "${g.posters.size} judul · $status")
                 PosterRail(posters = g.posters, showProgress = false, onOpenDetail = onOpenDetail)
             }
             if (loading) {
@@ -132,6 +163,23 @@ fun SearchScreen(onOpenDetail: (DetailArg) -> Unit) {
             }
         }
         Spacer(Modifier.height(24.dp))
+    }
+}
+
+internal fun searchKey(title: String): String = title.lowercase()
+    .replace(Regex("\\s*\\((?:19|20)\\d{2}\\)\\s*$"), "")
+    .replace(Regex("[^a-z0-9]+"), " ").trim()
+
+internal fun posterYear(poster: com.tetonova.core.model.PosterItem): String? =
+    Regex("\\b(?:19|20)\\d{2}\\b").find("${poster.title} ${poster.sub}")?.value
+
+internal fun matchesType(badge: String?, filter: String): Boolean {
+    val type = badge.orEmpty().lowercase()
+    return when (filter) {
+        "Film" -> type in setOf("movie", "film", "jav")
+        "Series" -> type in setOf("series", "tv", "drama")
+        "Anime" -> type in setOf("anime", "donghua", "ona")
+        else -> true
     }
 }
 

@@ -331,10 +331,11 @@ private fun NewThreadScreen(
             icon = "send",
             modifier = Modifier.fillMaxWidth(),
             onClick = {
-                if (title.isBlank()) {
-                    Toast.makeText(context, "Judul wajib diisi", Toast.LENGTH_SHORT).show()
-                } else {
-                    onPost(title.trim(), body.trim(), cat, tagPresets.filter { it.label in picked })
+                val cleanTitle = title.trim()
+                when {
+                    cleanTitle.isEmpty() -> Toast.makeText(context, "Judul wajib diisi", Toast.LENGTH_SHORT).show()
+                    cleanTitle.length < 2 -> Toast.makeText(context, "Judul minimal 2 karakter", Toast.LENGTH_SHORT).show()
+                    else -> onPost(cleanTitle, body.trim(), cat, tagPresets.filter { it.label in picked })
                 }
             },
         )

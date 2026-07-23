@@ -136,7 +136,10 @@ private fun DetailData.withLive(live: LiveDetail?): DetailData {
         // Always from the web:
         syn = live.synopsis?.takeIf { it.isNotBlank() } ?: syn,
         episodesLive = eps,
-        cover = cover?.takeIf { it.isNotBlank() } ?: live.cover?.takeIf { it.isNotBlank() },
+        // MAL/OMDb-matched titles keep their poster (the arg cover); adult/no-MAL sources (nekopoi,
+        // extMeta off) have no external poster, so the web detail poster wins over the tapped episode frame.
+        cover = if (!extMeta) live.cover?.takeIf { it.isNotBlank() } ?: cover?.takeIf { it.isNotBlank() }
+                else cover?.takeIf { it.isNotBlank() } ?: live.cover?.takeIf { it.isNotBlank() },
         // Hero episode count: MAL owns it for anime; donghua (and titles with no MAL match) use the
         // real web episode list. Other metadata: MAL/OMDb when matched, else web fills the gap.
         epCount = if (malId <= 0 || isDonghua) eps.size.takeIf { it > 0 } ?: epCount else epCount,
@@ -294,7 +297,10 @@ fun DetailScreen(arg: DetailArg, resumeEpisode: Int?, onBack: () -> Unit, onOpen
     val base = remember(arg) { enrich(arg) }
     // Nekopoi is adult (JAV / hentai / 3D): its titles fuzzy-match the WRONG MAL/OMDb entry (e.g. a
     // JAV matched some anime → bogus "Avant Garde / Romance / 1963" metadata), so scrape web-only.
-    val adultSource = arg.url?.contains("nekopoi", ignoreCase = true) == true
+    val adultSource = arg.url?.let { url ->
+        listOf("nekopoi", "javhey", "otrarevista", "homecookingrocks", "indomax21")
+            .any { marker -> url.contains(marker, ignoreCase = true) }
+    } == true
     // Overlay MyAnimeList facts for anime/donghua. Movies & dramas (pusatfilm/oppadrama) aren't on
     // MAL — skip it so their detail metadata comes from the web instead of a wrong fuzzy match.
     val webOnly = arg.badge.equals("Movie", true) || arg.badge.equals("Drama", true) || arg.badge.equals("Series", true)
@@ -416,7 +422,7 @@ private fun Hero(
 ) {
     Box(Modifier.fillMaxWidth().heightIn(min = if (wide) 420.dp else 540.dp)) {
         // dark blurred-ish backdrop (cover or gradient) + heavy scrim
-        Art(d.art, d.title, Modifier.matchParentSize(), coverTitle = d.title, coverUrl = d.cover)
+        Art(d.art, d.title, Modifier.matchParentSize(), coverTitle = d.title, coverUrl = d.cover, roundedCorners = false)
         Box(
             Modifier.matchParentSize().background(
                 // Light at the top so the cover/placeholder is actually visible, ramping to dark

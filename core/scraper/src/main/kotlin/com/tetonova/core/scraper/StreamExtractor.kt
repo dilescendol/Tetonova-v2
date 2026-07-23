@@ -9,16 +9,25 @@ import okhttp3.FormBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
+import org.jsoup.Jsoup
 import org.jsoup.parser.Parser
 import java.util.Base64
 import java.util.concurrent.TimeUnit
+import javax.crypto.Cipher
+import javax.crypto.spec.GCMParameterSpec
+import javax.crypto.spec.IvParameterSpec
+import javax.crypto.spec.SecretKeySpec
 
 /** A directly-playable stream variant resolved from an embed host (label = "720p"/"Auto", url = mp4/m3u8). */
 data class StreamVariant(val label: String, val url: String)
 
 /** Extracted variants + the HTTP headers their CDN needs (per-host: Dailymotion wants NONE, while
  *  OK.ru/Rumble/Filemoon want the embed host's Referer/Origin). */
-data class ExtractResult(val variants: List<StreamVariant>, val headers: Map<String, String> = emptyMap())
+data class ExtractResult(
+    val variants: List<StreamVariant>,
+    val headers: Map<String, String> = emptyMap(),
+    val subtitles: List<SubtitleTrack> = emptyList(),
+)
 
 /**
  * Resolves an embed host's iframe URL into direct stream variants so they play in the app's own
@@ -30,7 +39,17 @@ object StreamExtractor {
 
     private const val UA =
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    // IPv4-only so a host that pins a token to the requesting IP (Dailymotion's HLS `sec=`) hands us a
+    // token the app's ExoPlayer — which also uses an IPv4-only OkHttp datasource — can actually replay.
+    // On a dual-stack phone OkHttp (metadata) and HttpURLConnection (playback) otherwise pick different
+    // v4/v6 public addresses, so the token 403s even though the URL+headers are identical.
+    private val ipv4Dns = object : okhttp3.Dns {
+        override fun lookup(hostname: String): List<java.net.InetAddress> =
+            okhttp3.Dns.SYSTEM.lookup(hostname).filterIsInstance<java.net.Inet4Address>()
+                .ifEmpty { okhttp3.Dns.SYSTEM.lookup(hostname) }
+    }
     private val http = OkHttpClient.Builder()
+        .dns(ipv4Dns)
         .connectTimeout(10, TimeUnit.SECONDS).readTimeout(20, TimeUnit.SECONDS).followRedirects(true).build()
 
     /** Hosts to hide from the picker — file-lockers / gated pages that won't yield a video stream
@@ -82,6 +101,9 @@ object StreamExtractor {
         return path.endsWith(".mp4") ||
             path.endsWith(".m3u8") ||
             path.endsWith(".mkv") ||
+            // Majorplay deliberately disguises HLS master/media playlists as signed config/data JSON.
+            // The response body is still #EXTM3U and Media3 is told its MIME type by PlayerScreen.
+            ("majorplay.net" in low && Regex("/(?:config|data)-\\d+\\.json$").containsMatchIn(path)) ||
             "awscdn.netshort.com" in low ||
             "mime_type=video_mp4" in low ||
             ("bilitv.goodbos.online/api/proxy" in low && ".m3u8" in low) ||
@@ -98,9 +120,22 @@ object StreamExtractor {
     private val DOOD = listOf("dood", "playmogo", "dsvplay", "d-s.io", "ds2play", "do0od", "doodstream", "myvidplay")
     private fun isDoodHost(u: String): Boolean = u.lowercase().let { l -> DOOD.any { it in l } }
 
-    suspend fun extract(server: VideoServer, referer: String): ExtractResult =
-        if (server.variants.isNotEmpty()) extractVariants(server.variants, referer)
+    suspend fun extract(server: VideoServer, referer: String): ExtractResult {
+        val extracted = if (server.variants.isNotEmpty()) extractVariants(server.variants, referer)
         else extractEmbed(server.embedUrl, referer)
+        // Source-issued streams (Idlix's short-lived HLS is one example) can require the same
+        // Referer/Origin/Cookie context that minted the URL. Source headers intentionally win.
+        val merged = if (server.headers.isEmpty()) extracted
+        else extracted.copy(headers = extracted.headers + server.headers)
+        // DutaMovie's tabs are Sources, while each tab's HLS master can contain its own 480p/720p/etc.
+        // Expand that ladder here so the app presents it under Resolusi instead of flattening qualities
+        // into the Source picker. Hosts that expose JWPlayer qualities are handled by PlayerScreen.
+        return if (
+            DutamovieSource.isDutamovie(referer) ||
+            IndoMax21Source.isIndoMax21(referer) ||
+            JavHeySource.isJavHey(referer)
+        ) expandHlsLadder(merged) else merged
+    }
 
     /** Resolve a single embed-host iframe URL into direct stream variants + the headers its CDN needs. */
     private suspend fun extractEmbed(embedUrl: String, referer: String): ExtractResult = runCatching {
@@ -125,8 +160,13 @@ object StreamExtractor {
                 mapOf("Referer" to "https://www.dailymotion.com/", "Origin" to "https://www.dailymotion.com"),
             )
             "rumble.com" in u -> ExtractResult(rumble(u), originHeaders(u))
+            "embedpyrox" in u || "pyrox" in u -> pyrox(u, referer)
+            isByseHost(u) -> byse(u, referer)
+            isVidStackHost(u) -> vidStack(u)
+            "voe.sx" in u || "voe-network.net" in u -> voe(u, referer)
             isDoodHost(u) -> dood(u)
             "filedon" in u -> ExtractResult(filedon(u, referer)) // presigned R2 URL → no headers
+            "gofile.io" in u -> gofile(u)
             "mega.nz" in u -> ExtractResult(emptyList()) // Mega embed works via WebView (token-gated)
             "pixeldrain.com" in u -> ExtractResult(listOf(StreamVariant("Auto", pixeldrainDirect(u)))) // range-served file → no headers
             "desustream" in u -> desustream(u, referer) // googlevideo plays raw → no headers
@@ -166,6 +206,264 @@ object StreamExtractor {
     private fun originHeaders(embedUrl: String): Map<String, String> {
         val origin = runCatching { java.net.URI(embedUrl).let { "${it.scheme}://${it.host}" } }.getOrNull() ?: return emptyMap()
         return mapOf("Referer" to "$origin/", "Origin" to origin)
+    }
+
+    /** DutaMovie's dm21.upns/embed4me/playerp2p mirrors all run the same VidStack API. The fragment
+     *  is the video id; `/api/v1/video` returns hex AES-CBC JSON containing the short-lived HLS URL. */
+    private fun isVidStackHost(url: String): Boolean {
+        val low = url.lowercase()
+        return "upns.live" in low || "embed4me.vip" in low || "playerp2p.online" in low ||
+            "4meplayer.com" in low || "p2pplay.pro" in low ||
+            "seekplays.pro" in low ||
+            "streamcasthub" in low || "server1.uns.bio" in low
+    }
+
+    private fun isByseHost(url: String): Boolean {
+        val low = url.lowercase()
+        return "byse.sx" in low || "bysebuho" in low || "bysezejataos" in low ||
+            "bysevepoin" in low || Regex("https?://[^/]*byse[^/]*/").containsMatchIn(low)
+    }
+
+    /** JavHey's Byse mirrors expose an AES-GCM encrypted playback descriptor through two JSON APIs. */
+    private suspend fun byse(embedUrl: String, parentReferer: String): ExtractResult {
+        fun origin(url: String): String? = runCatching {
+            java.net.URI(url).let { "${it.scheme}://${it.host}" }
+        }.getOrNull()
+        fun code(url: String): String? = Regex("/(?:e|v|d)/([a-zA-Z0-9]+)")
+            .find(url)?.groupValues?.getOrNull(1)
+            ?: runCatching { java.net.URI(url).path.trim('/').substringAfterLast('/').takeIf(String::isNotBlank) }
+                .getOrNull()
+        fun decodeUrlBase64(raw: String): ByteArray? = runCatching {
+            val fixed = raw.replace('-', '+').replace('_', '/')
+            val padded = fixed + "=".repeat((4 - fixed.length % 4) % 4)
+            Base64.getDecoder().decode(padded)
+        }.getOrNull()
+
+        val firstOrigin = origin(embedUrl) ?: return ExtractResult(emptyList())
+        val firstCode = code(embedUrl) ?: return ExtractResult(emptyList())
+        val detailsText = LiveClient.requestText("$firstOrigin/api/videos/$firstCode/embed/details")
+            ?: return ExtractResult(emptyList())
+        val frameUrl = runCatching { JSONObject(detailsText).optString("embed_frame_url") }
+            .getOrNull()?.takeIf { it.startsWith("http") } ?: return ExtractResult(emptyList())
+        val frameOrigin = origin(frameUrl) ?: return ExtractResult(emptyList())
+        val frameCode = code(frameUrl) ?: return ExtractResult(emptyList())
+        val playbackText = LiveClient.requestText(
+            "$frameOrigin/api/videos/$frameCode/embed/playback",
+            headers = mapOf(
+                "Accept" to "*/*",
+                "Referer" to frameUrl,
+                "x-embed-parent" to parentReferer,
+            ),
+        ) ?: return ExtractResult(emptyList())
+        val playback = runCatching { JSONObject(playbackText).optJSONObject("playback") }
+            .getOrNull() ?: return ExtractResult(emptyList())
+        val parts = playback.optJSONArray("key_parts") ?: return ExtractResult(emptyList())
+        if (parts.length() < 2) return ExtractResult(emptyList())
+        val key = (decodeUrlBase64(parts.optString(0)) ?: return ExtractResult(emptyList())) +
+            (decodeUrlBase64(parts.optString(1)) ?: return ExtractResult(emptyList()))
+        val iv = decodeUrlBase64(playback.optString("iv")) ?: return ExtractResult(emptyList())
+        val payload = decodeUrlBase64(playback.optString("payload")) ?: return ExtractResult(emptyList())
+        val clear = runCatching {
+            Cipher.getInstance("AES/GCM/NoPadding").run {
+                init(Cipher.DECRYPT_MODE, SecretKeySpec(key, "AES"), GCMParameterSpec(128, iv))
+                String(doFinal(payload), Charsets.UTF_8).removePrefix("\uFEFF")
+            }
+        }.getOrNull() ?: return ExtractResult(emptyList())
+        val sources = runCatching { JSONObject(clear).optJSONArray("sources") }.getOrNull()
+            ?: return ExtractResult(emptyList())
+        val stream = (0 until sources.length()).asSequence()
+            .mapNotNull { sources.optJSONObject(it)?.optString("url") }
+            .firstOrNull { it.startsWith("http") } ?: return ExtractResult(emptyList())
+        return ExtractResult(
+            listOf(StreamVariant("Auto", stream.replace("\\/", "/"))),
+            mapOf("Referer" to "$firstOrigin/", "Origin" to firstOrigin),
+        )
+    }
+
+    /** IndoMax21 Pyrox embeds resolve through the player's same-origin XHR endpoint. */
+    private suspend fun pyrox(embedUrl: String, parentReferer: String): ExtractResult {
+        val origin = runCatching { java.net.URI(embedUrl).let { "${it.scheme}://${it.host}" } }.getOrNull()
+            ?: return ExtractResult(emptyList())
+        val id = embedUrl.substringBefore('?').trimEnd('/').substringAfterLast('/').takeIf { it.isNotBlank() }
+            ?: return ExtractResult(emptyList())
+        val form = "hash=${java.net.URLEncoder.encode(id, "UTF-8")}" +
+            "&r=${java.net.URLEncoder.encode(parentReferer, "UTF-8")}"
+        val response = LiveClient.postBypass(
+            "$origin/player/index.php?data=${java.net.URLEncoder.encode(id, "UTF-8")}&do=getVideo",
+            form,
+            referer = embedUrl,
+            origin = origin,
+            isValid = { ".m3u8" in it || ".mp4" in it || ".txt" in it },
+        ) ?: return ExtractResult(emptyList())
+        val normalized = response.replace("\\/", "/")
+        val stream = Regex("""https?://[^"'\s]+\.(?:m3u8|mp4|txt)[^"'\s]*""", RegexOption.IGNORE_CASE)
+            .find(normalized)?.value ?: return ExtractResult(emptyList())
+        return ExtractResult(listOf(StreamVariant("Auto", stream)), mapOf("Referer" to embedUrl, "Origin" to origin))
+    }
+
+    private suspend fun vidStack(embedUrl: String): ExtractResult {
+        val origin = runCatching { java.net.URI(embedUrl).let { "${it.scheme}://${it.host}" } }.getOrNull()
+            ?: return ExtractResult(emptyList())
+        val id = embedUrl.substringAfterLast('#').substringAfterLast('/').substringBefore('&').trim()
+        if (id.isBlank() || id == embedUrl) return ExtractResult(emptyList())
+        val encrypted = fetch("$origin/api/v1/video?id=${java.net.URLEncoder.encode(id, "UTF-8")}", "$origin/")
+            ?.trim()?.takeIf { it.length >= 32 && it.length % 2 == 0 }
+            ?: return ExtractResult(emptyList())
+        val decrypted = listOf("1234567890oiuytr", "0123456789abcdef").firstNotNullOfOrNull { iv ->
+            runCatching { decryptHexAesCbc(encrypted, "kiemtienmua911ca", iv) }.getOrNull()
+        } ?: return ExtractResult(emptyList())
+        val json = runCatching { JSONObject(decrypted) }.getOrNull() ?: return ExtractResult(emptyList())
+        // VidStack's `cfNative` master currently expands to absolute segment URLs on a generated
+        // technologysystems.space host that has no usable DNS/certificate on Android. The origin
+        // `source` is healthy, but is published as HTTPS on a raw IP with a mismatched certificate.
+        // That same origin explicitly serves the complete HLS ladder over HTTP (manifest, init and
+        // media segments all 200), so use that narrowly-scoped cleartext form instead of failing Exo
+        // after the master and silently falling through to JavHey's captcha WebView mirror.
+        val originSource = json.optString("source").replace("\\/", "/")
+        val rawIpHttps = Regex("^https://(?:\\d{1,3}\\.){3}\\d{1,3}/", RegexOption.IGNORE_CASE)
+        val playableOrigin = originSource.takeIf { rawIpHttps.containsMatchIn(it) }
+            ?.replaceFirst("https://", "http://", ignoreCase = true)
+        val source = sequenceOf(playableOrigin, json.optString("cfNative"), json.optString("cf"), originSource)
+            .filterNotNull()
+            .firstOrNull { it.startsWith("http") } ?: return ExtractResult(emptyList())
+        val subtitles = buildList {
+            json.optJSONObject("subtitle")?.let { sub ->
+                sub.keys().forEach { language ->
+                    val raw = sub.optString(language).substringBefore('#').replace("\\/", "/")
+                    if (raw.isNotBlank()) add(SubtitleTrack(language, absoluteUrl(origin, raw), language))
+                }
+            }
+        }
+        System.out.println("[StreamExtractor] VidStack $id -> HLS, subtitles=${subtitles.size}")
+        return ExtractResult(
+            variants = listOf(StreamVariant("Auto", source.replace("\\/", "/"))),
+            headers = mapOf("Referer" to "$origin/", "Origin" to origin),
+            subtitles = subtitles,
+        )
+    }
+
+    private fun decryptHexAesCbc(input: String, key: String, iv: String): String {
+        val bytes = ByteArray(input.length / 2) { index -> input.substring(index * 2, index * 2 + 2).toInt(16).toByte() }
+        val cipher = Cipher.getInstance("AES/CBC/PKCS5Padding")
+        cipher.init(
+            Cipher.DECRYPT_MODE,
+            SecretKeySpec(key.toByteArray(Charsets.UTF_8), "AES"),
+            IvParameterSpec(iv.toByteArray(Charsets.UTF_8)),
+        )
+        return String(cipher.doFinal(bytes), Charsets.UTF_8)
+    }
+
+    /** Turn a single adaptive HLS master into explicit quality URLs for TetoNova's Resolusi picker. */
+    private suspend fun expandHlsLadder(result: ExtractResult): ExtractResult {
+        val stream = result.variants.singleOrNull() ?: return result
+        if (".m3u8" !in stream.url.lowercase()) return result
+        val manifest = fetchWithHeaders(stream.url, result.headers)
+            ?.takeIf { it.trimStart().startsWith("#EXTM3U") && "#EXT-X-STREAM-INF" in it }
+            ?: return result
+        data class HlsRendition(val height: Int, val bandwidth: Long, val url: String)
+        val lines = manifest.lineSequence().map(String::trim).filter(String::isNotBlank).toList()
+        val renditions = buildList {
+            lines.forEachIndexed { index, line ->
+                if (!line.startsWith("#EXT-X-STREAM-INF", ignoreCase = true)) return@forEachIndexed
+                val height = Regex("(?i)RESOLUTION=\\d+x(\\d+)").find(line)
+                    ?.groupValues?.getOrNull(1)?.toIntOrNull() ?: return@forEachIndexed
+                val bandwidth = Regex("(?i)(?:AVERAGE-)?BANDWIDTH=(\\d+)").find(line)
+                    ?.groupValues?.getOrNull(1)?.toLongOrNull() ?: 0L
+                val uri = lines.drop(index + 1).firstOrNull { !it.startsWith('#') }
+                    ?: return@forEachIndexed
+                add(HlsRendition(height, bandwidth, absoluteUrl(stream.url, uri)))
+            }
+        }
+        val variants = renditions
+            .groupBy { it.height }
+            .mapNotNull { (height, choices) ->
+                choices.maxByOrNull { it.bandwidth }?.let { StreamVariant("${height}p", it.url) }
+            }
+            .sortedByDescending { it.label.removeSuffix("p").toIntOrNull() ?: 0 }
+        if (variants.size < 2) return result
+        System.out.println("[StreamExtractor] HLS ladder -> ${variants.map { it.label }}")
+        return result.copy(variants = variants)
+    }
+
+    private suspend fun fetchWithHeaders(url: String, headers: Map<String, String>): String? = withContext(Dispatchers.IO) {
+        runCatching {
+            val request = Request.Builder().url(url).header("User-Agent", UA).apply {
+                headers.forEach { (name, value) -> header(name, value) }
+            }.build()
+            http.newCall(request).execute().use { response ->
+                response.body?.string().takeIf { response.isSuccessful }
+            }
+        }.getOrNull()
+    }
+
+    /** Current VOE embeds wrap their JSON through rot13 → token substitutions → base64 → char shift
+     *  → reverse → base64. Ported into the native resolver so VOE stays inside TetoNova's ExoPlayer. */
+    private suspend fun voe(embedUrl: String, referer: String): ExtractResult {
+        var html = fetch(embedUrl, referer.ifBlank { embedUrl }) ?: return ExtractResult(emptyList())
+        Regex("window\\.location\\.href\\s*=\\s*'([^']+)'").find(html)?.groupValues?.get(1)?.let { redirect ->
+            html = fetch(absoluteUrl(embedUrl, redirect), referer.ifBlank { embedUrl }) ?: html
+        }
+        val encoded = Jsoup.parse(html, embedUrl).selectFirst("script[type=application/json]")?.data()?.trim()
+            ?.substringAfter("[\"")?.substringBeforeLast("\"]") ?: return ExtractResult(emptyList())
+        val json = runCatching {
+            var value = encoded.map { char ->
+                when (char) {
+                    in 'A'..'Z' -> ((char - 'A' + 13) % 26 + 'A'.code).toChar()
+                    in 'a'..'z' -> ((char - 'a' + 13) % 26 + 'a'.code).toChar()
+                    else -> char
+                }
+            }.joinToString("")
+            listOf("@$", "^^", "~@", "%?", "*~", "!!", "#&").forEach { value = value.replace(it, "_") }
+            value = value.replace("_", "")
+            value = String(Base64.getDecoder().decode(value), Charsets.UTF_8)
+                .map { (it.code - 3).toChar() }.joinToString("").reversed()
+            JSONObject(String(Base64.getDecoder().decode(value), Charsets.UTF_8))
+        }.getOrNull() ?: return ExtractResult(emptyList())
+        val variants = buildList {
+            json.optString("source").takeIf { it.startsWith("http") }?.let { add(StreamVariant("HLS", it)) }
+            json.optString("direct_access_url").takeIf { it.startsWith("http") }?.let { add(StreamVariant("MP4", it)) }
+        }
+        return ExtractResult(variants, originHeaders(embedUrl))
+    }
+
+    /** GoFile's current API requires a disposable account token plus the website token from config.js. */
+    private suspend fun gofile(embedUrl: String): ExtractResult = withContext(Dispatchers.IO) {
+        val id = Regex("/(?:\\?c=|d/)([\\da-zA-Z-]+)").find(embedUrl)?.groupValues?.get(1)
+            ?: return@withContext ExtractResult(emptyList())
+        fun request(url: String, method: String = "GET", headers: Map<String, String> = emptyMap()): String? = runCatching {
+            val builder = Request.Builder().url(url).header("User-Agent", UA)
+            headers.forEach { (name, value) -> builder.header(name, value) }
+            if (method == "POST") builder.post(FormBody.Builder().build()) else builder.get()
+            http.newCall(builder.build()).execute().use { it.body?.string() }
+        }.getOrNull()
+        val account = request("https://api.gofile.io/accounts", "POST") ?: return@withContext ExtractResult(emptyList())
+        val token = runCatching { JSONObject(account).optJSONObject("data")?.optString("token") }.getOrNull()
+            ?.takeIf { it.isNotBlank() } ?: return@withContext ExtractResult(emptyList())
+        val config = request("https://gofile.io/dist/js/config.js") ?: return@withContext ExtractResult(emptyList())
+        val websiteToken = Regex("appdata\\.wt\\s*=\\s*[\"']([^\"']+)").find(config)?.groupValues?.get(1)
+            ?: return@withContext ExtractResult(emptyList())
+        val jsonText = request(
+            "https://api.gofile.io/contents/$id?contentFilter=&page=1&pageSize=1000&sortField=name&sortDirection=1",
+            headers = mapOf("Authorization" to "Bearer $token", "X-Website-Token" to websiteToken),
+        ) ?: return@withContext ExtractResult(emptyList())
+        val children = runCatching { JSONObject(jsonText).optJSONObject("data")?.optJSONObject("children") }.getOrNull()
+            ?: return@withContext ExtractResult(emptyList())
+        val variants = children.keys().asSequence().mapNotNull { key ->
+            val file = children.optJSONObject(key) ?: return@mapNotNull null
+            if (file.optString("type") != "file") return@mapNotNull null
+            val link = file.optString("link").takeIf { it.startsWith("http") } ?: return@mapNotNull null
+            val name = file.optString("name")
+            val label = Regex("(\\d{3,4})[pP]").find(name)?.groupValues?.get(1)?.let { "${it}p" }
+                ?: name.take(24).ifBlank { "Auto" }
+            StreamVariant(label, link)
+        }.toList()
+        ExtractResult(variants, mapOf("Cookie" to "accountToken=$token"))
+    }
+
+    private fun absoluteUrl(base: String, value: String): String = when {
+        value.startsWith("http") -> value
+        value.startsWith("//") -> "https:$value"
+        else -> runCatching { java.net.URI(base).resolve(value).toString() }.getOrDefault(value)
     }
 
     private suspend fun hownetwork(embedUrl: String, referer: String): ExtractResult = withContext(Dispatchers.IO) {

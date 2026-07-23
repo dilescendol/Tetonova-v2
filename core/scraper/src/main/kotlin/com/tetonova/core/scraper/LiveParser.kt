@@ -64,6 +64,8 @@ data class VideoServer(
     val embedUrl: String,
     val variants: List<ServerVariant> = emptyList(),
     val subtitles: List<SubtitleTrack> = emptyList(),
+    /** Headers that must survive source resolution and be attached to the media request. */
+    val headers: Map<String, String> = emptyMap(),
 )
 
 /** A resolution choice within a [VideoServer] (e.g. "720p" → that host's 720p iframe URL). */
@@ -86,12 +88,42 @@ object LiveParser {
      * option and pull the iframe src. Falls back to a bare on-page `<iframe>` for single-server
      * themes. Best-effort: returns empty on any failure.
      */
+    /** anichin tags options like "Dailymotion [ADS]" / "VidHide [ADS]". The marker is noise in our own
+     *  picker (we block the ad hosts anyway), so strip it — the pill just reads "Dailymotion". */
+    private fun cleanServerLabel(name: String): String =
+        name.replace(Regex("\\s*\\[\\s*ads\\s*\\]\\s*", RegexOption.IGNORE_CASE), " ")
+            .replace(Regex("\\s{2,}"), " ")
+            .trim()
+
+    /**
+     * Unwrap a site's own player shell back to the real host embed.
+     *
+     * anichin serves OK.ru / Dailymotion through `anichin-player.web.id/index.php?ok=<okruId>` and
+     * `?url=<dailymotionId>` — a thin HTML shell whose iframe points at `ok.ru/videoembed/<id>` /
+     * `geo.dailymotion.com/player.html?video=<id>`. The shell hides the real host, so these servers
+     * missed the OK.ru / Dailymotion handlers we already have and fell through to the generic
+     * extract→sniff path, which can't crack them — they'd "fail" and silently failover even though the
+     * upstream video is perfectly alive. The ids sit right in the query string, so rewrite to the real
+     * embed and let the existing handlers take over.
+     */
+    private fun unwrapPlayerShell(url: String): String {
+        val uri = runCatching { java.net.URI(url) }.getOrNull() ?: return url
+        if (!uri.host.orEmpty().endsWith("player.web.id")) return url
+        val q = uri.rawQuery.orEmpty()
+        Regex("(?:^|&)ok=(\\d+)").find(q)?.groupValues?.get(1)
+            ?.let { return "https://ok.ru/videoembed/$it" }
+        Regex("(?:^|&)url=([A-Za-z0-9]+)").find(q)?.groupValues?.get(1)
+            ?.let { return "https://www.dailymotion.com/embed/video/$it" }
+        return url
+    }
+
     fun parseServers(html: String): List<VideoServer> {
         val doc = Jsoup.parse(html)
         val out = LinkedHashMap<String, VideoServer>()  // dedupe by embed url, preserve page order
         fun add(nameHint: String, raw: String) {
-            playableUrlFrom(raw)?.let { src ->
-                val name = nameHint.trim().ifBlank { hostLabel(src) }
+            playableUrlFrom(raw)?.let { found ->
+                val src = unwrapPlayerShell(found)
+                val name = cleanServerLabel(nameHint).ifBlank { hostLabel(src) }
                 out.putIfAbsent(src, VideoServer(name, src))
             }
         }
@@ -312,11 +344,20 @@ object LiveParser {
         val decoded = raw.decodeUrlOnce().let { Parser.unescapeEntities(it, false) }.trim()
         val probes = sequenceOf(
             decoded,
+            // Decode Base64 from the RAW value too — `decodeUrlOnce` turns any `+` in the payload into a
+            // space (URL rules), which corrupts long Base64 blobs (AnimeXin's Dailymotion `<div>` options)
+            // so `decodeB64(decoded)` yields garbage and the embed is lost. The raw value is intact.
+            decodeB64(raw.trim()).orEmpty(),
             decodeB64(decoded).orEmpty(),
             decodeB64(decoded.substringAfter("base64,", decoded)).orEmpty(),
         ).filter { it.isNotBlank() }.toList()
 
         probes.forEach { text ->
+            // schema.org VideoObject wrapper (AnimeXin's Dailymotion options): the real embed is in
+            // `<meta itemprop="embedUrl" content="…">`. Take it first, else the generic url-regex below
+            // grabs the `itemtype="https://schema.org/VideoObject"` namespace URL as if it were the stream.
+            Regex("""itemprop\s*=\s*["']embedUrl["']\s+content\s*=\s*["']([^"']+)""", RegexOption.IGNORE_CASE)
+                .find(text)?.groupValues?.getOrNull(1)?.takeIf(::looksPlayable)?.let { return it }
             iframeSrc(text)?.takeIf(::looksPlayable)?.let { return it }
             Regex("""https?:\\/\\/[^"'<>\s\\]+""").find(text)?.value
                 ?.replace("\\/", "/")
@@ -341,6 +382,8 @@ object LiveParser {
         val path = u.substringBefore('?').substringBefore('#')
         if (listOf(".jpg", ".jpeg", ".png", ".gif", ".webp", ".css", ".js").any { path.endsWith(it) }) return false
         if (listOf("discord", "facebook", "twitter", "tiktok", "instagram", "wp-content", "gravatar").any { it in u }) return false
+        // schema.org / w3.org are itemtype/namespace URLs (from microdata wrappers), never a video stream.
+        if ("schema.org" in u || "://www.w3.org" in u) return false
         return true
     }
 
@@ -417,14 +460,8 @@ object LiveParser {
         }
         if (explicit != null) return explicit
 
-        val textNext = doc.select("a[href]").firstNotNullOfOrNull { a ->
-            val t = a.text().trim().lowercase()
-            val labelLooksNext = t in setOf("next", "next page", "older", "older posts", "berikutnya", "selanjutnya", "lanjut", "»", "›")
-            val ariaLooksNext = a.attr("aria-label").lowercase().let { "next" in it || "berikutnya" in it || "selanjutnya" in it }
-            if (labelLooksNext || ariaLooksNext) a.absUrl("href").takeIf { isUsableNext(it, current) } else null
-        }
-        if (textNext != null) return textNext
-
+        // LK21/NontonDrama end their numbered pager with `»`, but that glyph links to the LAST
+        // page (for example 1 -> 1177), not the next one. Resolve current+1 before text labels.
         val currentNumber = doc.selectFirst(".page-numbers.current, .pagination .active, .pagenav .current")
             ?.text()?.trim()?.toIntOrNull()
         if (currentNumber != null) {
@@ -432,6 +469,14 @@ object LiveParser {
             doc.select("a[href]").firstOrNull { it.text().trim() == wanted }
                 ?.absUrl("href")?.takeIf { isUsableNext(it, current) }?.let { return it }
         }
+
+        val textNext = doc.select("a[href]").firstNotNullOfOrNull { a ->
+            val t = a.text().trim().lowercase()
+            val labelLooksNext = t in setOf("next", "next page", "older", "older posts", "berikutnya", "selanjutnya", "lanjut", "»", "›")
+            val ariaLooksNext = a.attr("aria-label").lowercase().let { "next" in it || "berikutnya" in it || "selanjutnya" in it }
+            if (labelLooksNext || ariaLooksNext) a.absUrl("href").takeIf { isUsableNext(it, current) } else null
+        }
+        if (textNext != null) return textNext
         return null
     }
 
@@ -616,11 +661,16 @@ object LiveParser {
     }
 
     private fun detailCover(doc: Document): String? {
-        val targeted = doc.select(
-            ".mvi-cover, .mvic-cover, .mvic-thumb, .poster, .thumbook .thumb, .thumb, " +
-                ".nk-post-image, .post-thumbnail, [itemprop=image], meta[property=og:image], meta[name=twitter:image]",
+        // Try selectors in PRIORITY order (one combined select returns document order, which let a
+        // site-header logo carrying itemprop=image — e.g. anixverse — win over the real poster).
+        val selectors = listOf(
+            ".nk-series-poster", ".mvi-cover", ".mvic-cover", ".mvic-thumb", ".poster",
+            ".thumbook .thumb", ".thumb", ".nk-post-image", ".post-thumbnail",
+            "[itemprop=image]", "meta[property=og:image]", "meta[name=twitter:image]",
         )
-        targeted.firstNotNullOfOrNull(::coverFromElement)?.let { return it }
+        for (sel in selectors) {
+            doc.select(sel).firstNotNullOfOrNull(::coverFromElement)?.let { return it }
+        }
         return doc.selectFirst("meta[property=og:image], meta[name=twitter:image]")?.attr("content")
             ?.takeIf { it.startsWith("http") }
     }
@@ -866,7 +916,12 @@ object LiveParser {
         ).mapNotNull { a ->
             val url = a.absUrl("href").ifBlank { return@mapNotNull null }
             if (!url.contains("nekopoi", ignoreCase = true) || !url.contains("-episode-", ignoreCase = true)) return@mapNotNull null
-            val episodeSlug = runCatching { URI(url).path.orEmpty().trim('/').substringAfterLast('/').lowercase() }.getOrDefault("")
+            val episodeSlug = runCatching { URI(url).path.orEmpty().trim('/').substringAfterLast('/').lowercase() }
+                .getOrDefault("")
+                // Newest episodes carry noise prefixes the series slug lacks
+                // (`new-release-saimin-…-episode-6`, also preview-/uncensored-/premium-/batch-) —
+                // strip them or E5/E6 fail the startsWith guard and vanish (site 6 → app 4).
+                .replace(Regex("^(?:preview|new-release|uncensored|premium|batch)-", RegexOption.IGNORE_CASE), "")
             if (!episodeSlug.startsWith("$seriesSlug-episode-")) return@mapNotNull null
             // Prefer the card's DISPLAYED number ("Ep 9" / "Episode 9") over the URL's — nekopoi admins
             // sometimes mislabel a slug (Ep 9's card links to a "…-episode-8…" URL), which would collide
@@ -875,11 +930,15 @@ object LiveParser {
                 ?: Regex("-episode-(\\d+)", RegexOption.IGNORE_CASE).find(url)?.groupValues?.get(1)?.toIntOrNull()
                 ?: return@mapNotNull null
             val title = nekopoiEpisodeTitle(a, num)
-            val thumb = a.selectFirst("img")?.let(::imgSrc)
-                ?: backgroundImage(a)
+            // Per-episode thumb lives in a DESCENDANT `.nk-episode-card-thumb` background-image, not on
+            // the <a> or an ancestor — coverOf scans descendants, so each card keeps its own screenshot.
+            val thumb = coverOf(a)
                 ?: a.closest("article, li, div")?.let { backgroundImage(it) ?: it.selectFirst("img")?.let(::imgSrc) }
             LiveEpisode(num, title, url, thumb)
-        }.distinctBy { it.num }.sortedBy { it.num }
+            // The newest episode appears twice: once in a thumbless `.latestnow` widget (earlier in the
+            // DOM) and once as the real grid card — so de-dupe by num but PREFER the copy that has a thumb,
+            // else `distinctBy` would keep the thumbless widget and the newest ep loses its screenshot.
+        }.groupBy { it.num }.values.map { g -> g.firstOrNull { it.thumb != null } ?: g.first() }.sortedBy { it.num }
     }
 
     /** Samehadaku series page episode list parser (e.g., /anime/chainsaw-man-reze-hen-index/).

@@ -14,11 +14,14 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
@@ -129,6 +132,8 @@ fun QrisCheckoutScreen(initial: QrisArg, onClose: () -> Unit) {
 
     Column(
         Modifier.fillMaxSize().background(c.bg).windowInsetsPadding(WindowInsets.statusBars)
+            .windowInsetsPadding(WindowInsets.navigationBars)
+            .verticalScroll(rememberScrollState())
             .padding(horizontal = 20.dp, vertical = 16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
@@ -149,7 +154,9 @@ fun QrisCheckoutScreen(initial: QrisArg, onClose: () -> Unit) {
         Text("Bayar QRIS", color = c.ink, fontWeight = FontWeight.ExtraBold, fontSize = 24.sp)
         Text("TetoNova Premium - ${arg.planName}", color = c.muted, fontSize = 13.sp)
         Spacer(Modifier.height(4.dp))
-        Text(rupiah(arg.amountIdr), color = c.rose, fontWeight = FontWeight.ExtraBold, fontSize = 28.sp)
+        Text(rupiah(arg.totalIdr), color = c.rose, fontWeight = FontWeight.ExtraBold, fontSize = 28.sp)
+        Spacer(Modifier.height(12.dp))
+        QrisPriceBreakdown(arg)
         Spacer(Modifier.height(20.dp))
 
         when (phase) {
@@ -280,6 +287,7 @@ fun QrisCheckoutScreen(initial: QrisArg, onClose: () -> Unit) {
                                 arg = arg.copy(
                                     orderId = out.orderId, qrImageUrl = out.qrImageUrl,
                                     checkoutUrl = out.checkoutUrl, amountIdr = out.amountIdr,
+                                    adminFeeIdr = out.adminFeeIdr, taxIdr = out.taxIdr, totalIdr = out.totalIdr,
                                     expiresAt = out.expiresAt,
                                 )
                                 phase = Phase.PENDING
@@ -291,6 +299,30 @@ fun QrisCheckoutScreen(initial: QrisArg, onClose: () -> Unit) {
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun QrisPriceBreakdown(arg: QrisArg) {
+    val c = TnTheme.colors
+    Column(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(TnRadii.md)).background(c.surface).border(1.dp, c.line, RoundedCornerShape(TnRadii.md)).padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        QrisPriceLine("Harga paket", rupiah(arg.amountIdr))
+        QrisPriceLine("Biaya admin QRIS (Rp1.000 + 0,7%)", rupiah(arg.adminFeeIdr))
+        QrisPriceLine("Pajak tambahan", if (arg.taxIdr == 0L) "Tidak dikenakan" else rupiah(arg.taxIdr))
+        Box(Modifier.fillMaxWidth().height(1.dp).background(c.line))
+        QrisPriceLine("Total bayar", rupiah(arg.totalIdr), strong = true)
+    }
+}
+
+@Composable
+private fun QrisPriceLine(label: String, value: String, strong: Boolean = false) {
+    val c = TnTheme.colors
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text(label, color = if (strong) c.ink else c.muted, fontSize = 12.sp, fontWeight = if (strong) FontWeight.ExtraBold else FontWeight.Normal)
+        Text(value, color = c.ink, fontSize = 12.sp, fontWeight = if (strong) FontWeight.ExtraBold else FontWeight.SemiBold)
     }
 }
 

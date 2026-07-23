@@ -125,7 +125,12 @@ data class QrisArg(
     val qrImageUrl: String,
     /** Hosted checkout page (`checkout_url`) — fallback if the QR image can't load. */
     val checkoutUrl: String,
+    /** Base subscription price. */
     val amountIdr: Long,
+    val adminFeeIdr: Long,
+    val taxIdr: Long,
+    /** Final amount encoded in the QR and paid by the user. */
+    val totalIdr: Long,
     /** ISO-8601 UTC (`…Z`) expiry — the screen counts down to this. */
     val expiresAt: String,
     /** Plan code + display name, so the screen can label the amount and re-issue on expiry. */
@@ -183,6 +188,7 @@ sealed interface Screen {
     data class Detail(val arg: DetailArg) : Screen
     data class Player(val arg: PlayerArg) : Screen
     data object Settings : Screen
+    data object Subscription : Screen
     data class Qris(val arg: QrisArg) : Screen
     data object Report : Screen
     data object ReleaseNotes : Screen
@@ -205,13 +211,12 @@ class AppState {
         private set
 
     // Persisted settings (survive app restart via SettingsStore).
-    var darkTheme by persistedBool("dark_theme", false)
+    /** system = follow the device on every launch/config change; light/dark are manual overrides. */
+    var themeMode by persistedString("theme_mode", "system")
     var accentId by persistedString("accent_id", "rose")
     // Real account state — reflects the Firebase/Google session (snapshot-backed → reactive).
     val signedIn: Boolean get() = AuthManager.signedIn
     fun signOut() = AuthManager.signOut()
-    var landingDone by persistedBool("landing_done", false)
-        private set
     var lite by persistedBool("lite_mode", false)
     // TODO(player): playback settings below aren't consumed yet (playback is external via Intent.ACTION_VIEW).
     //   When the in-app Media3 player is built, wire these — see memory `player-spec` for the full design:
@@ -235,10 +240,6 @@ class AppState {
     var downloadWifiOnly by persistedBool("download_wifi_only", false)
 
     val accentColor: Color get() = TnAccents.firstOrNull { it.id == accentId }?.color ?: TnAccents[0].color
-
-    fun finishLanding() {
-        landingDone = true
-    }
 
     fun selectTab(dest: NavDest) {
         prevTab = dest
@@ -287,12 +288,18 @@ class AppState {
         screen = Screen.Settings
     }
 
+    fun openSubscription() {
+        screen = Screen.Subscription
+    }
+
+    val currentTab: NavDest get() = prevTab
+
     /** Full Library (History / Followed / Downloads) opened from the Profile lane. */
     fun openLibrary() {
         screen = Screen.Library
     }
 
-    /** Native QRIS checkout launched from the Langganan panel; back returns to Settings. */
+    /** Native QRIS checkout launched from the Langganan panel. */
     fun openQris(arg: QrisArg) { screen = Screen.Qris(arg) }
 
     /** Sub-screens launched from Settings; their back action returns to Settings. */

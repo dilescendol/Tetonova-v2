@@ -10,8 +10,37 @@ import java.net.URLEncoder
  */
 object LiveSource {
 
+    /** Match displayed titles while tolerating common Indonesian me-/pe- noun/verb variants. */
+    fun matchesSearchQuery(title: String, query: String): Boolean {
+        fun words(value: String) = value.lowercase()
+            .replace(Regex("[^\\p{L}\\p{N}]+"), " ")
+            .trim()
+            .split(Regex("\\s+"))
+            .filter { it.length >= 3 }
+        fun stem(word: String): String {
+            var out = word
+            listOf("meng", "peng").firstOrNull { out.startsWith(it) && out.length - it.length >= 4 }
+                ?.let { out = out.removePrefix(it) }
+            listOf("kan", "an").firstOrNull { out.endsWith(it) && out.length - it.length >= 4 }
+                ?.let { out = out.removeSuffix(it) }
+            return out
+        }
+
+        val titleWords = words(title)
+        val queryWords = words(query)
+        return queryWords.isNotEmpty() && queryWords.all { queryWord ->
+            titleWords.any { titleWord ->
+                queryWord in titleWord || titleWord in queryWord || stem(queryWord) == stem(titleWord)
+            }
+        }
+    }
+
     fun configureAccessCodes(codesByBaseUrl: Map<String, String>) {
         LiveRuntimeConfig.setAccessCodes(codesByBaseUrl)
+    }
+
+    fun configurePremiumProxy(panelBase: String, bearer: String) {
+        LiveRuntimeConfig.setPremiumProxy(panelBase, bearer)
     }
 
     /** True when a watch/detail URL belongs to a vertical short-drama source (portrait micro-episodes:
@@ -47,10 +76,14 @@ object LiveSource {
             ShortMaxSource.isShortMax(b) || StardustTvSource.isStardustTv(b) ||
             VeloloSource.isVelolo(b) || HappyShortSource.isHappyShort(b) ||
             DramaNovaSource.isDramaNova(b) || CubeTvSource.isCubeTv(b) ||
-            OploverzSource.isOploverz(b)
+            OploverzSource.isOploverz(b) || JavHeySource.isJavHey(b) || IndoMax21Source.isIndoMax21(b)
     }
 
     suspend fun list(url: String): List<LiveItem> {
+        if (JavHeySource.isJavHey(url)) return runCatching { JavHeySource.listPage(url).items }.getOrDefault(emptyList())
+        if (IndoMax21Source.isIndoMax21(url)) return runCatching { IndoMax21Source.listPage(url).items }.getOrDefault(emptyList())
+        if (DutamovieSource.isDutamovie(url)) return runCatching { DutamovieSource.listPage(url).items }.getOrDefault(emptyList())
+        if (IdlixSource.isIdlix(url)) return runCatching { IdlixSource.listPage(url).items }.getOrDefault(emptyList())
         if (MeloloSource.isMelolo(url)) return runCatching { MeloloSource.list(url) }.getOrDefault(emptyList())
         if (FlickReelsSource.isFlickReels(url)) return runCatching { FlickReelsSource.list(url) }.getOrDefault(emptyList())
         if (DramaWaveSource.isDramaWave(url)) return runCatching { DramaWaveSource.list(url) }.getOrDefault(emptyList())
@@ -75,12 +108,17 @@ object LiveSource {
         if (ReelShortSource.isReelShort(url)) return runCatching { ReelShortSource.list(url) }.getOrDefault(emptyList())
         // Oploverz is a bespoke Next.js site the generic parser can't read — serve its "Rilis Terbaru"
         // rail from its JSON API instead (see [OploverzSource]).
+        if (NontonAnimeIDSource.isCatalogUrl(url)) return runCatching { NontonAnimeIDSource.listPage(url).items }.getOrDefault(emptyList())
         if (OploverzSource.isOploverz(url)) return runCatching { OploverzSource.latest() }.getOrDefault(emptyList())
         val html = LiveClient.getHtml(url) ?: return emptyList()
         return normalizeAnoboyList(url, LiveParser.parseList(html, url))
     }
 
     suspend fun listPage(url: String): LivePage {
+        if (JavHeySource.isJavHey(url)) return runCatching { JavHeySource.listPage(url) }.getOrDefault(LivePage(emptyList()))
+        if (IndoMax21Source.isIndoMax21(url)) return runCatching { IndoMax21Source.listPage(url) }.getOrDefault(LivePage(emptyList()))
+        if (DutamovieSource.isDutamovie(url)) return runCatching { DutamovieSource.listPage(url) }.getOrDefault(LivePage(emptyList()))
+        if (IdlixSource.isIdlix(url)) return runCatching { IdlixSource.listPage(url) }.getOrDefault(LivePage(emptyList()))
         if (MeloloSource.isMelolo(url)) return runCatching { MeloloSource.listPage(url) }.getOrDefault(LivePage(emptyList()))
         if (FlickReelsSource.isFlickReels(url)) return runCatching { FlickReelsSource.listPage(url) }.getOrDefault(LivePage(emptyList()))
         if (DramaWaveSource.isDramaWave(url)) return runCatching { DramaWaveSource.listPage(url) }.getOrDefault(LivePage(emptyList()))
@@ -103,6 +141,7 @@ object LiveSource {
         if (FreeReelsSource.isFreeReels(url)) return runCatching { FreeReelsSource.listPage(url) }.getOrDefault(LivePage(emptyList()))
         if (FlexTvSource.isFlexTv(url)) return runCatching { FlexTvSource.listPage(url) }.getOrDefault(LivePage(emptyList()))
         if (ReelShortSource.isReelShort(url)) return runCatching { ReelShortSource.listPage(url) }.getOrDefault(LivePage(emptyList()))
+        if (NontonAnimeIDSource.isCatalogUrl(url)) return runCatching { NontonAnimeIDSource.listPage(url) }.getOrDefault(LivePage(emptyList()))
         if (OploverzSource.isOploverz(url)) return runCatching { OploverzSource.latestPage(url) }.getOrDefault(LivePage(emptyList()))
         val html = LiveClient.getHtml(url) ?: return LivePage(emptyList())
         return LivePage(
@@ -115,6 +154,10 @@ object LiveSource {
      *  "Source video" picker). Empty on any failure. */
     suspend fun servers(url: String): List<VideoServer> {
         System.out.println("[LiveSource.servers] called for URL: $url")
+        if (JavHeySource.isJavHey(url)) return runCatching { JavHeySource.servers(url) }.getOrDefault(emptyList())
+        if (IndoMax21Source.isIndoMax21(url)) return runCatching { IndoMax21Source.servers(url) }.getOrDefault(emptyList())
+        if (DutamovieSource.isDutamovie(url)) return runCatching { DutamovieSource.servers(url) }.getOrDefault(emptyList())
+        if (IdlixSource.isIdlix(url)) return runCatching { IdlixSource.servers(url) }.getOrDefault(emptyList())
         if (MeloloSource.isMelolo(url)) return runCatching { MeloloSource.servers(url) }.getOrDefault(emptyList())
         if (FlickReelsSource.isFlickReels(url)) return runCatching { FlickReelsSource.servers(url) }.getOrDefault(emptyList())
         if (DramaWaveSource.isDramaWave(url)) return runCatching { DramaWaveSource.servers(url) }.getOrDefault(emptyList())
@@ -173,6 +216,9 @@ object LiveSource {
         if (PusatFilmSource.isPusatFilm(html)) {
             PusatFilmSource.servers(html, url).let { if (it.isNotEmpty()) return it }
         }
+        if (NgefilmSource.isNgefilm(url)) {
+            NgefilmSource.servers(html, url).let { if (it.isNotEmpty()) return it }
+        }
         // Samehadaku: check if this is an index page and derive the watch URL
         if (url.contains("samehadaku", ignoreCase = true)) {
             // A `/anime/{slug}/` URL is ALWAYS a detail page (series OR movie) — its player options live on
@@ -222,6 +268,10 @@ object LiveSource {
     }
 
     suspend fun detail(url: String): LiveDetail? {
+        if (JavHeySource.isJavHey(url)) return runCatching { JavHeySource.detail(url) }.getOrNull()
+        if (IndoMax21Source.isIndoMax21(url)) return runCatching { IndoMax21Source.detail(url) }.getOrNull()
+        if (DutamovieSource.isDutamovie(url)) return runCatching { DutamovieSource.detail(url) }.getOrNull()
+        if (IdlixSource.isIdlix(url)) return runCatching { IdlixSource.detail(url) }.getOrNull()
         if (MeloloSource.isMelolo(url)) return runCatching { MeloloSource.detail(url) }.getOrNull()
         if (FlickReelsSource.isFlickReels(url)) return runCatching { FlickReelsSource.detail(url) }.getOrNull()
         if (DramaWaveSource.isDramaWave(url)) return runCatching { DramaWaveSource.detail(url) }.getOrNull()
@@ -418,6 +468,10 @@ object LiveSource {
     suspend fun search(baseUrl: String, query: String): List<LiveItem> {
         val base = baseUrl.trim().trimEnd('/')
         if (base.isBlank() || query.isBlank()) return emptyList()
+        if (JavHeySource.isJavHey(base)) return runCatching { JavHeySource.search(base, query) }.getOrDefault(emptyList())
+        if (IndoMax21Source.isIndoMax21(base)) return runCatching { IndoMax21Source.search(base, query) }.getOrDefault(emptyList())
+        if (DutamovieSource.isDutamovie(base)) return runCatching { DutamovieSource.search(base, query) }.getOrDefault(emptyList())
+        if (IdlixSource.isIdlix(base)) return runCatching { IdlixSource.search(base, query) }.getOrDefault(emptyList())
         if (MeloloSource.isMelolo(base)) return runCatching { MeloloSource.search(base, query) }.getOrDefault(emptyList())
         if (FlickReelsSource.isFlickReels(base)) return runCatching { FlickReelsSource.search(base, query) }.getOrDefault(emptyList())
         if (DramaWaveSource.isDramaWave(base)) return runCatching { DramaWaveSource.search(base, query) }.getOrDefault(emptyList())

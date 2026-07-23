@@ -177,6 +177,24 @@ class UserApi(baseUrl: String) {
         }.onFailure { Log.w("TnUserXp", "mergeCultivation failed: ${it.message}") }.getOrDefault(false)
     }
 
+    /** Publish this installation's signed-in foreground state to the panel. */
+    suspend fun updatePresence(installId: String, bearer: String, online: Boolean): Boolean = withContext(Dispatchers.IO) {
+        if (base.isEmpty() || installId.isBlank() || bearer.isBlank()) return@withContext false
+        runCatching {
+            val payload = JSONObject()
+                .put("installId", installId)
+                .put("online", online)
+                .toString()
+            val req = Request.Builder()
+                .url("$base/api/v1/me/presence")
+                .header("Content-Type", "application/json")
+                .header("Authorization", "Bearer $bearer")
+                .post(payload.toRequestBody("application/json".toMediaType()))
+                .build()
+            client.newCall(req).execute().use { it.isSuccessful }
+        }.onFailure { Log.w("TnPresence", "presence update failed: ${it.message}") }.getOrDefault(false)
+    }
+
     /** The cultivation realm ladder (public; no token). */
     suspend fun fetchRealms(): List<RealmTier>? = withContext(Dispatchers.IO) {
         if (base.isEmpty()) return@withContext null
@@ -196,6 +214,7 @@ class UserApi(baseUrl: String) {
         sessionId: String,
         episodeId: String,
         sourceId: String,
+        isShort: Boolean,
         heartbeats: List<Heartbeat>,
         token: String,
         bearer: String? = null,
@@ -220,6 +239,7 @@ class UserApi(baseUrl: String) {
                 .put("sessionId", sessionId)
                 .put("episodeId", episodeId)
                 .put("sourceId", sourceId)
+                .put("isShort", isShort)
                 .put("heartbeats", hb)
                 .toString()
             val req = Request.Builder()

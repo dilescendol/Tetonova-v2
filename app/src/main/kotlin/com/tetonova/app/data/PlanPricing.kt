@@ -6,6 +6,28 @@ import kotlin.math.roundToLong
 /** 30 days in seconds — the unit the panel uses for a "monthly" plan (`app_plans.monthly`). */
 private const val SECONDS_PER_MONTH = 2_592_000.0
 
+/** Current Violet Pay QRIS Basic payer fee: Rp1,000 + 0.7% (70 basis points). */
+private const val QRIS_ADMIN_FEE_FIXED_IDR = 1_000L
+private const val QRIS_ADMIN_FEE_BPS = 70L
+private const val BASIS_POINTS = 10_000L
+
+/** Full payer-facing price shown before an invoice is created. No separate tax is currently charged. */
+data class PaymentBreakdown(
+    val subtotalIdr: Long,
+    val adminFeeIdr: Long,
+    val taxIdr: Long,
+    val totalIdr: Long,
+)
+
+fun paymentBreakdown(subtotalIdr: Long): PaymentBreakdown {
+    val safeSubtotal = subtotalIdr.coerceAtLeast(0L)
+    // Round up so the disclosed total can never be lower than the gateway's whole-rupiah fee.
+    val adminFee = if (safeSubtotal == 0L) 0L else QRIS_ADMIN_FEE_FIXED_IDR +
+        (safeSubtotal * QRIS_ADMIN_FEE_BPS + BASIS_POINTS - 1L) / BASIS_POINTS
+    val tax = 0L
+    return PaymentBreakdown(safeSubtotal, adminFee, tax, safeSubtotal + adminFee + tax)
+}
+
 /** Offline/not-signed-in fallback so the Langganan screen always has plans to show. Mirrors the
  *  panel seed (monthly/quarterly/yearly); real prices come live from `GET /api/v1/me/plans`. */
 val FALLBACK_PLANS: List<BillingPlan> = listOf(

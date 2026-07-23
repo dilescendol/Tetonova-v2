@@ -14,6 +14,7 @@ data class SourcesResponse(
     val count: Int = 0,
     val sources: List<SourceOverride> = emptyList(),
     val supportMe: SupportMe? = null,
+    val announcement: Announcement? = null,
     val proxyBypass: ProxyBypass? = null,
     val telemetry: Telemetry? = null,
     val trial: TrialConfig? = null,
@@ -75,6 +76,28 @@ data class SupportMe(
     val description: String = "",
     val buttonLabel: String = "",
 )
+
+/** Global banner shown after the user enters the app. */
+@Serializable
+data class Announcement(
+    val id: String = "",
+    val enabled: Boolean = false,
+    val title: String = "",
+    val message: String = "",
+    val severity: String = "info",
+    val ctaLabel: String = "",
+    val ctaUrl: String = "",
+    val dismissible: Boolean = true,
+) {
+    /** Backward-compatible identity for panels that predate the server-side id. */
+    fun dismissalId(): String = id.ifBlank {
+        listOf(title, message, severity, ctaLabel, ctaUrl, dismissible.toString())
+            .joinToString("\u001f")
+            .hashCode()
+            .toUInt()
+            .toString(16)
+    }
+}
 
 @Serializable
 data class SourceOverride(

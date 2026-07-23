@@ -31,6 +31,7 @@ import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.layout.ContentScale
@@ -68,7 +69,14 @@ fun coverForTitle(title: String?): String? {
  * otherwise the stylized gradient placeholder (components.jsx → Art).
  */
 @Composable
-fun Art(art: Int, label: String, modifier: Modifier = Modifier, coverTitle: String? = null, coverUrl: String? = null) {
+fun Art(
+    art: Int,
+    label: String,
+    modifier: Modifier = Modifier,
+    coverTitle: String? = null,
+    coverUrl: String? = null,
+    roundedCorners: Boolean = true,
+) {
     // Real scraped cover (from the source site) wins; then a bundled asset cover; otherwise resolve
     // by title (Jikan/MAL) via CoverProvider. Stays a gradient placeholder until a match comes back
     // — never blocks rendering.
@@ -80,7 +88,7 @@ fun Art(art: Int, label: String, modifier: Modifier = Modifier, coverTitle: Stri
     }
     Box(
         modifier
-            .clip(RoundedCornerShape(TnRadii.md))
+            .clip(if (roundedCorners) RoundedCornerShape(TnRadii.md) else RectangleShape)
             .tnGradient(gradColors(art))
             .drawWithContent {
                 drawContent()

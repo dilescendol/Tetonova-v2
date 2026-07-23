@@ -60,6 +60,19 @@ android {
         buildConfigField("String", "TETONOVA_OMDB_KEY_ENC", "\"${obfuscateSecret(omdbKey)}\"")
     }
 
+    // Release signing from user-level gradle.properties (~/.gradle/gradle.properties) — keystore
+    // and passwords live OUTSIDE the repo. When the properties are absent (CI, another machine)
+    // the release build still assembles, just unsigned.
+    val releaseStoreFile = (project.findProperty("TETONOVA_STORE_FILE") as String?)?.let(::file)?.takeIf { it.exists() }
+    if (releaseStoreFile != null) {
+        signingConfigs.create("release") {
+            storeFile = releaseStoreFile
+            storePassword = project.findProperty("TETONOVA_STORE_PASSWORD") as String?
+            keyAlias = project.findProperty("TETONOVA_KEY_ALIAS") as String?
+            keyPassword = project.findProperty("TETONOVA_KEY_PASSWORD") as String?
+        }
+    }
+
     buildTypes {
         debug {
             // Keep debug on the main Firebase Android app id so Google Sign-In uses
@@ -69,6 +82,7 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            signingConfig = signingConfigs.findByName("release")
         }
     }
     compileOptions {
@@ -95,6 +109,7 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.documentfile)
     implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation(libs.androidx.lifecycle.process)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.activity.compose)
 
@@ -111,6 +126,7 @@ dependencies {
     implementation(libs.androidx.media3.exoplayer.hls)
     implementation(libs.androidx.media3.ui)
     implementation(libs.androidx.media3.session)
+    implementation(libs.androidx.media3.datasource.okhttp) // OkHttpDataSource for IPv4-pinned Dailymotion playback
 
     implementation(libs.coil.compose)
     implementation(libs.androidx.datastore.preferences)
@@ -131,4 +147,5 @@ dependencies {
     implementation(libs.androidx.work.runtime)
 
     debugImplementation(libs.androidx.ui.tooling)
+    testImplementation(kotlin("test"))
 }

@@ -1,6 +1,5 @@
 package com.tetonova.app.feature.profile
 
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -110,22 +109,49 @@ fun ProfileScreen(state: AppState) {
     }
     Box(Modifier.fillMaxSize()) {
         PageScroll(topInset = true) {
-            ProfileHero(signedIn = state.signedIn, onOpenSubscription = { state.openSettings() })
+            ProfileHero(signedIn = state.signedIn, onOpenSubscription = { state.openSubscription() })
             SectionHead(title = "Statistik nonton", sub = "30 hari terakhir")
             StatGrid()
-            CollapseSection(title = "Jalan Kultivasi", sub = "Naik level untuk membuka realm") { RewardTrack() }
+            SectionHead(title = "Jalan Kultivasi", sub = "Naik level untuk membuka realm")
+            RewardTrack()
             val ach = TnData.achievements
             val achSub = if (ach.isEmpty()) "Kumpulkan pencapaianmu" else "${ach.count { it.unlocked }} dari ${ach.size} terbuka"
-            CollapseSection(title = "Pencapaian", sub = achSub) { BadgeWall() }
+            SectionHead(title = "Pencapaian", sub = achSub)
+            BadgeWall()
             SectionHead(
                 title = "Library Lane",
                 sub = "Riwayat, ikutan & unduhan",
                 action = { TnGhostButton(text = "Buka Full Library", icon = "chevR", onClick = { state.openLibrary() }) },
             )
             Library(onOpenDetail = state::openDetail)
+            SectionHead(title = "Pengaturan")
+            SettingsShortcut(onClick = { state.openSettings() })
             Spacer(Modifier.height(24.dp))
         }
         tribulation?.let { TribulationOverlay(it) { tribulation = null } }
+    }
+}
+
+@Composable
+private fun SettingsShortcut(onClick: () -> Unit) {
+    val c = TnTheme.colors
+    TnCard(Modifier.fillMaxWidth()) {
+        Row(
+            Modifier.fillMaxWidth().padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Box(
+                Modifier.size(42.dp).clip(RoundedCornerShape(TnRadii.sm)).background(c.surface3),
+                contentAlignment = Alignment.Center,
+            ) {
+                TnIcon("gear", size = 21.dp, tint = c.rose)
+            }
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text("Pengaturan aplikasi", color = c.ink, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp)
+            }
+            TnGhostButton(text = "Buka", icon = "chevR", onClick = onClick)
+        }
     }
 }
 
@@ -427,8 +453,10 @@ private fun StatGrid() {
         StatItem("Hari streak", "0", null, "flame2", 0),
         StatItem("Episode selesai", "0", null, "check", 0),
     )
+    val context = LocalContext.current
+    val isWide = LocalConfiguration.current.screenWidthDp >= 600 || isTelevision(context)
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        stats.forEach { s2 -> StatTile(s2, Modifier.weight(1f)) }
+        stats.forEach { s2 -> StatTile(s2, Modifier.weight(1f), isWide = isWide) }
     }
 }
 
@@ -440,38 +468,29 @@ private fun fmtHours(h: Double): String = when {
 }
 
 @Composable
-private fun StatTile(s: StatItem, modifier: Modifier) {
+private fun StatTile(s: StatItem, modifier: Modifier, isWide: Boolean) {
     val c = TnTheme.colors
     Column(
         modifier.clip(RoundedCornerShape(TnRadii.md)).background(c.surface).border(1.dp, c.line, RoundedCornerShape(TnRadii.md)).padding(horizontal = 9.dp, vertical = 12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(7.dp),
     ) {
         GradientTile(s.icon, s.grad, Modifier.size(36.dp), iconSize = 20.dp)
-        Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-            Text(s.value, color = c.ink, fontWeight = FontWeight.ExtraBold, fontSize = 18.sp, maxLines = 1, softWrap = false)
-            s.delta?.let { Text(it, color = Color(0xFF1FA463), fontSize = 9.5.sp, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false) }
-        }
-        Text(s.label, color = c.muted, fontSize = 10.sp, maxLines = 1)
-    }
-}
-
-@Composable
-private fun CollapseSection(title: String, sub: String, content: @Composable () -> Unit) {
-    val c = TnTheme.colors
-    var open by remember { mutableStateOf(false) }
-    Column(Modifier.padding(top = 18.dp)) {
-        Row(
-            Modifier.fillMaxWidth().clickable { open = !open },
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(title, color = c.ink, fontWeight = FontWeight.ExtraBold, fontSize = 18.sp)
-            Spacer(Modifier.width(10.dp))
-            Text(sub, color = c.muted, fontSize = 12.sp)
-            Spacer(Modifier.weight(1f))
-            TnIcon("chevD", size = 19.dp, tint = c.ink2, modifier = if (open) Modifier.graphicsLayer(rotationZ = 180f) else Modifier)
-        }
-        AnimatedVisibility(open) {
-            Box(Modifier.padding(top = 12.dp)) { content() }
+        if (isWide) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Text(s.value, color = c.ink, fontWeight = FontWeight.ExtraBold, fontSize = 18.sp, maxLines = 1, softWrap = false)
+                Text(s.label, color = c.muted, fontSize = 10.sp, maxLines = 1, softWrap = false)
+                s.delta?.let { Text(it, color = Color(0xFF1FA463), fontSize = 9.5.sp, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false) }
+            }
+        } else {
+            Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(s.value, color = c.ink, fontWeight = FontWeight.ExtraBold, fontSize = 18.sp, maxLines = 1, softWrap = false)
+                s.delta?.let { Text(it, color = Color(0xFF1FA463), fontSize = 9.5.sp, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false) }
+            }
+            Text(s.label, color = c.muted, fontSize = 10.sp, maxLines = 1)
         }
     }
 }

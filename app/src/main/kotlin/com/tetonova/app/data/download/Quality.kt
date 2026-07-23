@@ -53,5 +53,6 @@ fun hostOf(url: String): String =
 fun isHlsUrl(url: String): Boolean {
     val low = url.lowercase()
     val path = low.substringBefore('?')
-    return ".m3u8" in low || "/hls/" in path || "/manifest" in path
+    return ".m3u8" in low || "/hls/" in path || "/manifest" in path ||
+        ("majorplay.net" in low && Regex("/(?:config|data)-\\d+\\.json$").containsMatchIn(path))
 }

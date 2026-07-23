@@ -39,18 +39,18 @@ object OploverzSource {
 
     /** "Rilis Terbaru": the latest-episodes feed (first 2 pages ≈ 20), one card per series. */
     suspend fun latest(): List<LiveItem> = coroutineScope {
-        val pages = listOf(1, 2).map { p -> async { getJson("$API/episodes?page=$p") } }.awaitAll()
+        val pages = listOf(1, 2).map { p -> async { getJson("$API/series?page=$p") } }.awaitAll()
         val seen = HashSet<String>()
         pages.filterNotNull()
             .flatMap { it.optJSONArray("data").objects() }
-            .mapNotNull { episodeToItem(it) }
+            .mapNotNull { seriesToItem(it) }
             .filter { seen.add(it.url) }
     }
 
     suspend fun latestPage(frontUrl: String): LivePage {
         val page = Regex("[?&]page=(\\d+)").find(frontUrl)?.groupValues?.get(1)?.toIntOrNull() ?: 1
-        val json = getJson("$API/episodes?page=$page") ?: return LivePage(emptyList())
-        val items = json.optJSONArray("data").objects().mapNotNull { episodeToItem(it) }.distinctBy { it.url }
+        val json = getJson("$API/series?page=$page") ?: return LivePage(emptyList())
+        val items = json.optJSONArray("data").objects().mapNotNull { seriesToItem(it) }.distinctBy { it.url }
         val next = if (items.isNotEmpty()) withPage(frontUrl, page + 1) else null
         return LivePage(items, next)
     }

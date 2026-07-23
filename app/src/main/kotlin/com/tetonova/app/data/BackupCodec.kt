@@ -15,7 +15,7 @@ object BackupCodec {
 
     @Serializable
     data class BackupSettings(
-        val theme: String = "light",
+        val theme: String = "system",
         val accent: String = "rose",
         val quality: String = "auto",
         val dataSaver: Boolean = false,
@@ -51,7 +51,7 @@ object BackupCodec {
         val file = BackupFile(
             exportedAt = System.currentTimeMillis(),
             settings = BackupSettings(
-                theme = if (s.getBool("dark_theme", false)) "dark" else "light",
+                theme = s.getStr("theme_mode", "system"),
                 accent = s.getStr("accent_id", "rose"),
                 quality = s.getStr("quality", "auto"),
                 dataSaver = s.getBool("data_saver", false),
@@ -82,7 +82,7 @@ object BackupCodec {
     fun import(text: String, state: AppState): Result<Int> = runCatching {
         val file = json.decodeFromString(BackupFile.serializer(), text)
         with(file.settings) {
-            state.darkTheme = theme == "dark"
+            state.themeMode = theme.takeIf { it in setOf("system", "light", "dark") } ?: "system"
             state.accentId = accent
             state.quality = quality
             state.dataSaver = dataSaver

@@ -58,6 +58,9 @@ private data class CheckoutResponse(
     val checkoutUrl: String = "",
     val orderId: String = "",
     val amountIdr: Long = 0L,
+    val adminFeeIdr: Long = 0L,
+    val taxIdr: Long = 0L,
+    val totalIdr: Long = 0L,
     val expiresAt: String = "",
 )
 
@@ -95,7 +98,12 @@ class BillingApi(baseUrl: String) {
             /** Hosted checkout page (`checkout_url`) — fallback if the image can't load. */
             val checkoutUrl: String,
             val orderId: String,
+            /** Base plan price before gateway charges. */
             val amountIdr: Long,
+            val adminFeeIdr: Long,
+            val taxIdr: Long,
+            /** Final payer-facing amount encoded in the QR. */
+            val totalIdr: Long,
             val expiresAt: String,
         ) : CheckoutOutcome
         data object PlanNotPurchasable : CheckoutOutcome   // 400
@@ -175,6 +183,9 @@ class BillingApi(baseUrl: String) {
                                 checkoutUrl = r.checkoutUrl,
                                 orderId = r.orderId,
                                 amountIdr = r.amountIdr,
+                                adminFeeIdr = r.adminFeeIdr,
+                                taxIdr = r.taxIdr,
+                                totalIdr = r.totalIdr,
                                 expiresAt = r.expiresAt,
                             )
                         }
@@ -298,10 +309,16 @@ class BillingApi(baseUrl: String) {
         val qr = firstString("qr_image_url", "qrImageUrl", "target", "qr_url", "qrUrl")
         val checkout = firstString("checkout_url", "checkoutUrl", "payment_url", "paymentUrl", "pay_url", "payUrl", "url")
         val order = firstString("order_id", "orderId", "ref_kode", "ref", "reference", "id_reference", "ref_id")
-        val amount = firstLong("amount_idr", "amountIdr", "nominal", "amount", "total")
+        val amount = firstLong("subtotal_idr", "subtotalIdr", "amount_idr", "amountIdr", "nominal", "amount")
+        val fallback = paymentBreakdown(amount)
+        val adminFee = firstLong("admin_fee_idr", "adminFeeIdr", "gateway_fee_idr", "gatewayFeeIdr", "fee")
+            .takeIf { it > 0L } ?: fallback.adminFeeIdr
+        val tax = firstLong("tax_idr", "taxIdr", "pajak_idr", "pajakIdr")
+        val total = firstLong("total_idr", "totalIdr", "total_amount", "totalAmount")
+            .takeIf { it > 0L } ?: (amount + adminFee + tax)
         val expires = firstString("expires_at", "expiresAt", "expired_time", "expiredTime", "expiry")
         if (order.isBlank() || amount <= 0L || (qr.isBlank() && checkout.isBlank())) null
-        else CheckoutResponse(qr, checkout, order, amount, expires)
+        else CheckoutResponse(qr, checkout, order, amount, adminFee, tax, total, expires)
     }.getOrNull()
 
     private fun normalizePaymentStatus(raw: String): String = when (raw.trim().lowercase()) {

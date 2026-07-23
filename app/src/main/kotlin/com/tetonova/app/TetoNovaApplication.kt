@@ -2,6 +2,7 @@ package com.tetonova.app
 
 import android.app.Application
 import com.google.firebase.messaging.FirebaseMessaging
+import com.tetonova.app.data.AppPresenceManager
 import com.tetonova.app.data.AuthManager
 import com.tetonova.app.data.AutoBackup
 import com.tetonova.app.data.CoverResolver
@@ -12,6 +13,7 @@ import com.tetonova.app.data.LibrarySync
 import com.tetonova.app.data.NotificationHelper
 import com.tetonova.app.data.OmdbResolver
 import com.tetonova.app.data.SettingsStore
+import com.tetonova.app.data.SubscriptionExpiryReminder
 import com.tetonova.app.data.TnData
 import com.tetonova.app.data.download.DownloadCenter
 import com.tetonova.core.designsystem.CoverProvider
@@ -30,9 +32,8 @@ class TetoNovaApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
-        // Debug builds: expose WebViews to chrome://inspect (CDP over adb) — the embed players
-        // (hydrax etc.) are otherwise a black box when they fail on-device.
-        if (BuildConfig.DEBUG) android.webkit.WebView.setWebContentsDebuggingEnabled(true)
+        // Chromium is intentionally initialized lazily by player/challenge WebViews. Starting it
+        // here causes multi-second frame stalls on Home even when no web player is being used.
         SettingsStore.init(this)
         TnData.init(this)
         // Offline downloads: build the Media3 DownloadManager + cache and load any persisted downloads.
@@ -40,6 +41,7 @@ class TetoNovaApplication : Application() {
         // Account sign-in (Firebase) + per-account library sync. Both degrade gracefully when Firebase
         // isn't configured (no google-services.json) or the panel is unreachable — local-first.
         AuthManager.init(this)
+        AppPresenceManager.init(Secrets.controlPanelUrl)
         TnData.warmPanel(Secrets.controlPanelUrl)
         LibrarySync.init(Secrets.controlPanelUrl)
         // "Cadangan otomatis" local half: write a .tnova snapshot to the chosen folder if ≥24h due.
@@ -53,6 +55,9 @@ class TetoNovaApplication : Application() {
         registerFcmToken()
         // Schedule periodic follow episode check
         FollowCheckWorker.schedule(this)
+        // Paid Premium expiry: background H-5..H check, deduplicated to one notification per day.
+        SubscriptionExpiryReminder.schedule(this)
+        appScope.launch { SubscriptionExpiryReminder.checkNow(this@TetoNovaApplication) }
     }
 
     private fun registerFcmToken() {

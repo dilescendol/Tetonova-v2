@@ -32,10 +32,14 @@ data class CachedCatalogSection(
 class CatalogApi(private val panelBase: String) {
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
+    // 12s (not 3s): a cold panel search cache scrapes upstream synchronously (up to ~20s) before
+    // answering — bailing at 3s made the FIRST search of a query always miss to on-device live
+    // scraping while the panel finished caching in the background ("search ulang baru muncul").
+    // Home-rail waits are unaffected: they're capped separately by HOME_CACHE_WAIT_MS.
     private val client = TnHttp.client.newBuilder()
-        .callTimeout(3, TimeUnit.SECONDS)
-        .connectTimeout(3, TimeUnit.SECONDS)
-        .readTimeout(3, TimeUnit.SECONDS)
+        .callTimeout(12, TimeUnit.SECONDS)
+        .connectTimeout(5, TimeUnit.SECONDS)
+        .readTimeout(12, TimeUnit.SECONDS)
         .build()
 
     /** Home rails for a source: (section url → items). Mirrors the service `/home` `{sections[]}`. */
@@ -123,7 +127,7 @@ class CatalogApi(private val panelBase: String) {
         val title: String = "", val url: String = "", val cover: String? = null,
         val type: String? = null, val status: String? = null,
     )
-    @Serializable private data class EpisodeDto(val num: Int = 0, val title: String = "", val url: String = "")
+    @Serializable private data class EpisodeDto(val num: Int = 0, val title: String = "", val url: String = "", val thumb: String? = null)
     @Serializable private data class DetailDto(
         val title: String = "", val url: String = "", val cover: String? = null, val synopsis: String? = null,
         val status: String? = null, val type: String? = null, val studio: String? = null, val released: String? = null,
@@ -154,7 +158,7 @@ class CatalogApi(private val panelBase: String) {
                 } else {
                     ep.url
                 }
-                LiveEpisode(num, title, epUrl)
+                LiveEpisode(num, title, epUrl, ep.thumb)
             }
         }
 

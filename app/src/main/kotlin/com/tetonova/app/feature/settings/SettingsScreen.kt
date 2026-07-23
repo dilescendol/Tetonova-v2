@@ -32,12 +32,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import coil.compose.AsyncImage
 import com.tetonova.app.data.AuthManager
 import com.tetonova.app.data.AutoBackup
 import com.tetonova.app.data.BackupCodec
@@ -46,11 +44,13 @@ import com.tetonova.app.data.FcmRegistration
 import com.tetonova.app.data.FcmTokenHolder
 import com.tetonova.app.data.LibrarySync
 import com.tetonova.app.data.PaymentRow
+import com.tetonova.app.data.PaymentBreakdown
 import com.tetonova.app.data.PlanView
 import com.tetonova.app.data.TnData
 import com.tetonova.app.data.TrialPhase
 import com.tetonova.app.data.TrialStore
 import com.tetonova.app.data.planViews
+import com.tetonova.app.data.paymentBreakdown
 import com.tetonova.app.data.rememberGoogleSignIn
 import com.tetonova.app.data.rupiah
 import com.tetonova.app.ui.AppState
@@ -80,24 +80,13 @@ private fun fmtDate(ms: Long): String =
 private fun sourceCountLabel(n: Int): String = if (n > 0) "$n+ source" else "banyak source"
 
 @Composable
-fun SettingsScreen(state: AppState, onBack: () -> Unit) {
+fun SettingsScreen(state: AppState) {
     val c = TnTheme.colors
     PageScroll(topInset = true) {
         // header
-        Row(
-            Modifier.clip(RoundedCornerShape(TnRadii.pill)).background(c.surface).border(1.dp, c.line, RoundedCornerShape(TnRadii.pill))
-                .clickable { onBack() }.padding(horizontal = 14.dp, vertical = 9.dp),
-            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            TnIcon("chevR", size = 16.dp, tint = c.ink2, modifier = Modifier.rot180())
-            Text("Kembali", color = c.ink2, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-        }
-        Spacer(Modifier.height(14.dp))
         Text("TetoNova · v0.1.0", color = c.muted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
         Text("Pengaturan", color = c.ink, fontWeight = FontWeight.ExtraBold, fontSize = 30.sp)
 
-        SectionCard("Akun & Sinkron", "Kelola akun dan koneksi cloud", "user") { AccountHero(state) }
-        SectionCard("Langganan & API", "Akses ${sourceCountLabel(TnData.premiumSourceCount())} lewat API provider", "sparkle") { SubscriptionPanel(state) }
         SectionCard("Tampilan", "Tema, warna aksen, dan kepadatan UI", "palette") { AppearanceSection(state) }
         SectionCard("Pemutaran & Data", "Kualitas stream dan perilaku player", "play") { PlaybackSection(state) }
         SectionCard("Penyimpanan & Unduhan", "Kualitas unduhan & file offline", "download") { DownloadsSettingsSection(state) }
@@ -105,6 +94,21 @@ fun SettingsScreen(state: AppState, onBack: () -> Unit) {
         SectionCard("Notifikasi", "Apa yang ingin kamu dapat", "bell") { NotifSection(state) }
         SectionCard("Cadangan & Sinkron", "Backup library lokal kamu", "cloud") { BackupSection(state) }
         SectionCard("Tentang", "Versi & bantuan", "info") { AboutSection(state) }
+        Spacer(Modifier.height(28.dp))
+    }
+}
+
+/** Halaman mandiri yang dibuka dari pintasan Trial/Premium di setiap tab utama. */
+@Composable
+fun SubscriptionScreen(state: AppState) {
+    val c = TnTheme.colors
+    PageScroll(topInset = true) {
+        Text("TetoNova · Premium", color = c.muted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+        Text("Langganan & API", color = c.ink, fontWeight = FontWeight.ExtraBold, fontSize = 30.sp)
+        Spacer(Modifier.height(14.dp))
+        TnCard(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(8.dp)) { SubscriptionPanel(state) }
+        }
         Spacer(Modifier.height(28.dp))
     }
 }
@@ -172,51 +176,13 @@ private fun <T> SegSelect(value: T, options: List<Pair<T, String>>, onSelect: (T
 }
 
 @Composable
-private fun AccountHero(state: AppState) {
-    val c = TnTheme.colors
-    val user = AuthManager.user
-    val signIn = rememberGoogleSignIn()
-    Column(Modifier.fillMaxWidth().padding(8.dp)) {
-        if (state.signedIn) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                val photo = user?.photoUrl?.toString()
-                if (photo != null) {
-                    AsyncImage(model = photo, contentDescription = null, modifier = Modifier.size(48.dp).clip(CircleShape))
-                } else {
-                    Box(Modifier.size(48.dp).clip(CircleShape).tnGradient(com.tetonova.core.designsystem.theme.gradColors(0)), contentAlignment = Alignment.Center) {
-                        Text((user?.displayName ?: user?.email ?: "?").take(1).uppercase(), color = Color.White, fontWeight = FontWeight.ExtraBold, fontSize = 20.sp)
-                    }
-                }
-                Column(Modifier.weight(1f)) {
-                    Text(user?.displayName ?: "Akun Google", color = c.ink, fontWeight = FontWeight.Bold, fontSize = 15.sp, maxLines = 1)
-                    Text(user?.email ?: "", color = c.muted, fontSize = 12.sp, maxLines = 1)
-                    Text("Sinkron aktif", color = Color(0xFF1FA463), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-                }
-            }
-            Spacer(Modifier.height(12.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                TnGhostButton(text = "Keluar", icon = "logout", onClick = { state.signOut() })
-            }
-        } else {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("Masuk untuk sinkron lintas perangkat", color = c.ink, fontWeight = FontWeight.ExtraBold, fontSize = 17.sp)
-                Text("Library, history, dan lanjut tonton kamu akan otomatis tersinkron. Tetap gratis, tanpa iklan.", color = c.muted, fontSize = 12.sp)
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    com.tetonova.app.ui.TnPrimaryButton(text = "Masuk dengan Google", icon = "login", onClick = { signIn() })
-                }
-            }
-        }
-    }
-}
-
-@Composable
 private fun AppearanceSection(state: AppState) {
     val c = TnTheme.colors
-    SettingRow("moon", "Tema", "Pilih mode terang, gelap, atau ikuti sistem.") {
+    SettingRow("moon", "Tema", "Pilih mode terang, gelap, atau ikuti sistem.", controlBelow = true) {
         SegSelect(
-            value = if (state.darkTheme) "dark" else "light",
-            options = listOf("light" to "Terang", "dark" to "Gelap"),
-            onSelect = { state.darkTheme = it == "dark" },
+            value = state.themeMode,
+            options = listOf("system" to "Sistem", "light" to "Terang", "dark" to "Gelap"),
+            onSelect = { state.themeMode = it },
         )
     }
     Divider()
@@ -411,6 +377,7 @@ private fun SubscriptionPanel(state: AppState) {
     // else the best-value plan; never null while views exist.
     var planCode by remember(sub?.planCode, TnData.plans) { mutableStateOf(sub?.planCode) }
     val sel = views.firstOrNull { it.plan.code == planCode } ?: views.firstOrNull { it.best } ?: views.firstOrNull()
+    val quote = sel?.let { paymentBreakdown(it.plan.priceIdr) }
 
     // Trial phase: server-enforced when signed in (status=="trial" / 409 → used), else on-device TrialStore.
     val serverTrial = sub?.status == "trial"
@@ -438,6 +405,9 @@ private fun SubscriptionPanel(state: AppState) {
     }
 
     var showManage by remember { mutableStateOf(false) }
+    var showTrialInfo by remember { mutableStateOf(false) }
+    var checkoutConsent by remember { mutableStateOf<PlanView?>(null) }
+    var checkoutStarting by remember { mutableStateOf(false) }
 
     // Pull fresh entitlement + plans when the Langganan panel opens (best-effort, no-op signed-out).
     LaunchedEffect(Unit) { runCatching { TnData.refreshSubscription() } }
@@ -446,20 +416,31 @@ private fun SubscriptionPanel(state: AppState) {
         if (view == null) return
         if (!signedIn) { signIn(); return }
         scope.launch {
-            when (val out = TnData.startCheckout(view.plan.code)) {
-                is BillingApi.CheckoutOutcome.Success -> state.openQris(
-                    QrisArg(
-                        orderId = out.orderId, qrImageUrl = out.qrImageUrl, checkoutUrl = out.checkoutUrl,
-                        amountIdr = out.amountIdr, expiresAt = out.expiresAt,
-                        planCode = view.plan.code, planName = view.plan.displayName,
+            checkoutStarting = true
+            try {
+                when (val out = TnData.startCheckout(view.plan.code)) {
+                    is BillingApi.CheckoutOutcome.Success -> state.openQris(
+                        QrisArg(
+                            orderId = out.orderId, qrImageUrl = out.qrImageUrl, checkoutUrl = out.checkoutUrl,
+                            amountIdr = out.amountIdr, adminFeeIdr = out.adminFeeIdr,
+                            taxIdr = out.taxIdr, totalIdr = out.totalIdr, expiresAt = out.expiresAt,
+                            planCode = view.plan.code, planName = view.plan.displayName,
+                        )
                     )
-                )
-                BillingApi.CheckoutOutcome.PlanNotPurchasable -> toast("Paket belum bisa diproses")
-                BillingApi.CheckoutOutcome.GatewayUnavailable -> toast("Gerbang pembayaran sedang gangguan, coba lagi")
-                BillingApi.CheckoutOutcome.BillingUnavailable -> toast("Pembayaran belum tersedia")
-                BillingApi.CheckoutOutcome.Failed -> toast("Gagal memulai pembayaran")
+                    BillingApi.CheckoutOutcome.PlanNotPurchasable -> toast("Paket belum bisa diproses")
+                    BillingApi.CheckoutOutcome.GatewayUnavailable -> toast("Gerbang pembayaran sedang gangguan, coba lagi")
+                    BillingApi.CheckoutOutcome.BillingUnavailable -> toast("Pembayaran belum tersedia")
+                    BillingApi.CheckoutOutcome.Failed -> toast("Gagal memulai pembayaran")
+                }
+            } finally {
+                checkoutStarting = false
             }
         }
+    }
+
+    fun requestCheckout(view: PlanView?) {
+        if (view == null) return
+        if (!signedIn) signIn() else checkoutConsent = view
     }
 
     fun startTrial() {
@@ -555,9 +536,9 @@ private fun SubscriptionPanel(state: AppState) {
                 } else {
                     val trialEnabled = trialDurationMs > 0L
                     val effectivePhase = if (!trialEnabled && phase == TrialPhase.AVAILABLE) TrialPhase.EXPIRED else phase
-                    val (tIcon, tTitle, _) = when (effectivePhase) {
-                        TrialPhase.AVAILABLE -> Triple("sparkle", "Coba Premium ${fmtTrialDuration(trialDurationMs)} gratis", "Sekali pakai · tanpa kartu")
-                        TrialPhase.ACTIVE    -> Triple("clock", "Trial Premium aktif", "Sisa ${fmtTrial(remaining)}")
+                    val (tIcon, tTitle, tSubtitle) = when (effectivePhase) {
+                        TrialPhase.AVAILABLE -> Triple("sparkle", "Coba Premium ${fmtTrialDuration(trialDurationMs)} gratis", "Untuk mencoba source eksklusif dan drama pendek · sekali pakai")
+                        TrialPhase.ACTIVE    -> Triple("clock", "Trial Premium aktif", "Buka Extensions dan pasang source bertanda Premium")
                         TrialPhase.EXPIRED   -> if (trialEnabled)
                             Triple("lock", "Trial sudah dipakai", "Berlangganan untuk lanjut akses")
                         else
@@ -566,7 +547,7 @@ private fun SubscriptionPanel(state: AppState) {
                     val tTint = if (effectivePhase == TrialPhase.EXPIRED) c.muted else c.rose
                     Row(
                         Modifier.fillMaxWidth().clip(RoundedCornerShape(TnRadii.md)).background(c.surface)
-                            .then(if (effectivePhase == TrialPhase.AVAILABLE) Modifier.clickable { startTrial() } else Modifier)
+                            .then(if (effectivePhase == TrialPhase.AVAILABLE) Modifier.clickable { showTrialInfo = true } else Modifier)
                             .padding(12.dp),
                         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
@@ -575,6 +556,8 @@ private fun SubscriptionPanel(state: AppState) {
                         }
                         Column(Modifier.weight(1f)) {
                             Text(tTitle, color = c.ink, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Spacer(Modifier.height(3.dp))
+                            Text(tSubtitle, color = c.muted, fontSize = 10.sp)
                         }
                         when (effectivePhase) {
                             TrialPhase.AVAILABLE -> Box(Modifier.clip(RoundedCornerShape(TnRadii.pill)).background(c.rose).padding(horizontal = 12.dp, vertical = 6.dp), contentAlignment = Alignment.Center) {
@@ -590,7 +573,7 @@ private fun SubscriptionPanel(state: AppState) {
                 if (active) {
                     // Perpanjang = shortcut to the same checkout (stacking); Kelola = payment history sheet.
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Box(Modifier.weight(1f).clip(RoundedCornerShape(TnRadii.pill)).background(Color.White).clickable { launchCheckout(sel) }.padding(horizontal = 10.dp, vertical = 11.dp), contentAlignment = Alignment.Center) {
+                        Box(Modifier.weight(1f).clip(RoundedCornerShape(TnRadii.pill)).background(Color.White).clickable { requestCheckout(sel) }.padding(horizontal = 10.dp, vertical = 11.dp), contentAlignment = Alignment.Center) {
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                                 TnIcon("sparkle", size = 15.dp, tint = c.rose, filled = true)
                                 Text("Perpanjang", color = c.rose, fontWeight = FontWeight.ExtraBold, fontSize = 13.sp, maxLines = 1, softWrap = false)
@@ -628,18 +611,42 @@ private fun SubscriptionPanel(state: AppState) {
             Column {
                 Text(if (active) "Perpanjang" else "Mulai langganan", color = c.muted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                 Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Text(sel?.priceLabel ?: "—", color = c.ink, fontWeight = FontWeight.ExtraBold, fontSize = 20.sp, maxLines = 1, softWrap = false)
+                    Text(sel?.plan?.displayName ?: "Pilih paket", color = c.ink, fontWeight = FontWeight.ExtraBold, fontSize = 20.sp, maxLines = 1, softWrap = false)
                     Text(sel?.perLabel ?: "", color = c.muted, fontSize = 12.sp, maxLines = 1, softWrap = false)
                 }
                 if (active) Text("Waktu ditambah ke sisa langganan — gak hangus.", color = c.muted, fontSize = 11.sp)
             }
+            quote?.let { PaymentBreakdownView(it) }
             com.tetonova.app.ui.TnPrimaryButton(
-                text = "Bayar ${sel?.priceLabel ?: ""}", icon = "shield", modifier = Modifier.fillMaxWidth(),
-            ) { launchCheckout(sel) }
+                text = "Bayar ${quote?.let { rupiah(it.totalIdr) } ?: ""}", icon = "shield", modifier = Modifier.fillMaxWidth(),
+            ) { requestCheckout(sel) }
         }
     }
 
     if (showManage) ManageSubscriptionDialog(onDismiss = { showManage = false })
+    if (showTrialInfo) {
+        TrialInfoDialog(
+            durationLabel = fmtTrialDuration(trialDurationMs),
+            onDismiss = { showTrialInfo = false },
+            onConfirm = {
+                showTrialInfo = false
+                startTrial()
+            },
+        )
+    }
+    checkoutConsent?.let { view ->
+        CheckoutConsentDialog(
+            view = view,
+            renewal = active,
+            loading = checkoutStarting,
+            onDismiss = { if (!checkoutStarting) checkoutConsent = null },
+            onConfirm = {
+                if (!checkoutStarting) {
+                    launchCheckout(view)
+                }
+            },
+        )
+    }
 }
 
 /** One perk chip (icon + short label). */
@@ -652,6 +659,115 @@ private fun PerkChip(icon: String, label: String, modifier: Modifier) {
     ) {
         TnIcon(icon, size = 16.dp, tint = c.rose)
         Text(label, color = c.ink2, fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+    }
+}
+
+@Composable
+private fun PaymentBreakdownView(breakdown: PaymentBreakdown) {
+    val c = TnTheme.colors
+    Column(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(TnRadii.sm)).background(c.surface.copy(alpha = 0.55f)).padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(7.dp),
+    ) {
+        PriceLine("Harga paket", rupiah(breakdown.subtotalIdr))
+        PriceLine("Biaya admin QRIS (Rp1.000 + 0,7%)", rupiah(breakdown.adminFeeIdr))
+        PriceLine("Pajak tambahan", if (breakdown.taxIdr == 0L) "Tidak dikenakan" else rupiah(breakdown.taxIdr))
+        Box(Modifier.fillMaxWidth().height(1.dp).background(c.line))
+        PriceLine("Total bayar", rupiah(breakdown.totalIdr), strong = true)
+    }
+}
+
+@Composable
+private fun PriceLine(label: String, value: String, strong: Boolean = false) {
+    val c = TnTheme.colors
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text(label, color = if (strong) c.ink else c.muted, fontSize = 12.sp, fontWeight = if (strong) FontWeight.ExtraBold else FontWeight.Normal)
+        Text(value, color = c.ink, fontSize = 12.sp, fontWeight = if (strong) FontWeight.ExtraBold else FontWeight.SemiBold)
+    }
+}
+
+@Composable
+private fun TrialInfoDialog(
+    durationLabel: String,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    val c = TnTheme.colors
+    Dialog(onDismissRequest = onDismiss) {
+        Column(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(TnRadii.lg)).background(c.surface).padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Text("Sebelum mengaktifkan Trial", color = c.ink, fontWeight = FontWeight.ExtraBold, fontSize = 19.sp)
+            Text(
+                "Trial adalah akses Premium gratis selama $durationLabel untuk mencoba source eksklusif, terutama drama pendek.",
+                color = c.muted,
+                fontSize = 12.sp,
+            )
+            Column(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(TnRadii.md)).background(c.roseTint).padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Text("Setelah Trial aktif:", color = c.ink, fontWeight = FontWeight.ExtraBold, fontSize = 13.sp)
+                Text("1. Buka menu Extensions.", color = c.ink2, fontSize = 12.sp)
+                Text("2. Pasang source bertanda Premium atau kategori drama pendek.", color = c.ink2, fontSize = 12.sp)
+                Text("3. Kembali ke Home, lalu pilih tontonan yang ingin dicoba.", color = c.ink2, fontSize = 12.sp)
+            }
+            Text(
+                "Waktu Trial langsung berjalan setelah diaktifkan, hanya bisa diklaim sekali, dan tidak otomatis menjadi langganan berbayar.",
+                color = c.muted,
+                fontSize = 11.sp,
+            )
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                TnGhostButton(text = "Nanti", modifier = Modifier.weight(1f), onClick = onDismiss)
+                com.tetonova.app.ui.TnPrimaryButton(
+                    text = "Aktifkan Trial",
+                    icon = "sparkle",
+                    modifier = Modifier.weight(1f),
+                    onClick = onConfirm,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun CheckoutConsentDialog(
+    view: PlanView,
+    renewal: Boolean,
+    loading: Boolean,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    val c = TnTheme.colors
+    val breakdown = paymentBreakdown(view.plan.priceIdr)
+    Dialog(onDismissRequest = onDismiss) {
+        Column(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(TnRadii.lg)).background(c.surface).padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Text(if (renewal) "Setujui perpanjangan?" else "Konfirmasi pembayaran", color = c.ink, fontWeight = FontWeight.ExtraBold, fontSize = 19.sp)
+            Text("TetoNova Premium · ${view.plan.displayName}", color = c.muted, fontSize = 13.sp)
+            PaymentBreakdownView(breakdown)
+            Text(
+                if (renewal) "Masa aktif baru akan ditambahkan ke sisa langganan setelah pembayaran berhasil."
+                else "Akses Premium aktif setelah pembayaran berhasil.",
+                color = c.muted, fontSize = 12.sp,
+            )
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                TnGhostButton(
+                    text = "Batal",
+                    modifier = Modifier.weight(1f).height(48.dp),
+                    onClick = onDismiss,
+                )
+                com.tetonova.app.ui.TnPrimaryButton(
+                    text = if (loading) "Memproses..." else "Setujui",
+                    icon = "check",
+                    modifier = Modifier.weight(1f).height(48.dp),
+                    onClick = onConfirm,
+                )
+            }
+        }
     }
 }
 
@@ -773,5 +889,3 @@ private fun PlanCard(v: PlanView, selected: Boolean, onClick: () -> Unit) {
 private fun Divider() {
     Box(Modifier.fillMaxWidth().padding(horizontal = 12.dp).height(1.dp).background(TnTheme.colors.line))
 }
-
-private fun Modifier.rot180(): Modifier = this.then(Modifier.graphicsLayer(rotationZ = 180f))

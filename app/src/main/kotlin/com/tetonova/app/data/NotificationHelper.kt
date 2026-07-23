@@ -29,10 +29,12 @@ object NotificationHelper {
     const val CHANNEL_FOLLOW = "follow_updates"
     const val CHANNEL_FORUM = "forum_replies"
     const val CHANNEL_ANNOUNCEMENT = "announcements_v2"
+    const val CHANNEL_SUBSCRIPTION = "subscription_expiry"
 
     private const val CHANNEL_FOLLOW_ID = 1001
     private const val CHANNEL_FORUM_ID = 1002
     private const val CHANNEL_ANNOUNCEMENT_ID = 1003
+    private const val CHANNEL_SUBSCRIPTION_ID = 1004
 
     fun createChannels(context: Context) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -70,7 +72,15 @@ object NotificationHelper {
                 setSound(announcementSound, announcementAudio)
             }
 
-            nm.createNotificationChannels(listOf(followChannel, forumChannel, announcementChannel))
+            val subscriptionChannel = NotificationChannel(
+                CHANNEL_SUBSCRIPTION,
+                "Masa Aktif Premium",
+                NotificationManager.IMPORTANCE_DEFAULT,
+            ).apply {
+                description = "Pengingat saat langganan Premium mendekati tanggal berakhir"
+            }
+
+            nm.createNotificationChannels(listOf(followChannel, forumChannel, announcementChannel, subscriptionChannel))
         }
     }
 
@@ -177,6 +187,37 @@ object NotificationHelper {
         post(context, (title + body + targetUrl).hashCode(), notification)
     }
 
+    /** Daily H-5..H reminder for paid Premium subscriptions. */
+    fun showSubscriptionExpiryNotification(context: Context, daysLeft: Long): Boolean {
+        val title = when (daysLeft) {
+            0L -> "Premium berakhir hari ini"
+            1L -> "Premium berakhir besok"
+            else -> "Premium berakhir dalam $daysLeft hari"
+        }
+        val body = "Perpanjang sekarang agar akses source Premium dan drama pendek tidak terputus."
+        val intent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra("open_subscription", true)
+        }
+        val pendingIntent = PendingIntent.getActivity(
+            context,
+            CHANNEL_SUBSCRIPTION_ID,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        val notification = NotificationCompat.Builder(context, CHANNEL_SUBSCRIPTION)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setLargeIcon(BitmapFactory.decodeResource(context.resources, R.mipmap.ic_launcher))
+            .setContentTitle(title)
+            .setContentText(body)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setContentIntent(pendingIntent)
+            .setAutoCancel(true)
+            .build()
+        return post(context, CHANNEL_SUBSCRIPTION_ID, notification)
+    }
+
     /**
      * Cancel a notification by ID (e.g., when user unfollows a title).
      */
@@ -184,13 +225,14 @@ object NotificationHelper {
         NotificationManagerCompat.from(context).cancel(notificationId)
     }
 
-    private fun post(context: Context, notificationId: Int, notification: Notification) {
+    private fun post(context: Context, notificationId: Int, notification: Notification): Boolean {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
         ) {
-            return
+            return false
         }
         NotificationManagerCompat.from(context).notify(notificationId, notification)
+        return true
     }
 
     private fun announcementSoundUri(context: Context): Uri =

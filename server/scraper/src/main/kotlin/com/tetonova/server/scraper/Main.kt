@@ -137,7 +137,7 @@ private fun itemsJson(items: List<LiveItem>): JSONObject = JSONObject().put("ite
 private fun detailJson(d: LiveDetail?): JSONObject {
     if (d == null) return err("not_found")
     val eps = JSONArray()
-    for (e in d.episodes) eps.put(JSONObject().put("num", e.num).put("title", e.title).put("url", e.url))
+    for (e in d.episodes) eps.put(JSONObject().put("num", e.num).put("title", e.title).put("url", e.url).putOpt("thumb", e.thumb))
     return JSONObject()
         .put("title", d.title).put("url", d.url)
         .putOpt("cover", d.cover).putOpt("synopsis", d.synopsis).putOpt("status", d.status)

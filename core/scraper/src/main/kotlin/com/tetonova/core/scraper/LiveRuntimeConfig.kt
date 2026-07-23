@@ -1,6 +1,7 @@
 package com.tetonova.core.scraper
 
 import java.net.URI
+import java.net.URLEncoder
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -9,6 +10,24 @@ import java.util.concurrent.ConcurrentHashMap
  */
 internal object LiveRuntimeConfig {
     private val accessCodesByHost = ConcurrentHashMap<String, String>()
+    @Volatile private var premiumProxy = PremiumProxy()
+
+    private data class PremiumProxy(val base: String = "", val bearer: String = "")
+    data class ProxiedRequest(val url: String, val bearer: String)
+
+    fun setPremiumProxy(panelBase: String, bearer: String) {
+        premiumProxy = PremiumProxy(panelBase.trim().trimEnd('/'), bearer.trim())
+    }
+
+    fun proxiedRequestFor(url: String): ProxiedRequest? {
+        val host = hostOf(url) ?: return null
+        val (base, bearer) = premiumProxy
+        if (!host.endsWith(".goodbos.online") || base.isBlank() || bearer.isBlank()) return null
+        return ProxiedRequest(
+            "$base/api/v1/me/premium/fetch?url=${URLEncoder.encode(url, "UTF-8")}",
+            bearer,
+        )
+    }
 
     fun setAccessCodes(codesByBaseUrl: Map<String, String>) {
         accessCodesByHost.clear()

@@ -1,0 +1,12 @@
+{
+  "id": "indomax21-compat",
+  "name": "IndoMax21",
+  "version": "1.0.0",
+  "contentTypes": ["NSFW", "MOVIE", "SERIES", "ANIME"],
+  "capabilities": ["HOME", "SEARCH", "DETAIL", "PLAYBACK", "SUBTITLES"],
+  "entry": "compat/indomax21/catalog.json",
+  "upstreamUrl": "https://otrarevista.com",
+  "apiBaseUrl": "https://otrarevista.com",
+  "webBaseUrl": "https://otrarevista.com",
+  "category": "Adult"
+}

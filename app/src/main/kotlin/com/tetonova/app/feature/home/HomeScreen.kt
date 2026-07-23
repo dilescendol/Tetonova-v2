@@ -2,6 +2,13 @@ package com.tetonova.app.feature.home
 
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -30,7 +37,9 @@ import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -59,6 +68,8 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -68,10 +79,12 @@ import androidx.compose.ui.unit.sp
 import android.content.res.Configuration
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import com.tetonova.app.R
 import com.tetonova.app.data.FollowedStore
 import com.tetonova.app.data.TnData
 import com.tetonova.app.ui.DetailArg
 import com.tetonova.app.ui.TnPrimaryButton
+import com.tetonova.app.ui.TnGhostButton
 import com.tetonova.app.ui.bleedBoth
 import com.tetonova.app.ui.toDetailArg
 import com.tetonova.core.designsystem.Art
@@ -92,6 +105,135 @@ import com.tetonova.app.ui.PageScroll
 @Composable
 fun HomeScreen(
     onOpenDetail: (DetailArg) -> Unit,
+    onOpenExtensions: () -> Unit,
+    onOpenSubscription: () -> Unit,
+    lite: Boolean,
+    onToggleLite: () -> Unit,
+    dataSaver: Boolean,
+    onToggleDataSaver: () -> Unit,
+) {
+    val wide = LocalConfiguration.current.screenWidthDp >= 600
+    val listState = rememberLazyListState()
+    val v = TnData.panelVersion
+    val ev = TnData.extStateVersion
+    val hasInstalledExtensions = remember(v, ev) { TnData.hasInstalledExtensions() }
+
+    if (!hasInstalledExtensions) {
+        Box(
+            Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.statusBars),
+            contentAlignment = Alignment.Center,
+        ) {
+            FirstRunGuideBanner(
+                onOpenExtensions = onOpenExtensions,
+                onOpenSubscription = onOpenSubscription,
+            )
+        }
+        return
+    }
+
+    val sources = remember(v, ev) { TnData.homeSources() }
+    var selectedSource by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<String?>(null) }
+    val selectedLabel = sources.firstOrNull { it.id == selectedSource }?.label ?: "Semua"
+    val sections = remember(v, ev, selectedSource) {
+        if (selectedSource == null) TnData.homeSectionsAll()
+        else TnData.homeSectionsForSource(selectedSource!!)
+    }
+    var returnIndex by androidx.compose.runtime.saveable.rememberSaveable { mutableIntStateOf(0) }
+    var returnOffset by androidx.compose.runtime.saveable.rememberSaveable { mutableIntStateOf(0) }
+
+    fun selectSource(id: String?) {
+        if (id == selectedSource) return
+        if (selectedSource == null && id != null) {
+            returnIndex = listState.firstVisibleItemIndex
+            returnOffset = listState.firstVisibleItemScrollOffset
+        }
+        selectedSource = id
+    }
+
+    LaunchedEffect(selectedSource) {
+        if (selectedSource != null) listState.scrollToItem(1)
+        else listState.scrollToItem(returnIndex, returnOffset)
+    }
+    BackHandler(enabled = selectedSource != null) { selectSource(null) }
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.statusBars),
+        state = listState,
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        item(key = "spotlight") {
+            Spotlight(onOpenDetail = onOpenDetail, wide = wide)
+        }
+        item(key = "quick_chips") {
+            Column(Modifier.widthIn(max = 1180.dp).fillMaxWidth().padding(horizontal = 20.dp)) {
+                Spacer(Modifier.height(14.dp))
+                QuickChips(
+                    sources = sources,
+                    selected = selectedSource,
+                    selectedLabel = selectedLabel,
+                    onSelect = { selectSource(it) },
+                    lite = lite,
+                    onToggleLite = onToggleLite,
+                    dataSaver = dataSaver,
+                    onToggleDataSaver = onToggleDataSaver,
+                )
+            }
+        }
+
+        if (sections.isEmpty()) {
+            item(key = "fallback") {
+                val fallback = TnData.homePosters
+                Column(Modifier.widthIn(max = 1180.dp).fillMaxWidth().padding(horizontal = 20.dp)) {
+                    if (fallback.isNotEmpty()) {
+                        SectionHead(title = "Rilisan Terbaru", sub = "Baru rilis")
+                        PosterRail(fallback.take(12), false, onOpenDetail)
+                    }
+                }
+            }
+        } else {
+            itemsIndexed(
+                items = sections,
+                key = { index, sec -> "section_${index}_${sec.sourceId}_${sec.url}" },
+            ) { _, sec ->
+                val live = TnData.liveSectionPosters(sec.url)
+                if (!(live?.isEmpty() == true && sec.posters.isEmpty())) {
+                    LaunchedEffect(sec.url) { TnData.ensureLiveSection(sec.url, sec.sourceId) }
+                    Column(Modifier.widthIn(max = 1180.dp).fillMaxWidth().padding(horizontal = 20.dp)) {
+                        SectionHead(
+                            title = sec.label,
+                            action = if (selectedSource == null) {
+                                {
+                                    com.tetonova.app.ui.TnGhostButton(
+                                        text = "Lihat semua",
+                                        onClick = { selectSource(sec.sourceId) },
+                                    )
+                                }
+                            } else null,
+                        )
+                        if (live == null) {
+                            LoadingPosterRail()
+                        } else {
+                            PosterRail(
+                                posters = live.ifEmpty { sec.posters },
+                                showProgress = false,
+                                onOpenDetail = onOpenDetail,
+                                canLoadMore = TnData.liveSectionCanLoadMore(sec.url),
+                                loadingMore = TnData.liveSectionLoadingMore(sec.url),
+                                onLoadMore = { TnData.loadMoreLiveSection(sec.url, sec.sourceId) },
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        item(key = "bottom_space") { Spacer(Modifier.height(24.dp)) }
+    }
+}
+
+@Composable
+private fun HomeScreenEager(
+    onOpenDetail: (DetailArg) -> Unit,
+    onOpenExtensions: () -> Unit,
     lite: Boolean,
     onToggleLite: () -> Unit,
     dataSaver: Boolean,
@@ -156,14 +298,13 @@ fun HomeScreen(
                 if (fallback.isNotEmpty()) {
                     SectionHead(title = "Rilisan Terbaru", sub = "Baru rilis")
                     PosterRail(posters = fallback.take(12), showProgress = false, onOpenDetail = onOpenDetail)
-                } else {
-                    HomeEmptyState(loading = !TnData.panelLoaded)
                 }
             } else {
                 sections.forEach { sec ->
                     // Fetch this rail live from the source's real web page.
                     LaunchedEffect(sec.url) { TnData.ensureLiveSection(sec.url, sec.sourceId) }
                     val live = TnData.liveSectionPosters(sec.url)
+                    if (live?.isEmpty() == true && sec.posters.isEmpty()) return@forEach
                     SectionHead(
                         title = sec.label,
                         // "Lihat semua" only in Mode "Semua" — it jumps into that source's Klik Source view.
@@ -186,10 +327,6 @@ fun HomeScreen(
                         return@forEach
                     }
                     val posters = live.ifEmpty { sec.posters }
-                    if (posters.isEmpty()) {
-                        LoadingPosterRail()
-                        return@forEach
-                    }
                     PosterRail(
                         posters = posters,
                         showProgress = false,
@@ -262,12 +399,17 @@ private fun SourceChip(
 
 @Composable
 private fun Spotlight(onOpenDetail: (DetailArg) -> Unit, wide: Boolean) {
-    val spots = TnData.liveSpots()
+    // Live rails arrive independently. Replacing the pager for every arrival repeatedly decodes a
+    // full-screen cover and can starve the first frames, so sample them once after startup settles.
+    var spots by remember { mutableStateOf(TnData.liveSpots()) }
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.delay(4_000)
+        TnData.liveSpots().takeIf { it.isNotEmpty() }?.let { spots = it }
+    }
     if (spots.isEmpty()) return
     val heroModifier = Modifier
         .then(if (wide) Modifier.widthIn(max = 1180.dp).fillMaxWidth().padding(horizontal = 20.dp) else Modifier.fillMaxWidth())
         .height(if (wide) 330.dp else 360.dp)
-        .clip(RoundedCornerShape(if (wide) TnRadii.xl else 0.dp))
     val isTv = (LocalConfiguration.current.uiMode and Configuration.UI_MODE_TYPE_MASK) == Configuration.UI_MODE_TYPE_TELEVISION
     if (isTv) {
         // Android TV: NO HorizontalPager. A focus-driven pager fights the D-pad focus system — on every
@@ -345,7 +487,7 @@ private fun SpotSlide(s: SpotItem, wide: Boolean, onOpenDetail: (DetailArg) -> U
         if (wide) {
             // cover pinned to the right, fading into the dark content area
             Box(Modifier.align(Alignment.CenterEnd).fillMaxHeight().fillMaxWidth(0.52f)) {
-                Art(s.art, s.title, Modifier.fillMaxSize(), coverTitle = s.title, coverUrl = s.cover)
+                Art(s.art, s.title, Modifier.fillMaxSize(), coverTitle = s.title, coverUrl = s.cover, roundedCorners = false)
             }
             Box(
                 Modifier.fillMaxSize().background(
@@ -360,7 +502,7 @@ private fun SpotSlide(s: SpotItem, wide: Boolean, onOpenDetail: (DetailArg) -> U
                 ),
             )
         } else {
-            Art(s.art, s.title, Modifier.fillMaxSize(), coverTitle = s.title, coverUrl = s.cover)
+            Art(s.art, s.title, Modifier.fillMaxSize(), coverTitle = s.title, coverUrl = s.cover, roundedCorners = false)
             Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Black.copy(0.15f), Color.Black.copy(0.85f)))))
         }
         Column(
@@ -416,17 +558,17 @@ private fun SpotSlide(s: SpotItem, wide: Boolean, onOpenDetail: (DetailArg) -> U
                 ) { onOpenDetail(s.toDetailArg()) }
                 if (wide) {
                     Row(
-                        Modifier.widthIn(min = 190.dp).clip(RoundedCornerShape(TnRadii.pill)).background(Color.White.copy(0.16f)).clickable { toggleFollow() }.padding(horizontal = 18.dp, vertical = 13.dp),
+                        Modifier.widthIn(min = 190.dp).clip(RoundedCornerShape(TnRadii.pill)).background(if (inList) c.rose else Color.White.copy(0.16f)).clickable { toggleFollow() }.padding(horizontal = 18.dp, vertical = 13.dp),
                         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp),
                     ) {
-                        TnIcon("plus", size = 18.dp, tint = Color.White)
+                        TnIcon(if (inList) "check" else "plus", size = 18.dp, tint = Color.White)
                         Text(if (inList) "Di Daftar" else "Tambah ke Daftar", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 } else {
                     Box(
-                        Modifier.size(46.dp).clip(RoundedCornerShape(TnRadii.md)).background(Color.White.copy(0.16f)).clickable { toggleFollow() },
+                        Modifier.size(46.dp).clip(RoundedCornerShape(TnRadii.md)).background(if (inList) c.rose else Color.White.copy(0.16f)).clickable { toggleFollow() },
                         contentAlignment = Alignment.Center,
-                    ) { TnIcon("plus", size = 20.dp, tint = Color.White) }
+                    ) { TnIcon(if (inList) "check" else "plus", size = 20.dp, tint = Color.White) }
                 }
             }
         }
@@ -465,22 +607,136 @@ private fun MetaStat(icon: String, text: String, filled: Boolean) {
 /** Honest Home placeholder when there's no real catalog yet — a loader while the panel is fetching,
  *  or a "install a source" hint. Replaces the old fabricated SampleData rails. */
 @Composable
-private fun HomeEmptyState(loading: Boolean) {
+private fun HomeEmptyState(
+    loading: Boolean,
+    onOpenExtensions: () -> Unit,
+) {
+    val c = TnTheme.colors
     Column(
-        Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 72.dp),
+        Modifier
+            .fillMaxWidth()
+            .padding(vertical = 44.dp)
+            .clip(RoundedCornerShape(TnRadii.lg))
+            .background(c.surface2)
+            .border(1.dp, c.line, RoundedCornerShape(TnRadii.lg))
+            .padding(horizontal = 24.dp, vertical = 30.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         if (loading) {
-            CircularProgressIndicator(color = Color(0xFFE11D48), strokeWidth = 3.dp)
+            CircularProgressIndicator(color = c.rose, strokeWidth = 3.dp)
             Spacer(Modifier.height(16.dp))
-            Text("Memuat konten…", color = Color(0xFF9CA3AF), fontSize = 14.sp)
+            Text("Memuat konten…", color = c.ink, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(5.dp))
+            Text("Sedang menyiapkan sumber untuk beranda.", color = c.muted, fontSize = 12.sp, textAlign = TextAlign.Center)
         } else {
-            Text("Belum ada sumber", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(8.dp))
+            Box(
+                Modifier.size(50.dp).clip(RoundedCornerShape(TnRadii.sm)).background(c.surface3),
+                contentAlignment = Alignment.Center,
+            ) {
+                TnIcon("layers", size = 24.dp, tint = c.rose)
+            }
+            Spacer(Modifier.height(14.dp))
+            Text("Belum ada sumber", color = c.ink, fontSize = 18.sp, fontWeight = FontWeight.ExtraBold)
+            Spacer(Modifier.height(6.dp))
             Text(
-                "Buka tab Extensions untuk memasang sumber — konten akan muncul di sini.",
-                color = Color(0xFF9CA3AF), fontSize = 14.sp, textAlign = TextAlign.Center,
+                "Pasang sumber dari menu Extensions. Konten akan langsung muncul di beranda setelah sumber aktif.",
+                color = c.muted, fontSize = 13.sp, lineHeight = 18.sp, textAlign = TextAlign.Center,
             )
+            Spacer(Modifier.height(14.dp))
+            TnPrimaryButton(text = "Pasang Extension", icon = "grid", onClick = onOpenExtensions)
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun FirstRunGuideBanner(
+    onOpenExtensions: () -> Unit,
+    onOpenSubscription: () -> Unit,
+) {
+    val c = TnTheme.colors
+    val trialMinutes = (TnData.trialDurationMs() / 60_000L).coerceAtLeast(1L)
+    val trialLabel = if (trialMinutes % 60L == 0L) "${trialMinutes / 60L} jam" else "$trialMinutes menit"
+    val shape = RoundedCornerShape(TnRadii.md)
+    Column(
+        Modifier
+            .widthIn(max = 760.dp)
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 12.dp)
+            .clip(shape)
+            .background(c.surface)
+            .border(1.dp, c.rose.copy(alpha = 0.42f), shape)
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(13.dp),
+    ) {
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.Top,
+            horizontalArrangement = Arrangement.spacedBy(11.dp),
+        ) {
+            Box(
+                Modifier.size(40.dp).clip(RoundedCornerShape(TnRadii.sm)).background(c.roseSoft),
+                contentAlignment = Alignment.Center,
+            ) { TnIcon("info", size = 21.dp, tint = c.rose, filled = true) }
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text("Baru di TetoNova?", color = c.ink, fontSize = 17.sp, fontWeight = FontWeight.ExtraBold)
+                Text("Siapkan sumber tontonanmu dalam tiga langkah singkat.", color = c.muted, fontSize = 12.sp, lineHeight = 17.sp)
+            }
+            Image(
+                painter = painterResource(R.drawable.teto_onboarding),
+                contentDescription = "Teto mengendarai mobil",
+                contentScale = ContentScale.Fit,
+                modifier = Modifier.size(86.dp),
+            )
+        }
+
+        GuideStep(
+            number = "1",
+            title = "Pasang Extension",
+            description = "Extension adalah sumber katalog dan video. Pasang minimal satu agar tontonan muncul.",
+        )
+        GuideStep(
+            number = "2",
+            title = "Trial & Premium itu apa?",
+            description = "Trial memberi akses Premium gratis selama $trialLabel untuk mencoba source eksklusif, terutama drama pendek. Premium melanjutkan aksesnya setelah Trial berakhir.",
+        )
+        GuideStep(
+            number = "3",
+            title = "Cara memakai Trial",
+            description = "Aktifkan Trial, buka Extensions, pasang source bertanda Premium, lalu pilih drama pendek yang ingin ditonton.",
+        )
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            TnPrimaryButton(
+                text = "Pasang Extension",
+                modifier = Modifier.weight(1f).height(48.dp),
+                icon = "grid",
+                onClick = onOpenExtensions,
+            )
+            TnGhostButton(
+                text = "Pelajari Trial",
+                modifier = Modifier.weight(1f).height(48.dp),
+                icon = "sparkle",
+                onClick = onOpenSubscription,
+            )
+        }
+    }
+}
+
+@Composable
+private fun GuideStep(number: String, title: String, description: String) {
+    val c = TnTheme.colors
+    Row(horizontalArrangement = Arrangement.spacedBy(11.dp), verticalAlignment = Alignment.Top) {
+        Box(
+            Modifier.size(27.dp).clip(RoundedCornerShape(TnRadii.sm)).background(c.surface3),
+            contentAlignment = Alignment.Center,
+        ) { Text(number, color = c.rose, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold) }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(title, color = c.ink, fontSize = 13.sp, fontWeight = FontWeight.ExtraBold)
+            Text(description, color = c.muted, fontSize = 11.sp, lineHeight = 16.sp)
         }
     }
 }
@@ -497,18 +753,25 @@ private fun QuickChips(
     onToggleDataSaver: () -> Unit,
 ) {
     val c = TnTheme.colors
+    val context = LocalContext.current
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         // Lite Mode & Data Saver are tap-to-toggle and stay in sync with their Settings switches
         // (state.lite / state.dataSaver). "Source" is the interactive dropdown below.
         SampleData.homeQuickChips.filter { it.title != "Source" }.forEach { chip ->
-            val value: String
+            val enabled: Boolean
             val onChipClick: () -> Unit
             when (chip.title) {
-                "Lite Mode" -> { value = if (lite) "On" else "Off"; onChipClick = onToggleLite }
-                "Data Saver" -> { value = if (dataSaver) "On" else "Off"; onChipClick = onToggleDataSaver }
-                else -> { value = chip.value; onChipClick = {} }
+                "Lite Mode" -> { enabled = lite; onChipClick = onToggleLite }
+                "Data Saver" -> { enabled = dataSaver; onChipClick = onToggleDataSaver }
+                else -> { enabled = false; onChipClick = {} }
             }
+            val value = if (enabled) "Aktif" else "Nonaktif"
             var focused by remember(chip.title) { mutableStateOf(false) }
+            val borderColor = when {
+                focused -> c.rose
+                enabled -> c.rose.copy(alpha = 0.55f)
+                else -> Color.Transparent
+            }
             Row(
                 Modifier
                     .weight(1f)
@@ -517,10 +780,20 @@ private fun QuickChips(
                         scaleY = if (focused) 1.02f else 1f
                     }
                     .clip(RoundedCornerShape(TnRadii.md))
-                    .background(c.surface)
-                    .border(if (focused) 3.dp else 1.dp, if (focused) c.rose else Color.Transparent, RoundedCornerShape(TnRadii.md))
+                    .background(if (enabled) c.roseTint else c.surface)
+                    .border(if (focused) 3.dp else 1.dp, borderColor, RoundedCornerShape(TnRadii.md))
                     .onFocusChanged { focused = it.isFocused }
-                    .clickable { onChipClick() }
+                    .clickable {
+                        val targetEnabled = !enabled
+                        runCatching { onChipClick() }
+                            .onSuccess {
+                                val action = if (targetEnabled) "diaktifkan" else "dinonaktifkan"
+                                Toast.makeText(context, "${chip.title} berhasil $action", Toast.LENGTH_SHORT).show()
+                            }
+                            .onFailure {
+                                Toast.makeText(context, "${chip.title} gagal diubah", Toast.LENGTH_SHORT).show()
+                            }
+                    }
                     .padding(horizontal = 8.dp, vertical = 9.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -553,7 +826,7 @@ fun PosterRail(
             val layoutInfo = listState.layoutInfo
             val totalItems = layoutInfo.totalItemsCount
             val lastVisible = layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
-            lastVisible >= (totalItems - 4).coerceAtLeast(0)
+            totalItems > 0 && lastVisible >= (totalItems - 4).coerceAtLeast(0)
         }.collect { nearEnd ->
             if (nearEnd && canLoadMore && !loadingMore) {
                 onLoadMore()
@@ -567,7 +840,10 @@ fun PosterRail(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         contentPadding = PaddingValues(vertical = 2.dp),
     ) {
-        items(posters, key = { it.url ?: it.title }) { p ->
+        itemsIndexed(
+            items = posters,
+            key = { index, p -> "poster_${index}_${p.url ?: p.title}" },
+        ) { _, p ->
             Poster(
                 item = p,
                 modifier = Modifier.width(120.dp),
@@ -586,13 +862,31 @@ fun PosterRail(
 @Composable
 private fun LoadingPosterSkeleton(index: Int) {
     val c = TnTheme.colors
+    val base = c.surface2
+    val shimmer = rememberInfiniteTransition(label = "poster-skeleton-$index")
+    val shimmerX by shimmer.animateFloat(
+        initialValue = -260f,
+        targetValue = 520f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 1350, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart,
+        ),
+        label = "poster-skeleton-shimmer-$index",
+    )
+    val highlight = if (c.isDark) Color.White.copy(alpha = 0.14f) else Color.White.copy(alpha = 0.88f)
+    val gradient = Brush.horizontalGradient(
+        colors = listOf(base, highlight, base),
+        startX = shimmerX + index * 22f,
+        endX = shimmerX + 250f + index * 22f,
+    )
     Column(Modifier.width(120.dp)) {
         Box(
             Modifier
                 .fillMaxWidth()
                 .aspectRatio(2f / 3f)
                 .clip(RoundedCornerShape(TnRadii.md))
-                .tnGradient(gradColors(index + 3)),
+                .background(gradient)
+                .border(1.dp, c.line.copy(alpha = 0.55f), RoundedCornerShape(TnRadii.md)),
         ) {
             Box(
                 Modifier
@@ -601,14 +895,7 @@ private fun LoadingPosterSkeleton(index: Int) {
                     .width(54.dp)
                     .height(22.dp)
                     .clip(RoundedCornerShape(TnRadii.pill))
-                    .background(Color.Black.copy(alpha = 0.28f)),
-            )
-            Box(
-                Modifier
-                    .align(Alignment.BottomEnd)
-                    .size(78.dp)
-                    .clip(RoundedCornerShape(39.dp))
-                    .background(Color.White.copy(alpha = 0.10f)),
+                    .background(c.surface3),
             )
         }
         Spacer(Modifier.height(8.dp))
@@ -617,7 +904,7 @@ private fun LoadingPosterSkeleton(index: Int) {
                 .fillMaxWidth(0.88f)
                 .height(14.dp)
                 .clip(RoundedCornerShape(TnRadii.pill))
-                .background(c.line2),
+                .background(gradient),
         )
         Spacer(Modifier.height(6.dp))
         Box(
@@ -625,7 +912,7 @@ private fun LoadingPosterSkeleton(index: Int) {
                 .fillMaxWidth(0.56f)
                 .height(12.dp)
                 .clip(RoundedCornerShape(TnRadii.pill))
-                .background(c.line),
+                .background(gradient),
         )
     }
 }

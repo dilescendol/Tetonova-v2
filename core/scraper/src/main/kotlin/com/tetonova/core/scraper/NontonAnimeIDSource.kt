@@ -5,28 +5,98 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import org.jsoup.Jsoup
 import java.net.URI
+import java.net.URLDecoder
+import java.net.URLEncoder
 import java.util.Base64
 
-/**
- * NontonAnimeID (WordPress "kotakanime2" theme) hides its mirrors behind an admin-ajax player like
- * otakudesu, but the shape differs: each watch page has server tabs `li.kotak_player_option` carrying
- * `data-post` / `data-type` (server name) / `data-nume`, and only the default tab's iframe is rendered
- * inline — the rest load via `POST wp-admin/admin-ajax.php` `action=player_ajax`. That handler rejects
- * any request missing a same-site `Origin` header ("Invalid origin"), so the POST routes through
- * [LiveClient.postBypass] with [origin] set.
- *
- * We resolve every tab into its iframe URL and keep only the ones our player can actually crack: the
- * site's own `*.kotakanimeid.link/video-embed` servers (a repeating-XOR payload → direct googlevideo
- * mp4 / kotakanimeid m3u8, handled by [StreamExtractor]) plus OK.ru. The cryptic-but-faithful tab name
- * (`Kotakvideo`, `Lokal-1080`, …) becomes the player's "Source" pick; the resolution is whatever that
- * server serves (decided when the embed is cracked). Third-party hosts we have no extractor for
- * (gdriveplayer, gdplayer, yourupload, sibnet, mega, …) are dropped rather than dumped into a broken
- * WebView. Best-effort throughout: any failure returns empty and [LiveSource] falls back to the
- * generic [LiveParser.parseServers].
- */
+/** NontonAnimeID's Home "Load More" is an admin-ajax POST, not a normal WordPress page. */
 object NontonAnimeIDSource {
+    private const val CURSOR_FLAG = "tn_nai"
+    private const val CURSOR_NONCE = "tn_nonce"
+    private const val CURSOR_IDS = "tn_ids"
 
-    /** Cheap signal (used by [LiveSource]) that a watch page is kotakanime2-shaped. */
+    fun isCatalogUrl(url: String): Boolean = "nontonanimeid" in url.lowercase()
+
+    suspend fun listPage(url: String): LivePage {
+        val params = queryParams(url)
+        return if (params[CURSOR_FLAG] == "1") loadMore(url, params) else firstPage(url)
+    }
+
+    private suspend fun firstPage(url: String): LivePage {
+        val pageUrl = url.substringBefore('#')
+        val html = LiveClient.getHtml(pageUrl) ?: return LivePage(emptyList())
+        val doc = Jsoup.parse(html, pageUrl)
+        val cards = doc.select("#postbaru .misha_posts_wrap article.animeseries")
+        val items = parseCards(cards.joinToString("\n") { it.outerHtml() }, pageUrl)
+        val ids = postIds(cards.joinToString(" ") { it.className() })
+        val nonce = loadMoreConfig(doc.selectFirst("#misha_scripts-js-extra")?.attr("src").orEmpty())
+            ?.let { Regex("""[\"']nonce[\"']\s*:\s*[\"']([^\"']+)""").find(it)?.groupValues?.getOrNull(1) }
+        val next = if (items.isNotEmpty() && ids.isNotEmpty() && !nonce.isNullOrBlank()) {
+            cursorUrl(pageUrl, nonce, ids)
+        } else null
+        return LivePage(items, next)
+    }
+
+    private suspend fun loadMore(url: String, params: Map<String, String>): LivePage {
+        val nonce = params[CURSOR_NONCE]?.takeIf { it.isNotBlank() } ?: return LivePage(emptyList())
+        val displayed = params[CURSOR_IDS].orEmpty().split(',').filter { it.all(Char::isDigit) }
+        if (displayed.isEmpty()) return LivePage(emptyList())
+        val origin = originOf(url) ?: return LivePage(emptyList())
+        val form = buildString {
+            append("action=loadmore&nonce=").append(enc(nonce))
+            displayed.forEach { append("&displayed_posts%5B%5D=").append(it) }
+            append("&offset=").append(displayed.size)
+        }
+        val response = LiveClient.postBypass(
+            url = "$origin/wp-admin/admin-ajax.php",
+            form = form,
+            referer = "$origin/",
+            origin = origin,
+            isValid = { body -> body.trim() == "0" || "animeseries" in body },
+        ) ?: return LivePage(emptyList())
+        if (response.trim() == "0") return LivePage(emptyList())
+
+        val items = parseCards(response, "$origin/")
+        val newIds = postIds(response)
+        val allIds = (displayed + newIds).distinct()
+        val next = if (items.isNotEmpty() && newIds.isNotEmpty()) cursorUrl("$origin/", nonce, allIds) else null
+        return LivePage(items, next)
+    }
+
+    private fun parseCards(fragment: String, baseUrl: String): List<LiveItem> =
+        LiveParser.parseList("<div>$fragment</div>", baseUrl)
+
+    private fun postIds(htmlOrClasses: String): List<String> =
+        Regex("""\bpost-(\d+)\b""").findAll(htmlOrClasses).map { it.groupValues[1] }.distinct().toList()
+
+    private fun loadMoreConfig(src: String): String? {
+        val encoded = src.substringAfter("base64,", "").takeIf { it.isNotBlank() } ?: return null
+        return runCatching { String(Base64.getDecoder().decode(encoded), Charsets.UTF_8) }.getOrNull()
+    }
+
+    private fun cursorUrl(pageUrl: String, nonce: String, ids: List<String>): String {
+        val origin = originOf(pageUrl) ?: pageUrl.substringBefore('?').trimEnd('/')
+        return "$origin/?$CURSOR_FLAG=1&$CURSOR_NONCE=${enc(nonce)}&$CURSOR_IDS=${ids.joinToString(",")}"
+    }
+
+    private fun queryParams(url: String): Map<String, String> = runCatching {
+        URI(url).rawQuery.orEmpty().split('&').mapNotNull { part ->
+            val key = part.substringBefore('=', "").takeIf { it.isNotBlank() } ?: return@mapNotNull null
+            URLDecoder.decode(key, "UTF-8") to URLDecoder.decode(part.substringAfter('=', ""), "UTF-8")
+        }.toMap()
+    }.getOrDefault(emptyMap())
+
+    private fun originOf(url: String): String? = runCatching {
+        val uri = URI(url)
+        val port = if (uri.port >= 0) ":${uri.port}" else ""
+        "${uri.scheme}://${uri.host}$port".takeIf { uri.scheme != null && uri.host != null }
+    }.getOrNull()
+
+    private fun enc(value: String): String = URLEncoder.encode(value, "UTF-8")
+
+    // ---- Episode server resolver (the same site's separate player_ajax flow) ----
+
+    /** Cheap signal that an episode page is kotakanime2-shaped. */
     fun isNontonAnimeID(html: String): Boolean = "kotak_player_option" in html
 
     private data class Tab(val name: String, val nume: String)
@@ -37,18 +107,16 @@ object NontonAnimeIDSource {
         if (tabs.isEmpty()) return emptyList()
 
         val post = tabs.firstNotNullOfOrNull { it.attr("data-post").takeIf(String::isNotBlank) } ?: return emptyList()
-        val nonce = findNonce(html) ?: return emptyList()
+        val nonce = findPlayerNonce(html) ?: return emptyList()
         val ajaxUrl = deriveAjaxUrl(episodeUrl) ?: return emptyList()
-        val origin = runCatching { URI(episodeUrl).let { "${it.scheme}://${it.host}" } }.getOrNull() ?: return emptyList()
-
-        val wanted = tabs.mapNotNull { t ->
-            val name = t.attr("data-type").trim()
-            val nume = t.attr("data-nume").trim()
+        val origin = originOf(episodeUrl) ?: return emptyList()
+        val wanted = tabs.mapNotNull { tab ->
+            val name = tab.attr("data-type").trim()
+            val nume = tab.attr("data-nume").trim()
             if (name.isBlank() || nume.isBlank()) null else Tab(name, nume)
         }
         if (wanted.isEmpty()) return emptyList()
 
-        // Resolve every tab's iframe in parallel (the default tab resolves the same way as the rest).
         val resolved = coroutineScope {
             wanted.map { tab ->
                 async {
@@ -57,14 +125,12 @@ object NontonAnimeIDSource {
                 }
             }.awaitAll()
         }
-
         return resolved
             .mapNotNull { (tab, src) -> if (src != null && isSupportedEmbed(src)) VideoServer(tab.name, src) else null }
             .distinctBy { it.embedUrl }
             .sortedByDescending { preference(it.name, it.embedUrl) }
     }
 
-    /** POST the player_ajax form and pull the iframe src out of the `<iframe … src="…">` reply. */
     private suspend fun ajaxIframe(url: String, form: String, referer: String, origin: String): String? {
         val body = LiveClient.postBypass(url, form, referer, origin) { "src=" in it && "iframe" in it } ?: return null
         return iframeSrc(body)
@@ -74,49 +140,37 @@ object NontonAnimeIDSource {
         val raw = Regex("""<iframe[^>]+src=["']([^"']+)["']""").find(html)?.groupValues?.get(1)?.trim()
             ?: return null
         return when {
-            raw.startsWith("//") -> "https:$raw" // protocol-relative (gdriveplayer/ok.ru) → https
+            raw.startsWith("//") -> "https:$raw"
             raw.startsWith("http") -> raw
             else -> null
         }
     }
 
-    /**
-     * The player nonce ships base64-encoded inside a `<script src="data:text/javascript;base64,…">`
-     * that defines `kotakajax = {…,"nonce":"…",…}` (not as plain HTML), so decode the data-URIs and
-     * read it from there. Scoped to `kotakajax` so we don't grab some other plugin's nonce.
-     */
-    private fun findNonce(html: String): String? {
-        for (m in Regex("""data:text/javascript;base64,([A-Za-z0-9+/=]+)""").findAll(html)) {
-            val js = runCatching { String(Base64.getMimeDecoder().decode(m.groupValues[1])) }.getOrNull() ?: continue
+    private fun findPlayerNonce(html: String): String? {
+        for (match in Regex("""data:text/javascript;base64,([A-Za-z0-9+/=]+)""").findAll(html)) {
+            val js = runCatching { String(Base64.getMimeDecoder().decode(match.groupValues[1])) }.getOrNull() ?: continue
             Regex("""kotakajax\s*=[\s\S]*?"nonce":"(\w+)"""").find(js)?.let { return it.groupValues[1] }
         }
-        // Fallback: some pages inline the config instead of base64-wrapping it.
         return Regex("""kotakajax\s*=[\s\S]*?"nonce":"(\w+)"""").find(html)?.groupValues?.get(1)
     }
 
-    private fun deriveAjaxUrl(episodeUrl: String): String? = runCatching {
-        URI(episodeUrl).let { "${it.scheme}://${it.host}/wp-admin/admin-ajax.php" }
-    }.getOrNull()
+    private fun deriveAjaxUrl(episodeUrl: String): String? =
+        originOf(episodeUrl)?.let { "$it/wp-admin/admin-ajax.php" }
 
-    /** Keep only mirrors whose resolved host has a working in-app extractor (see [StreamExtractor]);
-     *  drop everything else (gdriveplayer / gdplayer / yourupload / sibnet / mega / rpmvip / …). */
     private fun isSupportedEmbed(url: String): Boolean {
-        val u = url.lowercase()
-        return "kotakanimeid.link/video-embed" in u || "ok.ru" in u || "odnoklassniki" in u
+        val normalized = url.lowercase()
+        return "kotakanimeid.link/video-embed" in normalized || "ok.ru" in normalized || "odnoklassniki" in normalized
     }
 
-    /** Default-pick order. Gate on the resolved HOST first — a native direct mp4 beats third-party
-     *  OK.ru regardless of the tab name (the "Ok-uhd" tab contains "uhd" but is NOT a native 1080p
-     *  source) — then rank native servers by their quality hint (1080p mp4 > googlevideo > other). */
     private fun preference(name: String, embed: String): Int {
-        val h = name.lowercase()
+        val hint = name.lowercase()
         val native = "kotakanimeid.link" in embed.lowercase()
         return when {
-            native && ("1080" in h || "uhd" in h) -> 6 // native 1080p direct mp4
-            native && "kotakvideo" in h -> 5           // native googlevideo (reliable)
-            native && ("hd" in h || "lokal" in h) -> 4 // other native (HLS / mp4)
-            native -> 3                                // any other native
-            else -> 1                                  // OK.ru — extractable, but a third-party fallback
+            native && ("1080" in hint || "uhd" in hint) -> 6
+            native && "kotakvideo" in hint -> 5
+            native && ("hd" in hint || "lokal" in hint) -> 4
+            native -> 3
+            else -> 1
         }
     }
 }

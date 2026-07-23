@@ -139,7 +139,10 @@ class ForumApi(baseUrl: String) {
             client.newCall(req).execute().use { resp ->
                 val o = runCatching { JSONObject(resp.body?.string().orEmpty()) }.getOrDefault(JSONObject())
                 when {
-                    o.has("error") -> ForumActionResult(false, o.optString("message").ifBlank { o.optString("error").ifBlank { "Gagal" } })
+                    o.has("error") -> {
+                        val code = o.optString("error")
+                        ForumActionResult(false, o.optString("message").ifBlank { forumErrorMessage(code) })
+                    }
                     !o.optBoolean("ok", true) && o.optString("code") == "moderation_strike" ->
                         ForumActionResult(false, strikeMessage(o) ?: "Konten ditahan moderasi.")
                     !resp.isSuccessful -> ForumActionResult(false, "Gagal (HTTP ${resp.code})")
@@ -152,4 +155,12 @@ class ForumApi(baseUrl: String) {
 
     private fun strikeMessage(o: JSONObject): String? =
         o.optJSONObject("strike")?.optString("userMessage")?.ifBlank { null }
+
+    private fun forumErrorMessage(code: String): String = when (code) {
+        "invalid_title" -> "Judul harus berisi 2–200 karakter."
+        "invalid_content" -> "Isi thread minimal 5 karakter."
+        "daily_thread_limit" -> "Batas thread harian sudah habis."
+        "realm_too_low" -> "Level akun belum memenuhi syarat."
+        else -> code.ifBlank { "Gagal" }
+    }
 }

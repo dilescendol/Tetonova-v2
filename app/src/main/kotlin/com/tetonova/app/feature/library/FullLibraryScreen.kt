@@ -16,7 +16,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -134,7 +134,10 @@ private fun LibrarySection(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 contentPadding = PaddingValues(end = 16.dp),
             ) {
-                items(items, key = { it.url.orEmpty() }) { item ->
+                itemsIndexed(
+                    items = items,
+                    key = { index, item -> "library_${index}_${item.url ?: item.title}" },
+                ) { _, item ->
                     CompactPosterCard(item, onOpenDetail)
                 }
             }

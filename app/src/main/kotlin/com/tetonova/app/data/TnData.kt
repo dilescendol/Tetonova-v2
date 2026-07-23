@@ -20,6 +20,7 @@ import com.tetonova.core.scraper.LiveDetail
 import com.tetonova.core.scraper.LiveItem
 import com.tetonova.core.scraper.LivePage
 import com.tetonova.core.scraper.LiveSource
+import com.tetonova.core.scraper.VideoServer
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -52,6 +53,58 @@ data class SearchGroup(val sourceId: String, val displayName: String, val poster
 /** A Home source-filter chip. `id == null` is the "Semua" (all sources) chip. */
 data class HomeSourceChip(val id: String?, val label: String)
 
+private val NUMBERED_PAGE = Regex("([?&]page=)(\\d+)", RegexOption.IGNORE_CASE)
+private val PATH_PAGE = Regex("(/page/)(\\d+)(?=/?(?:[?#]|$))", RegexOption.IGNORE_CASE)
+
+/** Common fallback for APIs that page with `?page=N` but omit next-page metadata. */
+internal fun nextNumberedPageUrl(url: String, hasItems: Boolean): String? {
+    if (!hasItems) return null
+    val match = NUMBERED_PAGE.find(url) ?: return null
+    val page = match.groupValues[2].toLongOrNull()?.takeIf { it < Long.MAX_VALUE } ?: return null
+    return url.replaceRange(match.groups[2]!!.range, (page + 1).toString())
+}
+
+/**
+ * A few catalog providers omit rel=next (and the panel cache historically omitted nextUrl), even
+ * though their paging URL is deterministic. Keep this deliberately limited to the affected
+ * providers so a one-page rail from an unrelated source does not grow a fake page-2 request.
+ */
+internal fun nextKnownCatalogPageUrl(url: String, sourceId: String, hasItems: Boolean): String? {
+    if (!hasItems) return null
+    nextNumberedPageUrl(url, true)?.let { return it }
+    PATH_PAGE.find(url)?.let { match ->
+        val page = match.groupValues[2].toLongOrNull()?.takeIf { it < Long.MAX_VALUE } ?: return null
+        return url.replaceRange(match.groups[2]!!.range, (page + 1).toString())
+    }
+
+    val identity = "$sourceId $url".lowercase(Locale.ROOT)
+    val isKnownPagedCatalog = listOf(
+        "kuramanime", "lk21", "nontondrama", "nontonanime", "oploverz", "pusatfilm", "samehadaku",
+    ).any { it in identity }
+    if (!isKnownPagedCatalog) return null
+
+    // Kuramanime's quick routes and Oploverz's JSON adapter page through a query parameter.
+    if ("kuramanime" in identity || "oploverz" in identity) {
+        val fragment = url.substringAfter('#', "").takeIf { '#' in url }
+        val base = url.substringBefore('#')
+        val separator = if ('?' in base) '&' else '?'
+        return "$base${separator}page=2" + fragment?.let { "#$it" }.orEmpty()
+    }
+
+    // LK21/NontonDrama use /page/N routes; the remaining affected sites are WordPress catalogs.
+    val fragment = url.substringAfter('#', "").takeIf { '#' in url }
+    val withoutFragment = url.substringBefore('#')
+    val query = withoutFragment.substringAfter('?', "").takeIf { '?' in withoutFragment }
+    val path = withoutFragment.substringBefore('?').trimEnd('/')
+    return "$path/page/2/" + query?.let { "?$it" }.orEmpty() + fragment?.let { "#$it" }.orEmpty()
+}
+
+/** Server-side search (premium proxy or a native JSON search API) is already relevant — never
+ *  re-filter its hits by title (localized titles won't literally contain the typed query). Only
+ *  generic WordPress `/?s=` hits, which may echo a homepage, go through the title matcher. */
+internal fun trustSearchResults(premium: Boolean, apiBaseUrl: String): Boolean =
+    premium || LiveSource.hasNativeSearch(apiBaseUrl)
+
 /**
  * App-facing data facade. The **control panel** (`/api/v1/sources`) is the source of truth for
  * which sources exist, their display names/categories and their Home-section links; the bundled
@@ -64,7 +117,6 @@ object TnData {
     private val panelCacheJson = Json { ignoreUnknownKeys = true; isLenient = true; encodeDefaults = true }
     private const val PANEL_CACHE_BASE = "panel_sources_last_good_base"
     private const val PANEL_CACHE_JSON = "panel_sources_last_good_json"
-    private const val PREMIUM_ENTITLED_CACHE = "premium_entitled_cache"
     private const val HOME_CACHE_WAIT_MS = 2_500L
     // Upper bound only: the `finally` in startLiveSearch turns loading off earlier once ALL sources
     // finish, so fast searches stay instant. This cap just gives slow short-drama JSON APIs room to land.
@@ -86,10 +138,15 @@ object TnData {
     private var panelSources: List<SourceOverride> = emptyList()
     /** Panel base URL (for [CatalogApi] cache reads); set on every [refreshFromPanel]. */
     private var panelBase: String = ""
+    internal fun telemetryPanelBase(): String = panelBase
     private var panelRefreshJob: Job? = null
 
     /** Support/donation card config from the panel (null until fetched). */
     var supportMe: SupportMe? = null
+        private set
+
+    /** Global entry banner published by the panel. */
+    var announcement by mutableStateOf<Announcement?>(null)
         private set
 
     /** Telemetry ingest token from the panel â€” reused to auth the in-app problem report. */
@@ -146,6 +203,21 @@ object TnData {
         else -> BuildConfig.DEBUG
     }
 
+    /** True after the user has at least one usable extension installed. The explicit preference
+     *  fallback keeps first-run UI accurate while the panel/registry is still loading. */
+    fun hasInstalledExtensions(): Boolean {
+        val candidates = when {
+            hasPanel -> catalogSources().map { it.sourceId }
+            registry?.extensions?.isNotEmpty() == true -> registry!!.extensions.map { it.id }
+            else -> emptyList()
+        }
+        return if (candidates.isNotEmpty()) {
+            candidates.any(::isExtInstalled)
+        } else {
+            extIdSet(PREF_EXT_INSTALLED).isNotEmpty()
+        }
+    }
+
     /** Install/uninstall a source; persists across both override sets and recomposes dependent UI. */
     fun setExtInstalled(sourceId: String, install: Boolean) {
         if (sourceId.isBlank()) return
@@ -195,7 +267,7 @@ object TnData {
 
     /** Refresh achievements (best-effort) â€” called when Profile opens (eval is on-read server-side). */
     suspend fun refreshAchievements() {
-        if (panelBase.isBlank()) return
+        if (panelBase.isBlank() || !AuthManager.signedIn) return
         val b = cultivationBearer()
         if (telemetryToken.isBlank() && b == null) return
         UserApi(panelBase).fetchAchievements(installId, telemetryToken, b)?.let { achievements = it }
@@ -203,7 +275,7 @@ object TnData {
 
     /** Equip a reached realm's frame on the avatar, then refresh XP so the hero reflects it. */
     fun equipFrame(realmId: String) {
-        if (panelBase.isBlank()) return
+        if (panelBase.isBlank() || !AuthManager.signedIn) return
         liveScope.launch {
             val b = cultivationBearer()
             if (telemetryToken.isBlank() && b == null) return@launch
@@ -215,6 +287,7 @@ object TnData {
     suspend fun onSignedIn() {
         if (panelBase.isBlank()) return
         val b = AuthManager.idToken() ?: return
+        LiveSource.configurePremiumProxy(panelBase, b)
         val uid = AuthManager.user?.uid ?: return
         val flag = "cult_merged_$uid"
         if (!SettingsStore.getBool(flag, false)) {
@@ -223,13 +296,18 @@ object TnData {
         refreshUserXp(); refreshAchievements()
     }
 
-    /** On sign-out: re-read cultivation as the anonymous install owner. */
+    /** On sign-out: clear account-only state; signed-out users never touch customer telemetry. */
     fun onSignedOutRefresh() {
-        liveScope.launch { refreshUserXp(); refreshAchievements() }
+        LiveSource.configurePremiumProxy("", "")
+        subscription = null
+        userXp = null
+        achievements = emptyList()
+        panelVersion++
     }
 
     suspend fun refreshFromPanel(panelUrl: String) {
         panelBase = panelUrl.trim().trimEnd('/')
+        preparePremiumProxy()
         restoreCachedPanelSnapshot(panelBase)
         restoreBundledSourceSnapshot()
         val resp = SourceApi(panelUrl).fetch()
@@ -254,15 +332,126 @@ object TnData {
 
     private fun applyPanelSnapshot(resp: SourcesResponse) {
         if (resp.sources.isNotEmpty()) {
-            val normalized = resp.sources.map(::normalizePanelSource)
+            val normalized = withBundledIndoMax21(
+                withBundledJavHey(
+                    withBundledDutamovie(withBundledIdlix(resp.sources.map(::normalizePanelSource))),
+                ),
+            )
             panelSources = normalized
             configureLiveAccessCodes(normalized)
         }
         if (resp.supportMe != null) supportMe = resp.supportMe
+        resp.announcement?.let { announcement = it }
         resp.telemetry?.ingestToken?.takeIf { it.isNotBlank() }?.let { telemetryToken = it }
         resp.trial?.durationSeconds?.let { trialDurationSeconds = it.coerceIn(0L, 31_536_000L) }
         resp.releaseNotes?.let { releaseNotes = it }
         resp.helpCenter?.let { helpCenter = it }
+    }
+
+    /** Idlix is an on-device adapter, so it remains available before the remote panel adds a row. */
+    private fun withBundledIdlix(sources: List<SourceOverride>): List<SourceOverride> {
+        if (sources.any { it.sourceId == "idlix-compat" }) return sources
+        val base = "https://z2.idlixku.com"
+        val merged = sources + SourceOverride(
+            sourceId = "idlix-compat",
+            displayName = "Idlix",
+            enabled = true,
+            apiBaseUrl = base,
+            webBaseUrl = base,
+            category = "movie",
+            lastProbeStatus = "ok",
+            homeLinks = HomeLinks(
+                showAll = listOf(HomeLink("Idlix Terbaru", "$base/api/movies?page=1&limit=36&sort=createdAt")),
+                showOnClick = listOf(
+                    HomeLink("Film Terbaru", "$base/api/movies?page=1&limit=36&sort=createdAt"),
+                    HomeLink("Series Terbaru", "$base/api/series?page=1&limit=36&sort=createdAt"),
+                    HomeLink("Populer", "$base/api/browse?page=1&limit=36&sort=popular"),
+                ),
+            ),
+        )
+        android.util.Log.i("TnIdlix", "added bundled Idlix source beside ${sources.size} panel sources")
+        return merged
+    }
+
+    /** DutaMovie uses a native Muvipro adapter and remains available before the panel adds its row. */
+    private fun withBundledDutamovie(sources: List<SourceOverride>): List<SourceOverride> {
+        if (sources.any { it.sourceId == "dutamovie-compat" }) return sources
+        val base = "https://restaurantesabadell.com"
+        val merged = sources + SourceOverride(
+            sourceId = "dutamovie-compat",
+            displayName = "DutaMovie",
+            enabled = true,
+            apiBaseUrl = base,
+            webBaseUrl = base,
+            category = "movie",
+            lastProbeStatus = "ok",
+            homeLinks = HomeLinks(
+                showAll = listOf(HomeLink("DutaMovie Terbaru", "$base/")),
+                showOnClick = listOf(
+                    HomeLink("Rilis Terbaru", "$base/"),
+                    HomeLink("Box Office", "$base/box-office/"),
+                    HomeLink("TV Series", "$base/serial-tv/"),
+                    HomeLink("Film Indonesia", "$base/country/indonesia/"),
+                    HomeLink("Drama Korea", "$base/country/korea/"),
+                    HomeLink("Film China", "$base/country/china/"),
+                ),
+            ),
+        )
+        android.util.Log.i("TnDutamovie", "added bundled DutaMovie beside ${sources.size} panel sources")
+        return merged
+    }
+
+    /** JavHey is mature-only and uses a native catalog/Base64 mirror adapter. */
+    private fun withBundledJavHey(sources: List<SourceOverride>): List<SourceOverride> {
+        if (sources.any { it.sourceId == "javhey-compat" }) return sources
+        val base = "https://javhey.com"
+        return sources + SourceOverride(
+            sourceId = "javhey-compat",
+            displayName = "JavHey",
+            enabled = true,
+            apiBaseUrl = base,
+            webBaseUrl = base,
+            category = "adult",
+            lastProbeStatus = "ok",
+            homeLinks = HomeLinks(
+                showAll = listOf(HomeLink("JavHey Terbaru", "$base/videos/paling-baru")),
+                showOnClick = listOf(
+                    HomeLink("Terbaru", "$base/videos/paling-baru"),
+                    HomeLink("Censored", "$base/category/2/censored"),
+                    HomeLink("Uncensored", "$base/category/31/decensored"),
+                    HomeLink("Paling Dilihat", "$base/videos/paling-dilihat"),
+                    HomeLink("Rating Teratas", "$base/videos/top-rating"),
+                ),
+            ),
+        )
+    }
+
+    /** IndoMax21 rotates domains; otrarevista.com is the current upstream landing domain. */
+    private fun withBundledIndoMax21(sources: List<SourceOverride>): List<SourceOverride> {
+        if (sources.any { it.sourceId == "indomax21-compat" }) return sources
+        val base = "https://otrarevista.com"
+        return sources + SourceOverride(
+            sourceId = "indomax21-compat",
+            displayName = "IndoMax21",
+            enabled = true,
+            apiBaseUrl = base,
+            webBaseUrl = base,
+            category = "adult",
+            lastProbeStatus = "ok",
+            homeLinks = HomeLinks(
+                showAll = listOf(HomeLink("IndoMax21 Terbaru", "$base/category/anime/")),
+                showOnClick = listOf(
+                    HomeLink("Anime", "$base/category/anime/"),
+                    HomeLink("Donghua", "$base/category/donghua/"),
+                    HomeLink("TV Show", "$base/category/serial-tv/"),
+                    HomeLink("Asia", "$base/category/asia-m/"),
+                    HomeLink("VivaMax", "$base/category/vivamax/"),
+                    HomeLink("JAV", "$base/category/jav/"),
+                    HomeLink("Western", "$base/category/semi-barat/"),
+                    HomeLink("Indonesia", "$base/category/bokep-indo/"),
+                ),
+            ),
+        )
     }
 
     private fun normalizePanelSource(src: SourceOverride): SourceOverride {
@@ -587,7 +776,11 @@ object TnData {
     private fun configureLiveAccessCodes(sources: List<SourceOverride>) {
         LiveSource.configureAccessCodes(
             sources.flatMap { src ->
-                val code = src.accessCode?.trim().orEmpty()
+                val code = if (src.category.equals("short-drama", true) || src.category.equals("dramabos", true)) {
+                    "server"
+                } else {
+                    src.accessCode?.trim().orEmpty()
+                }
                 if (code.isBlank()) {
                     emptyList()
                 } else {
@@ -715,6 +908,59 @@ object TnData {
 
     private fun bundledHomeLinks(ext: RegistryExtension, base: String): HomeLinks {
         val cleanBase = base.trimEnd('/')
+        if (ext.id == "idlix-compat") {
+            val movies = "$cleanBase/api/movies?page=1&limit=36&sort=createdAt"
+            val series = "$cleanBase/api/series?page=1&limit=36&sort=createdAt"
+            val popular = "$cleanBase/api/browse?page=1&limit=36&sort=popular"
+            return HomeLinks(
+                showAll = listOf(HomeLink("Idlix Terbaru", movies)),
+                showOnClick = listOf(
+                    HomeLink("Film Terbaru", movies),
+                    HomeLink("Series Terbaru", series),
+                    HomeLink("Populer", popular),
+                ),
+            )
+        }
+        if (ext.id == "dutamovie-compat") {
+            return HomeLinks(
+                showAll = listOf(HomeLink("DutaMovie Terbaru", "$cleanBase/")),
+                showOnClick = listOf(
+                    HomeLink("Rilis Terbaru", "$cleanBase/"),
+                    HomeLink("Box Office", "$cleanBase/box-office/"),
+                    HomeLink("TV Series", "$cleanBase/serial-tv/"),
+                    HomeLink("Film Indonesia", "$cleanBase/country/indonesia/"),
+                    HomeLink("Drama Korea", "$cleanBase/country/korea/"),
+                    HomeLink("Film China", "$cleanBase/country/china/"),
+                ),
+            )
+        }
+        if (ext.id == "javhey-compat") {
+            return HomeLinks(
+                showAll = listOf(HomeLink("JavHey Terbaru", "$cleanBase/videos/paling-baru")),
+                showOnClick = listOf(
+                    HomeLink("Terbaru", "$cleanBase/videos/paling-baru"),
+                    HomeLink("Censored", "$cleanBase/category/2/censored"),
+                    HomeLink("Uncensored", "$cleanBase/category/31/decensored"),
+                    HomeLink("Paling Dilihat", "$cleanBase/videos/paling-dilihat"),
+                    HomeLink("Rating Teratas", "$cleanBase/videos/top-rating"),
+                ),
+            )
+        }
+        if (ext.id == "indomax21-compat") {
+            return HomeLinks(
+                showAll = listOf(HomeLink("IndoMax21 Terbaru", "$cleanBase/category/anime/")),
+                showOnClick = listOf(
+                    HomeLink("Anime", "$cleanBase/category/anime/"),
+                    HomeLink("Donghua", "$cleanBase/category/donghua/"),
+                    HomeLink("TV Show", "$cleanBase/category/serial-tv/"),
+                    HomeLink("Asia", "$cleanBase/category/asia-m/"),
+                    HomeLink("VivaMax", "$cleanBase/category/vivamax/"),
+                    HomeLink("JAV", "$cleanBase/category/jav/"),
+                    HomeLink("Western", "$cleanBase/category/semi-barat/"),
+                    HomeLink("Indonesia", "$cleanBase/category/bokep-indo/"),
+                ),
+            )
+        }
         if (ext.id == "winbu-compat") {
             return HomeLinks(
                 showAll = listOf(HomeLink("Winbu", "https://winbu.net/animedonghua/")),
@@ -896,7 +1142,7 @@ object TnData {
 
     /** Pull the user's XP/level/streak/realm; fires a breakthrough event when the level rises. */
     suspend fun refreshUserXp() {
-        if (panelBase.isBlank()) return
+        if (panelBase.isBlank() || !AuthManager.signedIn) return
         val b = cultivationBearer()
         if (telemetryToken.isBlank() && b == null) return
         val xp = UserApi(panelBase).fetchXp(installId, telemetryToken, b) ?: return
@@ -998,7 +1244,7 @@ object TnData {
 
     /** The single entitlement gate: paid-active or trial-active. Used by Home/Search/premium filters. */
     fun isEntitledToPremium(): Boolean =
-        subscription?.entitled ?: SettingsStore.getBool(PREMIUM_ENTITLED_CACHE, false)
+        AuthManager.signedIn && subscription?.entitled == true
 
     private fun billingApi(): BillingApi? = if (panelBase.isBlank()) null else BillingApi(panelBase)
 
@@ -1007,9 +1253,9 @@ object TnData {
         val api = billingApi() ?: return
         api.getPublicPlans()?.takeIf { it.isNotEmpty() }?.let { plans = it }
         val token = AuthManager.idToken() ?: return
+        LiveSource.configurePremiumProxy(panelBase, token)
         api.getSubscription(token)?.let {
             subscription = it
-            SettingsStore.setBool(PREMIUM_ENTITLED_CACHE, it.entitled)
             panelVersion++
             if (it.entitled) primeHomeSections()
         }
@@ -1054,11 +1300,11 @@ object TnData {
     }
 
     /** Upload a watch session's heartbeats, then refresh XP so the Profile reflects the new progress. */
-    fun reportWatchSession(sessionId: String, episodeId: String, sourceId: String, heartbeats: List<Heartbeat>) {
-        if (!hasPanel || telemetryToken.isBlank() || heartbeats.size < 2) return
+    fun reportWatchSession(sessionId: String, episodeId: String, sourceId: String, isShort: Boolean, heartbeats: List<Heartbeat>) {
+        if (!AuthManager.signedIn || !hasPanel || telemetryToken.isBlank() || heartbeats.size < 2) return
         liveScope.launch {
             // Signed in â†’ heartbeats accrue to the ACCOUNT (acct:uid); else to this install.
-            UserApi(panelBase).postWatchSession(installId, sessionId, episodeId, sourceId, heartbeats, telemetryToken, cultivationBearer())
+            UserApi(panelBase).postWatchSession(installId, sessionId, episodeId, sourceId, isShort, heartbeats, telemetryToken, cultivationBearer())
             refreshUserXp()
         }
     }
@@ -1079,9 +1325,19 @@ object TnData {
         return "short" in cat || "reel" in cat || "micro" in cat
     }
 
-    /** Stable, sanitized source id for a watch URL â€” the panel source if known, else the host. */
-    fun sourceIdForUrl(url: String): String =
-        slugId(sourceForUrl(url)?.sourceId ?: hostOf(url) ?: "web", 120)
+    /** Stable canonical source id for watch telemetry, resilient to rotating source domains. */
+    fun sourceIdForUrl(url: String): String {
+        sourceForUrl(url)?.sourceId?.let { return slugId(it, 120) }
+        val host = hostOf(url).orEmpty().lowercase(Locale.ROOT)
+        val fuzzy = panelSources
+            .mapNotNull { source ->
+                val stem = source.sourceId.lowercase(Locale.ROOT).removeSuffix("-compat")
+                source.takeIf { stem.length >= 5 && host.contains(stem) }?.let { stem.length to source.sourceId }
+            }
+            .maxByOrNull { it.first }
+            ?.second
+        return slugId(fuzzy ?: host.ifBlank { "web" }, 120)
+    }
 
     /** Stable, sanitized per-episode id for a watch URL (host + last path segment). */
     fun episodeIdForUrl(url: String): String {
@@ -1185,6 +1441,20 @@ object TnData {
 
     private fun sourceById(id: String) = panelSources.firstOrNull { it.sourceId == id }
 
+    fun searchSourceStatus(id: String): String? = sourceById(id)?.lastProbeStatus
+
+    private suspend fun <T> trackSource(sourceId: String, block: suspend () -> T): T = try {
+        block().also { SourceTelemetry.record(sourceId, failed = false) }
+    } catch (error: Throwable) {
+        SourceTelemetry.record(sourceId, failed = true)
+        throw error
+    }
+
+    suspend fun servers(url: String): List<VideoServer> {
+        val sourceId = sourceForUrl(url)?.sourceId.orEmpty()
+        return if (sourceId.isBlank()) LiveSource.servers(url) else trackSource(sourceId) { LiveSource.servers(url) }
+    }
+
     /** The enabled source whose apiBaseUrl host matches [url]'s host â€” to cache-route a bare detail URL. */
     private fun sourceForUrl(url: String): SourceOverride? {
         val host = hostOf(url) ?: return null
@@ -1204,6 +1474,15 @@ object TnData {
     /** Platforms the panel premium proxy can serve today (DramaBox first; others added as mapped). */
     private val supportedPremium = setOf("dramabox")
     private fun premiumApi(): PremiumApi? = panelBase.takeIf { it.isNotBlank() }?.let { PremiumApi(it) }
+
+    /** Refresh the Firebase bearer used by the lightweight GoodBos JSON proxy. */
+    suspend fun preparePremiumProxy() {
+        if (!AuthManager.signedIn) return
+        AuthManager.idToken()?.let { LiveSource.configurePremiumProxy(panelBase, it) }
+    }
+
+    private fun isManagedShortDrama(src: SourceOverride?): Boolean =
+        src?.category.equals("short-drama", true) || src?.category.equals("dramabos", true)
 
     /** The proxy platform id for a premium source (e.g. "dramabox-compat" â†’ "dramabox"), or null when
      *  the source isn't premium or isn't a proxy-supported platform. */
@@ -1227,30 +1506,37 @@ object TnData {
         // never scraped on-device. browsableSources() already kept these out for non-subscribers.
         premiumPlatformFor(src)?.let { platform ->
             val token = AuthManager.idToken() ?: return emptyList()
-            return premiumApi()?.search(token, platform, query).orEmpty()
+            return runCatching { trackSource(src.sourceId) { premiumApi()?.search(token, platform, query).orEmpty() } }.getOrDefault(emptyList())
         }
         if (src.proxyEnabled && !src.proxyPaths?.search.isNullOrBlank()) {
             // Treat an EMPTY cache hit as a miss: the panel's generic scraper can't read bespoke
             // sources (e.g. oploverz's Next.js JSON API) and returns `{"items":[]}` with HTTP 200,
             // which would otherwise suppress the on-device live scrape that *can* search them.
-            catalogApi()?.search(src, query)?.takeIf { it.isNotEmpty() }?.let { return it }
+            runCatching { trackSource(src.sourceId) { catalogApi()?.search(src, query).orEmpty() } }
+                .getOrDefault(emptyList()).takeIf { it.isNotEmpty() }?.let { return it }
         }
-        return runCatching { LiveSource.search(src.apiBaseUrl, query) }.getOrDefault(emptyList())
+        if (isManagedShortDrama(src)) preparePremiumProxy()
+        return runCatching { trackSource(src.sourceId) { LiveSource.search(src.apiBaseUrl, query) } }.getOrDefault(emptyList())
     }
 
     /** Detail for a source URL: premium proxy (tnpremium://) â†’ panel cache (proxy_enabled) â†’ live. */
     suspend fun liveDetail(url: String): LiveDetail? {
         parsePremiumUrl(url)?.let { (platform, bookId) ->
             val token = AuthManager.idToken() ?: return null
-            return premiumApi()?.detail(token, platform, bookId)
+            val sourceId = panelSources.firstOrNull { premiumPlatformFor(it) == platform }?.sourceId.orEmpty()
+            return if (sourceId.isBlank()) premiumApi()?.detail(token, platform, bookId)
+            else runCatching { trackSource(sourceId) { premiumApi()?.detail(token, platform, bookId) } }.getOrNull()
         }
         val src = sourceForUrl(url)
+        if (isManagedShortDrama(src)) preparePremiumProxy()
         if (src != null && src.proxyEnabled && !src.proxyPaths?.detail.isNullOrBlank()) {
-            val cached = catalogApi()?.detail(src, url)
+            val cached = runCatching { trackSource(src.sourceId) { catalogApi()?.detail(src, url) } }.getOrNull()
             if (cached != null && !shouldRetryLiveDetail(url, cached)) return cached
-            return runCatching { LiveSource.detail(url) }.getOrNull() ?: cached
+            return runCatching { trackSource(src.sourceId) { LiveSource.detail(url) } }.getOrNull() ?: cached
         }
-        return runCatching { LiveSource.detail(url) }.getOrNull()
+        return runCatching {
+            if (src == null) LiveSource.detail(url) else trackSource(src.sourceId) { LiveSource.detail(url) }
+        }.getOrNull()
     }
 
     private fun shouldRetryLiveDetail(url: String, detail: LiveDetail): Boolean {
@@ -1293,7 +1579,7 @@ object TnData {
     fun liveSectionCanLoadMore(url: String): Boolean = !liveNextUrls[url].isNullOrBlank()
     fun liveSectionLoadingMore(url: String): Boolean = liveLoadingMore[url] == true
 
-    private fun primeHomeSections(limit: Int = 4) {
+    private fun primeHomeSections(limit: Int = 1) {
         if (panelSources.isEmpty()) return
         homeSectionsAll().take(limit).forEach { sec ->
             ensureLiveSection(sec.url, sec.sourceId)
@@ -1308,7 +1594,8 @@ object TnData {
         if (url.isBlank()) return
         if (!liveRequested.add(url)) return
         val src = sourceById(sourceId)
-        if (src != null && src.proxyEnabled && !src.proxyPaths?.catalog.isNullOrBlank()) {
+        val customOploverzCatalog = "oploverz" in "$sourceId $url".lowercase(Locale.ROOT)
+        if (src != null && src.proxyEnabled && !src.proxyPaths?.catalog.isNullOrBlank() && !customOploverzCatalog) {
             liveScope.launch { sectionFetchGate.withPermit { fillSectionCached(url, src) } }
             return
         }
@@ -1322,11 +1609,16 @@ object TnData {
             val posters = items.take(20).map { enrichPosterCover(liveToPoster(it, src.sourceId), src) }
             val keys = linkedSetOf(url, section?.url.orEmpty()).filter { it.isNotBlank() }
             val next = section?.nextUrl?.takeIf { it.isNotBlank() }
+                ?: nextKnownCatalogPageUrl(url, src.sourceId, hasItems = true)
             keys.forEach { key ->
                 liveSections[key] = posters
                 liveSectionSources[key] = src.sourceId
                 next?.let { liveNextUrls[key] = it } ?: liveNextUrls.remove(key)
             }
+            android.util.Log.i(
+                "TnPagination",
+                "seed cache source=${src.sourceId} items=${items.size} next=${next ?: "none"} url=$url",
+            )
             prefetchNextPage(src, src.sourceId, next)
         } else {
             fillSectionFallback(url, src.sourceId, src)
@@ -1340,9 +1632,9 @@ object TnData {
         val index = configuredCatalogUrls(src).indexOfFirst { sameSectionUrl(it, url) }
         return withTimeoutOrNull(HOME_CACHE_WAIT_MS) {
             if (index >= 0) {
-                runCatching { api.homePage(src, index + 1) }.getOrNull()
+                runCatching { trackSource(src.sourceId) { api.homePage(src, index + 1) } }.getOrNull()
             } else {
-                runCatching { api.listPage(src, url) }.getOrNull()
+                runCatching { trackSource(src.sourceId) { api.listPage(src, url) } }.getOrNull()
                     ?.let { CachedCatalogSection(url, it.items, it.nextUrl) }
             }
         }
@@ -1350,26 +1642,49 @@ object TnData {
 
     private suspend fun cachedListPage(src: SourceOverride, url: String): LivePage? =
         withTimeoutOrNull(HOME_CACHE_WAIT_MS) {
-            runCatching { catalogApi()?.listPage(src, url) }.getOrNull()
+            runCatching { trackSource(src.sourceId) { catalogApi()?.listPage(src, url) } }.getOrNull()
         }
 
-    private suspend fun sourceListPage(url: String): LivePage? =
-        runCatching { LiveSource.listPage(url) }.getOrNull()
+    private suspend fun sourceListPage(url: String, sourceId: String = ""): LivePage? =
+        runCatching {
+            if (sourceId.isBlank()) LiveSource.listPage(url) else trackSource(sourceId) { LiveSource.listPage(url) }
+        }.getOrNull()
 
-    private suspend fun fetchListPage(src: SourceOverride?, url: String): LivePage? =
-        if (src != null && src.proxyEnabled && !src.proxyPaths?.catalog.isNullOrBlank()) {
-            cachedListPage(src, url)
+    private suspend fun fetchListPage(src: SourceOverride?, url: String): LivePage? {
+        if (isManagedShortDrama(src)) preparePremiumProxy()
+        return if (src != null && src.proxyEnabled && !src.proxyPaths?.catalog.isNullOrBlank()) {
+            // The cache is useful for page one, but several catalog cache entries either drop
+            // nextUrl or ignore the requested upstream page. For load-more, prefer the source's
+            // real page and retain cache as a network fallback.
+            if (usesLiveCatalogPagination(src.sourceId)) {
+                sourceListPage(url, src.sourceId)?.takeIf { it.items.isNotEmpty() }
+                    ?: cachedListPage(src, url)
+            } else {
+                cachedListPage(src, url)
+            }
         } else {
-            sourceListPage(url)
+            sourceListPage(url, src?.sourceId.orEmpty())
         }
+    }
+
+    private fun usesLiveCatalogPagination(sourceId: String): Boolean {
+        val id = sourceId.lowercase(Locale.ROOT)
+        return listOf(
+            "kuramanime", "lk21", "nontondrama", "nontonanime", "oploverz", "pusatfilm", "samehadaku",
+        ).any { it in id }
+    }
 
     private suspend fun fillSectionLive(url: String, sourceId: String) {
-        val premiumPlatform = sourceById(sourceId)?.let { premiumPlatformFor(it) }
+        val source = sourceById(sourceId)
+        if (isManagedShortDrama(source)) preparePremiumProxy()
+        val premiumPlatform = source?.let { premiumPlatformFor(it) }
         val page = if (premiumPlatform != null) {
             // Premium rail: pull from the authed DramaBos proxy (ignores the scrape url), not on-device.
-            LivePage(AuthManager.idToken()?.let { token -> premiumApi()?.list(token, premiumPlatform).orEmpty() } ?: emptyList())
+            LivePage(AuthManager.idToken()?.let { token ->
+                runCatching { trackSource(sourceId) { premiumApi()?.list(token, premiumPlatform).orEmpty() } }.getOrDefault(emptyList())
+            } ?: emptyList())
         } else {
-            runCatching { LiveSource.listPage(url) }.getOrDefault(LivePage(emptyList()))
+            runCatching { trackSource(sourceId) { LiveSource.listPage(url) } }.getOrDefault(LivePage(emptyList()))
         }
         val items = page.items
         val src = sourceById(sourceId)
@@ -1381,7 +1696,12 @@ object TnData {
             fillSectionFallback(url, sourceId, src)
         }
         val next = page.nextUrl?.takeIf { it.isNotBlank() }
+            ?: nextKnownCatalogPageUrl(url, sourceId, items.isNotEmpty())
         next?.let { liveNextUrls[url] = it } ?: liveNextUrls.remove(url)
+        android.util.Log.i(
+            "TnPagination",
+            "seed live source=$sourceId items=${items.size} next=${next ?: "none"} url=$url",
+        )
         prefetchNextPage(src, sourceId, next)
         if (items.isEmpty()) liveRequested.remove(url)
     }
@@ -1418,13 +1738,18 @@ object TnData {
     fun loadMoreLiveSection(url: String, sourceId: String) {
         val next = liveNextUrls[url]?.takeIf { it.isNotBlank() } ?: return
         if (liveLoadingMore[url] == true) return
+        android.util.Log.i("TnPagination", "request source=$sourceId next=$next root=$url")
         liveLoadingMore[url] = true
         liveScope.launch {
             try {
                 val src = sourceById(sourceId)
                 val page = synchronized(prefetchedPages) { prefetchedPages.remove(next) }
                     ?: fetchListPage(src, next)
-                    ?: return@launch
+                if (page == null) {
+                    liveNextUrls.remove(url)
+                    android.util.Log.w("TnPagination", "stop source=$sourceId reason=no-page next=$next")
+                    return@launch
+                }
                 val newPosters = page.items.map { enrichPosterCover(liveToPoster(it, sourceId), src) }
                 var addedAny = false
                 if (newPosters.isNotEmpty()) {
@@ -1438,8 +1763,15 @@ object TnData {
                     }
                     liveSectionSources[url] = sourceId
                 }
-                val newerNext = page.nextUrl?.takeIf { it.isNotBlank() && addedAny }
+                val newerNext = if (addedAny) {
+                    page.nextUrl?.takeIf { it.isNotBlank() }
+                        ?: nextKnownCatalogPageUrl(next, sourceId, page.items.isNotEmpty())
+                } else null
                 newerNext?.let { liveNextUrls[url] = it } ?: liveNextUrls.remove(url)
+                android.util.Log.i(
+                    "TnPagination",
+                    "result source=$sourceId fetched=${page.items.size} added=$addedAny next=${newerNext ?: "none"}",
+                )
                 prefetchNextPage(src, sourceId, newerNext)
             } finally {
                 liveLoadingMore.remove(url)
@@ -1523,7 +1855,8 @@ object TnData {
             src?.category,
             badge,
         ).joinToString(" ").lowercase(Locale.ROOT)
-        return "nekopoi" in haystack || "hentai" in haystack || "adult" in haystack || "mature" in haystack
+        return "nekopoi" in haystack || "javhey" in haystack || "indomax21" in haystack ||
+            "hentai" in haystack || "adult" in haystack || "mature" in haystack
     }
 
     private fun liveCategoryBadge(category: String?): String {
@@ -1582,28 +1915,28 @@ object TnData {
      */
     fun startLiveSearch(query: String) {
         val q = query.trim()
-        if (q == liveSearchQuery && (liveSearchLoading || liveSearchGroups.isNotEmpty())) return
+        val retrying = q == liveSearchQuery
+        if (retrying && liveSearchJob?.isActive == true) return
         liveSearchQuery = q
         liveSearchJob?.cancel()
-        liveSearchGroups.clear()
+        if (!retrying) liveSearchGroups.clear()
         if (q.length < 2 || !hasLiveSources) { liveSearchLoading = false; return }
         reportSearchTerm(q)
         // Premium sources are excluded for non-subscribers so their content never leaks into results.
-        val sources = browsableSources()
+        val completedSources = liveSearchGroups.mapTo(HashSet()) { it.sourceId }
+        val sources = browsableSources().filterNot { it.sourceId in completedSources }
         // Sites that don't honour `/?s=` just echo their homepage; keep only titles that actually
         // match the query so the results stay relevant instead of leaking unrelated "latest" cards.
-        val needle = q.lowercase(Locale.ROOT)
-        val tokens = needle.split(' ').filter { it.length > 1 }
         liveSearchLoading = true
         liveSearchJob = liveScope.launch {
+            val timeout = launch {
+                delay(SEARCH_SETTLE_TIMEOUT_MS)
+                withContext(Dispatchers.Main.immediate) {
+                    if (liveSearchQuery == q) liveSearchLoading = false
+                }
+            }
             try {
                 coroutineScope {
-                    launch {
-                        delay(SEARCH_SETTLE_TIMEOUT_MS)
-                        withContext(Dispatchers.Main.immediate) {
-                            if (liveSearchQuery == q) liveSearchLoading = false
-                        }
-                    }
                     sources.forEach { src ->
                         launch {
                             val startedAt = android.os.SystemClock.elapsedRealtime()
@@ -1614,18 +1947,11 @@ object TnData {
                                 "${src.sourceId}: ${hits.size} hits in " +
                                     "${android.os.SystemClock.elapsedRealtime() - startedAt}ms",
                             )
-                            // Sources with a real server-side search (short-drama JSON APIs, the
-                            // premium proxy, proxy-cache) already return relevant hits — re-filtering
-                            // by title would drop localized short-drama titles that don't literally
-                            // contain the query. Only the generic WordPress `/?s=` fallback (which can
-                            // echo its homepage) still needs the strict title filter.
-                            val trusted = premiumPlatformFor(src) != null ||
-                                (src.proxyEnabled && !src.proxyPaths?.search.isNullOrBlank()) ||
-                                LiveSource.hasNativeSearch(src.apiBaseUrl)
+                            val trusted = trustSearchResults(premiumPlatformFor(src) != null, src.apiBaseUrl)
                             val seen = HashSet<String>() // dedup WITHIN this source only
                             val posters = hits.mapNotNull { item ->
                                 val tl = item.title.lowercase(Locale.ROOT)
-                                val relevant = trusted || tl.contains(needle) || (tokens.isNotEmpty() && tokens.all { tl.contains(it) })
+                                val relevant = trusted || LiveSource.matchesSearchQuery(item.title, q)
                                 if (relevant && seen.add(tl)) liveToPoster(item, src.sourceId) else null
                             }.map { enrichPosterCover(it, src) }
                             if (posters.isNotEmpty()) {
@@ -1634,6 +1960,7 @@ object TnData {
                                         liveSearchGroups.add(
                                             SearchGroup(src.sourceId, src.displayName.ifBlank { src.sourceId }, posters)
                                         )
+                                        liveSearchGroups.sortBy { it.displayName.lowercase(Locale.ROOT) }
                                     }
                                 }
                             }
@@ -1641,6 +1968,7 @@ object TnData {
                     }
                 }
             } finally {
+                timeout.cancel()
                 withContext(Dispatchers.Main.immediate) {
                     if (liveSearchQuery == q) liveSearchLoading = false
                 }
@@ -1650,14 +1978,14 @@ object TnData {
 
     /** Report a committed search term to the panel (best-effort, once per distinct term per session). */
     private fun reportSearchTerm(term: String) {
-        if (!hasPanel || telemetryToken.isBlank()) return
+        if (!AuthManager.signedIn || !hasPanel || telemetryToken.isBlank()) return
         if (!reportedSearchTerms.add(term.lowercase(Locale.ROOT))) return
         liveScope.launch { TrendingApi(panelBase).reportSearch(term, telemetryToken, installId) }
     }
 
     /** Report an opened title to the panel so it can feed the cross-user "Trending minggu ini" rail. */
     fun reportOpen(title: String, url: String?, cover: String?, badge: String?, sourceId: String? = null) {
-        if (!hasPanel || telemetryToken.isBlank() || url.isNullOrBlank()) return
+        if (!AuthManager.signedIn || !hasPanel || telemetryToken.isBlank() || url.isNullOrBlank()) return
         val resolvedSourceId = sourceId?.ifBlank { null } ?: sourceIdForUrl(url)
         liveScope.launch { TrendingApi(panelBase).reportOpen(title, url, cover, badge, resolvedSourceId, telemetryToken, installId) }
     }
@@ -1745,7 +2073,10 @@ object TnData {
         val visibleSources = if (hasCuratedLinks) sources else sources.take(8)
         return visibleSources.flatMap { src ->
             homeLinksFor(src, sourceMode = false).map { link ->
-                HomeSection(link.label.ifBlank { src.displayName }, src.sourceId, link.url, postersForSource(src.sourceId))
+                // Do not parse every bundled compat catalog on the UI thread during Home startup.
+                // fillSectionFallback() resolves this source's local posters on the IO worker only
+                // when its visible live rail cannot provide content.
+                HomeSection(link.label.ifBlank { src.displayName }, src.sourceId, link.url, emptyList())
             }
         }.filter { it.url.isNotBlank() }
     }

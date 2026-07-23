@@ -11,7 +11,6 @@ enum class NavDest(val id: String, val label: String, val icon: String) {
     HOME("home", "Home", "home"),
     SEARCH("search", "Search", "search"),
     FORUM("forum", "Forum", "forum"),
-    DOWNLOADS("downloads", "Downloads", "download"),
     EXTENSIONS("ext", "Extensions", "ext"),
     PROFILE("profile", "Profile", "user"),
 }

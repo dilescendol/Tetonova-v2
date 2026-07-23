@@ -105,8 +105,10 @@ object LiveClient {
      * (instead of returning the bare cleared page).
      */
     suspend fun getHtml(url: String, ready: (String) -> Boolean = { !isChallenge(it) }): String? = withContext(Dispatchers.IO) {
+        val premiumProxy = LiveRuntimeConfig.proxiedRequestFor(url) != null
         val d = runCatching { fetchDirect(url) }.getOrNull()
         if (d != null && ready(d)) return@withContext d
+        if (premiumProxy) return@withContext d
 
         // A "verify_human" interstitial (oppadrama) must clear in the solver — which persists a
         // reusable cookie — NOT via FlareSolverr: flare clears it but strips the ?order=update query
@@ -135,6 +137,57 @@ object LiveClient {
     }
 
     /**
+     * Raw API request using the same cookie jar as [getHtml]. This is deliberately separate from
+     * [postBypass]: JSON APIs need an application/json body and some playback handshakes require
+     * cookies minted by an earlier request to survive across a different redeem host.
+     */
+    suspend fun requestText(
+        url: String,
+        method: String = "GET",
+        body: String? = null,
+        contentType: String = "application/json",
+        headers: Map<String, String> = emptyMap(),
+        ready: (String) -> Boolean = { it.isNotBlank() && !isChallenge(it) },
+    ): String? = withContext(Dispatchers.IO) {
+        fun attempt(): String? = runCatching {
+            val builder = Request.Builder().url(url)
+                .header("User-Agent", UA)
+                .header("Accept-Language", "id-ID,id;q=0.9,en;q=0.8")
+            headers.forEach { (name, value) -> builder.header(name, value) }
+            when (method.uppercase()) {
+                "GET" -> builder.get()
+                "POST" -> builder.post(body.orEmpty().toRequestBody(contentType.toMediaType()))
+                else -> builder.method(method.uppercase(), body?.toRequestBody(contentType.toMediaType()))
+            }
+            direct.newCall(builder.build()).execute().use { response ->
+                response.body?.string().orEmpty().ifBlank { null }
+            }
+        }.getOrNull()
+
+        attempt()?.let { if (ready(it)) return@withContext it }
+
+        // Let the normal challenge stack establish clearance, then replay the exact API request.
+        // GET may itself be the JSON endpoint; POST solves the same-site referer/root first.
+        if (method.equals("GET", ignoreCase = true)) {
+            getHtml(url, ready)?.let { if (ready(it)) return@withContext it }
+        } else {
+            val solveUrl = headers.entries.firstOrNull { it.key.equals("Referer", true) }?.value
+                ?: runCatching { URI(url).let { "${it.scheme}://${it.host}/" } }.getOrDefault(url)
+            getHtml(solveUrl)?.let { attempt()?.let { retried -> if (ready(retried)) return@withContext retried } }
+        }
+        null
+    }
+
+    /** Snapshot cookies for [url] so a signed playback session can be replayed to a cross-host redeem URL. */
+    fun cookieHeader(url: String): String {
+        val parsed = url.toHttpUrlOrNull() ?: return ""
+        return runCatching { cookieJar.loadForRequest(parsed) }
+            .getOrDefault(emptyList())
+            .filter { it.expiresAt > System.currentTimeMillis() }
+            .joinToString("; ") { "${it.name}=${it.value}" }
+    }
+
+    /**
      * Fetch a poster/cover image for the panel image proxy. This is server-oriented: proxy
      * credentials never ship to the app. Player/video URLs do not use this path.
      */
@@ -153,10 +206,12 @@ object LiveClient {
     }
 
     private fun fetchDirect(url: String): String? {
-        val req = Request.Builder().url(url)
+        val proxied = LiveRuntimeConfig.proxiedRequestFor(url)
+        val req = Request.Builder().url(proxied?.url ?: url)
             .header("User-Agent", UA)
             .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
             .header("Accept-Language", "id-ID,id;q=0.9,en;q=0.8")
+            .apply { proxied?.let { header("Authorization", "Bearer ${it.bearer}") } }
             .get().build()
         direct.newCall(req).execute().use { resp ->
             val body = resp.body?.string().orEmpty()
