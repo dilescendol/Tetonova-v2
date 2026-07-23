@@ -20,6 +20,10 @@ object DutamovieSource {
         "ppspublishers.com",
         "dutamovie21",
         "dutamovies21",
+        // KlikXXi (klikxxi.shop) runs the SAME gmovie/muvipro theme (article.item, gmr-*, admin-ajax
+        // muvipro_player_content), so it shares this scraper. It's ISP-blocked on-device → served via
+        // the panel proxy from the scrape VPS, like JavHey.
+        "klikxxi",
     )
 
     fun isDutamovie(url: String): Boolean {
