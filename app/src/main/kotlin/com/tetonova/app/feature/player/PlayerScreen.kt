@@ -304,13 +304,16 @@ fun PlayerScreen(
                 (context as? Activity)?.intent?.removeExtra("player_server")
             } ?: 0
         } else 0
-        // Keep JavHey's website order in the Source menu, but start on its native VidStack mirror when
-        // available. Otherwise Server 1 can be an ad/captcha embed and make the app look like it never
-        // reached our ExoPlayer even though a native HLS mirror is present later in the same six tabs.
-        val javHeyNative = if (arg.url?.let(JavHeySource::isJavHey) == true) {
+        // For the website-order sources (JavHey/DutaMovie/IndoMax21), keep the numbered Server 1..N tabs
+        // in the Source menu, but START on the lowest-speedRank mirror — i.e. one our extractor resolves
+        // to a native ExoPlayer stream. Otherwise Server 1 is often a WebView-only embed (DutaMovie's
+        // abyssplayer / an ad-captcha gate) whose cross-origin overlay we can't strip, making the app
+        // look like it never reached our own player even though a native mirror (voe/upns/embed4me/
+        // playerp2p) sits later in the same tab list.
+        val nativeStart = if (preserveWebsiteOrder) {
             list.minWithOrNull(compareBy<VideoServer>({ speedRank(it) }, { list.indexOf(it) }))
         } else null
-        selected = list.getOrNull(debugServer - 1) ?: javHeyNative ?: list.firstOrNull()
+        selected = list.getOrNull(debugServer - 1) ?: nativeStart ?: list.firstOrNull()
         android.util.Log.i("TnPlayer", "servers (website order): ${list.map { it.name }}; auto-pick '${selected?.name}'")
         loading = false
         // NOTE: kuramadrive's player token is aggressively rate-limited, so we deliberately do NOT
@@ -529,7 +532,7 @@ if(p){
 }
 try{var v=d.querySelector('video');if(v){if(!pos)pos=v.currentTime||0;if(!dur||dur<0)dur=v.duration||0;if(!v.paused&&!v.ended&&v.readyState>=2)st='playing';}}catch(e){}
 if(!q.length){try{d.querySelectorAll('.jw-settings-submenu-quality .jw-settings-content-item').forEach(function(el){var label=(el.textContent||'').trim();if(label&&q.indexOf(label)<0)q.push(label);});}catch(e){}}
-try{var dv=d.querySelectorAll('div');for(var j=0;j<dv.length;j++){var el=dv[j],tx=(el.textContent||'');if(/resume watching|welcome back/i.test(tx)&&tx.length<170)el.style.display='none';}}catch(e){}
+try{var dv=d.querySelectorAll('div');for(var j=0;j<dv.length;j++){var el=dv[j],tx=(el.textContent||'');if(/resume watching|continue watching|welcome back/i.test(tx)&&tx.length<170)el.style.display='none';}}catch(e){}
 return JSON.stringify({st:st,pos:Math.floor(pos||0),dur:Math.floor(dur||0),q:q,qi:qi});
 }catch(e){return JSON.stringify({st:'',pos:0,dur:0,q:[],qi:0});}})();"""
 

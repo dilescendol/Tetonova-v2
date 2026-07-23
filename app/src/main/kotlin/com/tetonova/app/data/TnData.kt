@@ -426,10 +426,11 @@ object TnData {
         )
     }
 
-    /** IndoMax21 rotates domains; otrarevista.com is the current upstream landing domain. */
+    /** IndoMax21 rotates domains; onperfect.com is the current upstream landing domain (moved off
+     *  otrarevista.com, which the ISP now sinkholes to the "Internet Baik" block page). */
     private fun withBundledIndoMax21(sources: List<SourceOverride>): List<SourceOverride> {
         if (sources.any { it.sourceId == "indomax21-compat" }) return sources
-        val base = "https://otrarevista.com"
+        val base = "https://onperfect.com"
         return sources + SourceOverride(
             sourceId = "indomax21-compat",
             displayName = "IndoMax21",

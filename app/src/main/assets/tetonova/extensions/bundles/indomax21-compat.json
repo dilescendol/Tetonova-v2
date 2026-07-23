@@ -5,8 +5,8 @@
   "contentTypes": ["NSFW", "MOVIE", "SERIES", "ANIME"],
   "capabilities": ["HOME", "SEARCH", "DETAIL", "PLAYBACK", "SUBTITLES"],
   "entry": "compat/indomax21/catalog.json",
-  "upstreamUrl": "https://otrarevista.com",
-  "apiBaseUrl": "https://otrarevista.com",
-  "webBaseUrl": "https://otrarevista.com",
+  "upstreamUrl": "https://onperfect.com",
+  "apiBaseUrl": "https://onperfect.com",
+  "webBaseUrl": "https://onperfect.com",
   "category": "Adult"
 }

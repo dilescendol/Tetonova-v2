@@ -95,7 +95,10 @@ object IdlixSource {
             return emptyList()
         }
         val claimToken = claim.str("claim") ?: run {
-            System.out.println("[TnIdlix] claim response missing claim for $type/$id")
+            // Upstream gate change (2026-07): the claim now rejects with {"error":"Invalid playback
+            // session"} unless a real playback session exists — play-info alone no longer establishes
+            // it. Log the raw body so the missing session-init step can be reversed from a device trace.
+            System.out.println("[TnIdlix] claim response missing claim for $type/$id, body=$claim")
             return emptyList()
         }
         val redeemUrl = claim.str("redeemUrl")?.let { absolute(base, it) } ?: run {

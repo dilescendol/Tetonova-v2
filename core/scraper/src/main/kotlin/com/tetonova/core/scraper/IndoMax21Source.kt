@@ -11,9 +11,10 @@ import java.net.URLEncoder
 
 /** Native adapter for IndoMax21's rotating Muvipro/WordPress domains. */
 object IndoMax21Source {
-    const val DEFAULT_BASE = "https://otrarevista.com"
+    const val DEFAULT_BASE = "https://onperfect.com"
 
     private val knownHosts = listOf(
+        "onperfect.com",
         "homecookingrocks.com",
         "lomaresort.com",
         "topnetseo.com",
