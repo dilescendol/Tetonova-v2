@@ -1,10 +1,18 @@
 package com.tetonova.core.scraper
 
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
+import okhttp3.Headers
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.URI
 import java.net.URLEncoder
+import java.util.concurrent.TimeUnit
 
 /** Native adapter for Idlix's JSON catalog and its timed gate -> claim -> redeem playback flow. */
 object IdlixSource {
@@ -58,83 +66,80 @@ object IdlixSource {
         )
     }
 
-    suspend fun servers(url: String): List<VideoServer> {
-        val match = Regex("/tn-watch/(movie|episode)/([^/?#]+)", RegexOption.IGNORE_CASE).find(url) ?: return emptyList()
+    // A recent desktop Chrome UA — the gate binds a `did` session cookie per user-agent; keep it stable
+    // across play-info -> claim -> redeem.
+    private const val GATE_UA =
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
+    /**
+     * Idlix's timed gate -> claim -> redeem DRM (ported from the working CloudStream IdlixProvider).
+     * play-info sets a `did` session cookie; the claim (same host) needs it, and the CROSS-HOST redeem on
+     * majorplay.net needs it forwarded manually (a shared cookie jar won't send an idlixku cookie there).
+     * The redeemed URL is a Majorplay `config-*.json` HLS that StreamExtractor/ExoPlayer already play
+     * natively — so Idlix runs in OUR player (no WebView, no site ad/chrome). Self-contained OkHttp +
+     * CookieJar so the `did` capture matches CloudStream exactly (LiveClient's shared jar was flaky here).
+     */
+    suspend fun servers(url: String): List<VideoServer> = withContext(Dispatchers.IO) {
+        val match = Regex("/tn-watch/(movie|episode)/([^/?#]+)", RegexOption.IGNORE_CASE).find(url)
+            ?: return@withContext emptyList()
         val type = match.groupValues[1].lowercase()
         val id = match.groupValues[2]
         val base = baseOf(url)
-        val commonHeaders = linkedMapOf(
-            "Referer" to "$base/",
-            "Origin" to base,
-            "Accept" to "*/*",
-            "Content-Type" to "application/json",
-        )
-        val infoUrl = "$base/api/watch/play-info/$type/$id"
-        val info = requestJson(infoUrl, headers = commonHeaders) ?: run {
-            System.out.println("[TnIdlix] play-info failed for $type/$id")
-            return emptyList()
-        }
-        val token = info.str("gateToken") ?: return emptyList()
-        val waitMs = (info.optLong("unlockAt") - info.optLong("serverNow")).coerceIn(0L, 30_000L)
-        if (waitMs > 0) {
-            System.out.println("[TnIdlix] gate wait ${waitMs}ms for $type/$id")
-            delay(waitMs + 150L)
-        }
+        val client = OkHttpClient.Builder()
+            .connectTimeout(15, TimeUnit.SECONDS)
+            .readTimeout(20, TimeUnit.SECONDS)
+            .build()
+        val jsonMedia = "application/json".toMediaType()
+        fun headers(cookie: String? = null): Headers = Headers.Builder()
+            .add("User-Agent", GATE_UA).add("Referer", "$base/").add("Origin", base)
+            .add("Accept", "*/*").add("Content-Type", "application/json")
+            .apply { if (!cookie.isNullOrBlank()) add("Cookie", cookie) }
+            .build()
+        fun post(u: String, bodyJson: String, cookie: String?): JSONObject? = runCatching {
+            client.newCall(
+                Request.Builder().url(u).headers(headers(cookie)).post(bodyJson.toRequestBody(jsonMedia)).build(),
+            ).execute().use { r -> r.body?.string()?.let { JSONObject(it) } }
+        }.getOrNull()
 
-        // The gate may scope its session cookie to /api/watch rather than `/`. Snapshot it from the
-        // exact play-info URL (Cloudstream likewise forwards playResponse.cookies explicitly).
-        val sessionCookies = LiveClient.cookieHeader(infoUrl)
-        val sessionHeaders = if (sessionCookies.isBlank()) commonHeaders else commonHeaders + ("Cookie" to sessionCookies)
-        val claim = requestJson(
-            "$base/api/watch/session/claim",
-            method = "POST",
-            body = JSONObject().put("gateToken", token).toString(),
-            headers = sessionHeaders,
-        ) ?: run {
-            System.out.println("[TnIdlix] claim failed for $type/$id, cookiePresent=${sessionCookies.isNotBlank()}")
-            return emptyList()
+        // 1) play-info -> gateToken + `did` session cookie (captured from the response's Set-Cookie).
+        val (infoBody, setCookies) = runCatching {
+            client.newCall(
+                Request.Builder().url("$base/api/watch/play-info/$type/$id").headers(headers()).get().build(),
+            ).execute().use { r -> r.body?.string() to r.headers("Set-Cookie") }
+        }.getOrDefault(null to emptyList())
+        val info = infoBody?.let { runCatching { JSONObject(it) }.getOrNull() }
+            ?: run { System.out.println("[TnIdlix] play-info failed $type/$id"); return@withContext emptyList() }
+        val token = info.optString("gateToken").ifBlank { return@withContext emptyList() }
+        // Dedup Set-Cookie by name (the gate emits several `did=...`; the last wins, like a browser jar).
+        val didCookie = setCookies.map { it.substringBefore(';').trim() }.filter { '=' in it }
+            .associate { it.substringBefore('=') to it.substringAfter('=') }
+            .entries.joinToString("; ") { "${it.key}=${it.value}" }
+        val waitMs = (info.optLong("unlockAt") - info.optLong("serverNow")).coerceIn(0L, 30_000L)
+        if (waitMs > 0) delay(waitMs + 300L)
+
+        // 2) claim (same host; forward `did`) -> claim token + redeemUrl.
+        val claim = post("$base/api/watch/session/claim", JSONObject().put("gateToken", token).toString(), didCookie)
+            ?: run { System.out.println("[TnIdlix] claim failed $type/$id"); return@withContext emptyList() }
+        val claimToken = claim.optString("claim").ifBlank {
+            System.out.println("[TnIdlix] claim rejected $type/$id: $claim"); return@withContext emptyList()
         }
-        val claimToken = claim.str("claim") ?: run {
-            // Upstream gate change (2026-07): the claim now rejects with {"error":"Invalid playback
-            // session"} unless a real playback session exists — play-info alone no longer establishes
-            // it. Log the raw body so the missing session-init step can be reversed from a device trace.
-            System.out.println("[TnIdlix] claim response missing claim for $type/$id, body=$claim")
-            return emptyList()
-        }
-        val redeemUrl = claim.str("redeemUrl")?.let { absolute(base, it) } ?: run {
-            System.out.println("[TnIdlix] claim response missing redeemUrl for $type/$id")
-            return emptyList()
-        }
-        val redeemed = requestJson(
-            redeemUrl,
-            method = "POST",
-            body = JSONObject().put("claim", claimToken).toString(),
-            headers = sessionHeaders,
-        ) ?: run {
-            System.out.println("[TnIdlix] redeem failed for $type/$id")
-            return emptyList()
-        }
-        val stream = redeemed.str("url")?.let { absolute(base, it) } ?: run {
-            System.out.println("[TnIdlix] redeem response missing stream URL for $type/$id")
-            return emptyList()
-        }
+        val redeemUrl = claim.optString("redeemUrl").ifBlank { return@withContext emptyList() }
+
+        // 3) redeem (cross-host majorplay.net; forward `did` by hand) -> Majorplay HLS + subtitles.
+        val redeemed = post(redeemUrl, JSONObject().put("claim", claimToken).toString(), didCookie)
+            ?: run { System.out.println("[TnIdlix] redeem failed $type/$id"); return@withContext emptyList() }
+        val stream = redeemed.optString("url").ifBlank { return@withContext emptyList() }
         val subtitles = redeemed.optJSONArray("subtitles").objects().mapNotNull { sub ->
             val path = sub.str("path") ?: return@mapNotNull null
-            val lang = sub.str("lang")
-            SubtitleTrack(sub.str("label") ?: lang ?: "Subtitle", absolute(base, path), lang)
+            SubtitleTrack(sub.str("label") ?: sub.str("lang") ?: "Subtitle", path, sub.str("lang"))
         }
-        val playbackHeaders = buildMap {
-            put("Referer", "$base/")
-            put("Origin", base)
-            if (sessionCookies.isNotBlank()) put("Cookie", sessionCookies)
-        }
-        System.out.println("[TnIdlix] redeemed $type/$id -> HLS, subtitles=${subtitles.size}")
-        return listOf(
+        System.out.println("[TnIdlix] redeemed $type/$id -> HLS ok, subs=${subtitles.size}")
+        listOf(
             VideoServer(
                 name = "Idlix",
                 embedUrl = stream,
                 subtitles = subtitles,
-                headers = playbackHeaders,
+                headers = mapOf("Referer" to "$base/", "Origin" to base),
             ),
         )
     }

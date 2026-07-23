@@ -761,7 +761,13 @@ private const val SNIFF_KICK_JS =
         "if(window.jwplayer){try{jwplayer().setControls(false);jwplayer().play(true);}catch(e){}}" +
         "if(window.videojs){try{var ids=Object.keys(videojs.players||{});for(var i=0;i<ids.length;i++){var p=videojs(ids[i]);p&&p.play&&p.play();}}catch(e){}}" +
         "var v=document.querySelector('video');if(v){v.muted=false;var pr=v.play&&v.play();if(pr&&pr.catch){pr.catch(function(){v.muted=true;v.play&&v.play();});}}" +
-        "var b=document.querySelector('.jw-icon-display,.vjs-big-play-button,.plyr__control--overlaid,button[aria-label*=\"lay\" i],.play-button,.play');if(b)b.click();" +
+        // Click any known play overlay (broadened to [class*=play] for SPA overlays like Idlix's).
+        "var b=document.querySelector('.jw-icon-display,.vjs-big-play-button,.plyr__control--overlaid,button[aria-label*=\"lay\" i],.play-button,.play,[class*=\"play\"]');" +
+        // React SPAs (Idlix) bind onClick via synthetic events — a bare .click() often no-ops, so fire a
+        // real pointer+mouse gesture sequence at the play button AND at the player centre.
+        "function gesture(el){if(!el)return;try{el.click();}catch(e){}try{var r=el.getBoundingClientRect();var x=r.left+r.width/2,y=r.top+r.height/2;var o={bubbles:true,cancelable:true,view:window,clientX:x,clientY:y};['pointerdown','mousedown','pointerup','mouseup','click'].forEach(function(t){el.dispatchEvent((/pointer/.test(t)?new PointerEvent(t,o):new MouseEvent(t,o)));});}catch(e){}}" +
+        "gesture(b);" +
+        "var c=v||document.querySelector('#player,.player,.video-js,.jwplayer,[class*=\"player\"]')||document.body;gesture(c);" +
         "}catch(e){}})();"
 
 /** Ad manifests that LOOK like a stream. Dailymotion serves its VMAP ad-break manifest from
@@ -861,8 +867,10 @@ private fun parseSrtCues(raw: String): List<SubtitleCue> =
         }
 
 private fun String.parseSrtTime(): Long? {
-    val m = Regex("(\\d+):(\\d{2}):(\\d{2})[,.](\\d{1,3})").find(this.trim()) ?: return null
-    val h = m.groupValues[1].toLongOrNull() ?: return null
+    // Accept both SRT `HH:MM:SS,mmm` and WebVTT `[HH:]MM:SS.mmm` — Idlix/Majorplay subs omit the hours
+    // (e.g. `00:09.416`), which the old hours-required regex silently dropped → zero cues shown.
+    val m = Regex("(?:(\\d+):)?(\\d{1,2}):(\\d{2})[,.](\\d{1,3})").find(this.trim()) ?: return null
+    val h = m.groupValues[1].toLongOrNull() ?: 0L
     val min = m.groupValues[2].toLongOrNull() ?: return null
     val sec = m.groupValues[3].toLongOrNull() ?: return null
     val ms = m.groupValues[4].padEnd(3, '0').take(3).toLongOrNull() ?: return null
