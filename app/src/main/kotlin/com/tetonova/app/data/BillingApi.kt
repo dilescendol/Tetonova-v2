@@ -21,6 +21,11 @@ data class BillingPlan(
     @SerialName("display_name") val displayName: String = "",
     @SerialName("duration_seconds") val durationSeconds: Long = 0L,
     @SerialName("price_idr") val priceIdr: Long = 0L,
+    @SerialName("original_price_idr") val originalPriceIdr: Long? = null,
+    @SerialName("promo_active") val promoActive: Boolean = false,
+    @SerialName("promo_label") val promoLabel: String = "",
+    @SerialName("promo_discount_percent") val promoDiscountPercent: Int = 0,
+    @SerialName("promo_ends_at") val promoEndsAt: String? = null,
 )
 
 /** The caller's entitlement from `GET /api/v1/me/subscription`. `status` ∈ none/trial/active/expired;

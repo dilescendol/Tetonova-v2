@@ -188,7 +188,7 @@ sealed interface Screen {
     data class Detail(val arg: DetailArg) : Screen
     data class Player(val arg: PlayerArg) : Screen
     data object Settings : Screen
-    data object Subscription : Screen
+    data class Subscription(val showPaidPlans: Boolean = false) : Screen
     data class Qris(val arg: QrisArg) : Screen
     data object Report : Screen
     data object ReleaseNotes : Screen
@@ -288,8 +288,8 @@ class AppState {
         screen = Screen.Settings
     }
 
-    fun openSubscription() {
-        screen = Screen.Subscription
+    fun openSubscription(showPaidPlans: Boolean = false) {
+        screen = Screen.Subscription(showPaidPlans)
     }
 
     val currentTab: NavDest get() = prevTab

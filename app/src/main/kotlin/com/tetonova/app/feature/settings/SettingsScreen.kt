@@ -34,6 +34,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tetonova.app.data.AuthManager
@@ -100,14 +101,14 @@ fun SettingsScreen(state: AppState) {
 
 /** Halaman mandiri yang dibuka dari pintasan Trial/Premium di setiap tab utama. */
 @Composable
-fun SubscriptionScreen(state: AppState) {
+fun SubscriptionScreen(state: AppState, showPaidPlans: Boolean = false) {
     val c = TnTheme.colors
     PageScroll(topInset = true) {
         Text("TetoNova · Premium", color = c.muted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
         Text("Langganan & API", color = c.ink, fontWeight = FontWeight.ExtraBold, fontSize = 30.sp)
         Spacer(Modifier.height(14.dp))
         TnCard(Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(8.dp)) { SubscriptionPanel(state) }
+            Column(Modifier.padding(8.dp)) { SubscriptionPanel(state, forcePaidPlans = showPaidPlans) }
         }
         Spacer(Modifier.height(28.dp))
     }
@@ -353,7 +354,7 @@ private fun fmtTrialDuration(ms: Long): String {
 }
 
 @Composable
-private fun SubscriptionPanel(state: AppState) {
+private fun SubscriptionPanel(state: AppState, forcePaidPlans: Boolean = false) {
     val c = TnTheme.colors
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -463,6 +464,8 @@ private fun SubscriptionPanel(state: AppState) {
             }
         }
     }
+
+    val showPaidPlans = forcePaidPlans || active || phase == TrialPhase.EXPIRED || trialDurationMs <= 0L
 
     Column(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         // status preview (manual design override; defaults to the real entitlement)
@@ -591,35 +594,37 @@ private fun SubscriptionPanel(state: AppState) {
             PerkChip("layers", if (premiumCount > 0) "$premiumCount+ source" else "Multi-source", Modifier.weight(1f))
             PERKS.forEach { (icon, label) -> PerkChip(icon, label, Modifier.weight(1f)) }
         }
-        // plan picker — 3 cards on tablet, stacked rows on phone
-        BoxWithConstraints {
-            if (maxWidth >= 560.dp) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    views.forEach { v -> PlanCardVertical(v, sel?.plan?.code == v.plan.code, Modifier.weight(1f)) { planCode = v.plan.code } }
-                }
-            } else {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    views.forEach { v -> PlanCard(v, sel?.plan?.code == v.plan.code) { planCode = v.plan.code } }
+        if (showPaidPlans) {
+            // Keep the trial state focused on claiming trial instead of showing two purchase paths.
+            BoxWithConstraints {
+                if (maxWidth >= 560.dp) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        views.forEach { v -> PlanCardVertical(v, sel?.plan?.code == v.plan.code, Modifier.weight(1f)) { planCode = v.plan.code } }
+                    }
+                } else {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        views.forEach { v -> PlanCard(v, sel?.plan?.code == v.plan.code) { planCode = v.plan.code } }
+                    }
                 }
             }
-        }
-        // checkout — stacked on phone (price block above a full-width CTA).
-        Column(
-            Modifier.fillMaxWidth().clip(RoundedCornerShape(TnRadii.md)).background(c.roseTint).padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Column {
-                Text(if (active) "Perpanjang" else "Mulai langganan", color = c.muted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Text(sel?.plan?.displayName ?: "Pilih paket", color = c.ink, fontWeight = FontWeight.ExtraBold, fontSize = 20.sp, maxLines = 1, softWrap = false)
-                    Text(sel?.perLabel ?: "", color = c.muted, fontSize = 12.sp, maxLines = 1, softWrap = false)
+            // Checkout is stacked on phone (price block above a full-width CTA).
+            Column(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(TnRadii.md)).background(c.roseTint).padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Column {
+                    Text(if (active) "Perpanjang" else "Mulai langganan", color = c.muted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Text(sel?.plan?.displayName ?: "Pilih paket", color = c.ink, fontWeight = FontWeight.ExtraBold, fontSize = 20.sp, maxLines = 1, softWrap = false)
+                        Text(sel?.perLabel ?: "", color = c.muted, fontSize = 12.sp, maxLines = 1, softWrap = false)
+                    }
+                    if (active) Text("Waktu ditambah ke sisa langganan — gak hangus.", color = c.muted, fontSize = 11.sp)
                 }
-                if (active) Text("Waktu ditambah ke sisa langganan — gak hangus.", color = c.muted, fontSize = 11.sp)
+                quote?.let { PaymentBreakdownView(it, sel?.plan?.originalPriceIdr) }
+                com.tetonova.app.ui.TnPrimaryButton(
+                    text = "Bayar ${quote?.let { rupiah(it.totalIdr) } ?: ""}", icon = "shield", modifier = Modifier.fillMaxWidth(),
+                ) { requestCheckout(sel) }
             }
-            quote?.let { PaymentBreakdownView(it) }
-            com.tetonova.app.ui.TnPrimaryButton(
-                text = "Bayar ${quote?.let { rupiah(it.totalIdr) } ?: ""}", icon = "shield", modifier = Modifier.fillMaxWidth(),
-            ) { requestCheckout(sel) }
         }
     }
 
@@ -663,13 +668,16 @@ private fun PerkChip(icon: String, label: String, modifier: Modifier) {
 }
 
 @Composable
-private fun PaymentBreakdownView(breakdown: PaymentBreakdown) {
+private fun PaymentBreakdownView(breakdown: PaymentBreakdown, originalPriceIdr: Long? = null) {
     val c = TnTheme.colors
     Column(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(TnRadii.sm)).background(c.surface.copy(alpha = 0.55f)).padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(7.dp),
     ) {
-        PriceLine("Harga paket", rupiah(breakdown.subtotalIdr))
+        originalPriceIdr?.takeIf { it > breakdown.subtotalIdr }?.let {
+            PriceLine("Harga normal", rupiah(it), struck = true)
+        }
+        PriceLine(if (originalPriceIdr != null && originalPriceIdr > breakdown.subtotalIdr) "Harga promo" else "Harga paket", rupiah(breakdown.subtotalIdr))
         PriceLine("Biaya admin QRIS (Rp1.000 + 0,7%)", rupiah(breakdown.adminFeeIdr))
         PriceLine("Pajak tambahan", if (breakdown.taxIdr == 0L) "Tidak dikenakan" else rupiah(breakdown.taxIdr))
         Box(Modifier.fillMaxWidth().height(1.dp).background(c.line))
@@ -678,11 +686,17 @@ private fun PaymentBreakdownView(breakdown: PaymentBreakdown) {
 }
 
 @Composable
-private fun PriceLine(label: String, value: String, strong: Boolean = false) {
+private fun PriceLine(label: String, value: String, strong: Boolean = false, struck: Boolean = false) {
     val c = TnTheme.colors
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
         Text(label, color = if (strong) c.ink else c.muted, fontSize = 12.sp, fontWeight = if (strong) FontWeight.ExtraBold else FontWeight.Normal)
-        Text(value, color = c.ink, fontSize = 12.sp, fontWeight = if (strong) FontWeight.ExtraBold else FontWeight.SemiBold)
+        Text(
+            value,
+            color = if (struck) c.muted else c.ink,
+            fontSize = 12.sp,
+            fontWeight = if (strong) FontWeight.ExtraBold else FontWeight.SemiBold,
+            textDecoration = if (struck) TextDecoration.LineThrough else TextDecoration.None,
+        )
     }
 }
 
@@ -748,7 +762,7 @@ private fun CheckoutConsentDialog(
         ) {
             Text(if (renewal) "Setujui perpanjangan?" else "Konfirmasi pembayaran", color = c.ink, fontWeight = FontWeight.ExtraBold, fontSize = 19.sp)
             Text("TetoNova Premium · ${view.plan.displayName}", color = c.muted, fontSize = 13.sp)
-            PaymentBreakdownView(breakdown)
+            PaymentBreakdownView(breakdown, view.plan.originalPriceIdr)
             Text(
                 if (renewal) "Masa aktif baru akan ditambahkan ke sisa langganan setelah pembayaran berhasil."
                 else "Akses Premium aktif setelah pembayaran berhasil.",
@@ -832,12 +846,15 @@ private fun PlanCardVertical(v: PlanView, selected: Boolean, modifier: Modifier,
             .border(if (selected) 2.dp else 1.dp, if (selected) c.rose else c.line, RoundedCornerShape(TnRadii.md))
             .clickable { onClick() }.padding(16.dp),
     ) {
-        if (v.best) Box(Modifier.align(Alignment.TopEnd).clip(RoundedCornerShape(TnRadii.pill)).tnGradient(RoseGradientColors).padding(horizontal = 8.dp, vertical = 2.dp)) {
-            Text("Terpopuler", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.ExtraBold)
+        if (v.promoBadgeLabel != null || v.best) Box(Modifier.align(Alignment.TopEnd).clip(RoundedCornerShape(TnRadii.pill)).tnGradient(RoseGradientColors).padding(horizontal = 8.dp, vertical = 2.dp)) {
+            Text(v.promoBadgeLabel ?: "Terpopuler", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.ExtraBold)
         }
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(v.plan.displayName.uppercase(), color = c.muted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
             Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                v.originalPriceLabel?.let {
+                    Text(it, color = c.muted, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, textDecoration = TextDecoration.LineThrough)
+                }
                 Text(v.priceLabel, color = c.ink, fontWeight = FontWeight.ExtraBold, fontSize = 22.sp)
                 Text(v.perLabel, color = c.muted, fontSize = 12.sp)
             }
@@ -868,11 +885,14 @@ private fun PlanCard(v: PlanView, selected: Boolean, onClick: () -> Unit) {
         Column(Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(v.plan.displayName, color = c.ink, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                if (v.best) Box(Modifier.clip(RoundedCornerShape(TnRadii.pill)).tnGradient(RoseGradientColors).padding(horizontal = 8.dp, vertical = 2.dp)) {
-                    Text("Terpopuler", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.ExtraBold)
+                if (v.promoBadgeLabel != null || v.best) Box(Modifier.clip(RoundedCornerShape(TnRadii.pill)).tnGradient(RoseGradientColors).padding(horizontal = 8.dp, vertical = 2.dp)) {
+                    Text(v.promoBadgeLabel ?: "Terpopuler", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.ExtraBold)
                 }
             }
             Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                v.originalPriceLabel?.let {
+                    Text(it, color = c.muted, fontWeight = FontWeight.SemiBold, fontSize = 11.sp, textDecoration = TextDecoration.LineThrough)
+                }
                 Text(v.priceLabel, color = c.ink, fontWeight = FontWeight.ExtraBold, fontSize = 18.sp)
                 Text(v.perLabel, color = c.muted, fontSize = 12.sp)
             }

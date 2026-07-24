@@ -20,6 +20,7 @@ import com.tetonova.app.ui.detailDeepLinkUri
 class MainActivity : ComponentActivity() {
     private val deepLink = mutableStateOf<Uri?>(null)
     private val subscriptionRequest = mutableIntStateOf(0)
+    private val showPaidPlans = mutableStateOf(false)
 
     @OptIn(ExperimentalMaterial3WindowSizeClassApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -36,7 +37,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         requestNotificationPermission()
         deepLink.value = intent.toDetailUri()
-        if (intent?.getBooleanExtra("open_subscription", false) == true) subscriptionRequest.intValue++
+        handleSubscriptionIntent(intent)
         setContent {
             val windowSizeClass = calculateWindowSizeClass(this)
             TetoNovaRoot(
@@ -46,6 +47,7 @@ class MainActivity : ComponentActivity() {
                 debugPlayerUrl = if (BuildConfig.DEBUG) intent?.getStringExtra("player_url") else null,
                 deepLink = deepLink.value,
                 openSubscriptionRequest = subscriptionRequest.intValue,
+                openPaidPlans = showPaidPlans.value,
             )
         }
     }
@@ -54,11 +56,34 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         deepLink.value = intent.toDetailUri()
-        if (intent.getBooleanExtra("open_subscription", false)) subscriptionRequest.intValue++
+        handleSubscriptionIntent(intent)
     }
 
-    private fun Intent?.toDetailUri(): Uri? =
-        this?.data ?: this?.getStringExtra("open_detail")?.let { detailDeepLinkUri(url = it) }
+    private fun Intent?.toDetailUri(): Uri? {
+        val uri = this?.data
+        return if (uri?.scheme == APP_LINK_SCHEME && uri.host == DETAIL_LINK_HOST) {
+            uri
+        } else {
+            this?.getStringExtra("open_detail")?.let { detailDeepLinkUri(url = it) }
+        }
+    }
+
+    private fun handleSubscriptionIntent(intent: Intent?) {
+        val target = intent.subscriptionTarget() ?: return
+        showPaidPlans.value = target == SubscriptionTarget.PREMIUM
+        subscriptionRequest.intValue++
+    }
+
+    private fun Intent?.subscriptionTarget(): SubscriptionTarget? {
+        val uri = this?.data
+        if (this?.getBooleanExtra("open_subscription", false) == true) return SubscriptionTarget.PREMIUM
+        if (uri?.scheme != APP_LINK_SCHEME) return null
+        return when (uri.host) {
+            TRIAL_LINK_HOST -> SubscriptionTarget.TRIAL
+            PREMIUM_LINK_HOST -> SubscriptionTarget.PREMIUM
+            else -> null
+        }
+    }
 
     private fun requestNotificationPermission() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
@@ -67,4 +92,13 @@ class MainActivity : ComponentActivity() {
             requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1001)
         }
     }
+
+    private companion object {
+        const val APP_LINK_SCHEME = "tetonova"
+        const val DETAIL_LINK_HOST = "detail"
+        const val TRIAL_LINK_HOST = "trial"
+        const val PREMIUM_LINK_HOST = "premium"
+    }
+
+    private enum class SubscriptionTarget { TRIAL, PREMIUM }
 }

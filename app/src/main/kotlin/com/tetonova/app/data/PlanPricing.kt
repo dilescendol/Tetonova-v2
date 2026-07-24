@@ -52,6 +52,16 @@ data class PlanView(
     val best: Boolean,
 ) {
     val priceLabel: String get() = rupiah(plan.priceIdr)
+    val originalPriceLabel: String? get() = plan.originalPriceIdr
+        ?.takeIf { plan.promoActive && it > plan.priceIdr }
+        ?.let(::rupiah)
+    val promoDiscountPercent: Int get() {
+        val original = plan.originalPriceIdr ?: return 0
+        if (!plan.promoActive || original <= plan.priceIdr || original <= 0L) return 0
+        val derived = ((original - plan.priceIdr).toDouble() / original * 100).roundToInt()
+        return plan.promoDiscountPercent.takeIf { it > 0 } ?: derived
+    }
+    val promoBadgeLabel: String? get() = promoDiscountPercent.takeIf { it > 0 }?.let { "Hemat $it%" }
     /** "/bln", "/3 bln", "/thn" — derived from the duration in whole months. */
     val perLabel: String get() = when (val m = months(plan)) {
         1 -> "/bln"
@@ -72,6 +82,12 @@ private fun perMonth(p: BillingPlan): Double {
     return if (m <= 0.0) p.priceIdr.toDouble() else p.priceIdr / m
 }
 
+private fun comparisonPerMonth(p: BillingPlan): Double {
+    val m = p.durationSeconds / SECONDS_PER_MONTH
+    val price = p.originalPriceIdr?.takeIf { p.promoActive && it > p.priceIdr } ?: p.priceIdr
+    return if (m <= 0.0) price.toDouble() else price / m
+}
+
 /**
  * Project a price list into renderable [PlanView]s. Baseline for the discount is the 1-month plan
  * (`durationSeconds == 2_592_000`); if none is present we fall back to the highest per-month price so
@@ -79,14 +95,15 @@ private fun perMonth(p: BillingPlan): Double {
  */
 fun planViews(plans: List<BillingPlan>): List<PlanView> {
     if (plans.isEmpty()) return emptyList()
-    val baselinePerMonth = plans.firstOrNull { months(it) == 1 }?.let { perMonth(it) }
-        ?: plans.maxOf { perMonth(it) }
+    val baselinePerMonth = plans.firstOrNull { months(it) == 1 }?.let { comparisonPerMonth(it) }
+        ?: plans.maxOf { comparisonPerMonth(it) }
 
     val withSavings = plans.map { plan ->
-        val pm = perMonth(plan)
-        val savings = if (baselinePerMonth > 0.0 && pm < baselinePerMonth)
-            ((1.0 - pm / baselinePerMonth) * 100).roundToInt() else 0
-        val perMonthLabel = if (months(plan) > 1) "≈ ${rupiah((pm / 100).roundToLong() * 100)}/bln" else null
+        val effectivePm = perMonth(plan)
+        val comparisonPm = comparisonPerMonth(plan)
+        val savings = if (baselinePerMonth > 0.0 && comparisonPm < baselinePerMonth)
+            ((1.0 - comparisonPm / baselinePerMonth) * 100).roundToInt() else 0
+        val perMonthLabel = if (months(plan) > 1) "≈ ${rupiah((effectivePm / 100).roundToLong() * 100)}/bln" else null
         Triple(plan, savings, perMonthLabel)
     }
     val bestSavings = withSavings.maxOf { it.second }

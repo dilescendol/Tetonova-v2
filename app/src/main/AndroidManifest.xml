@@ -62,6 +62,23 @@
                     android:host="detail"
                     android:scheme="tetonova" />
             </intent-filter>
+            <!-- Push broadcasts can open the native Premium screen where users claim a trial. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:host="trial"
+                    android:scheme="tetonova" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:host="premium"
+                    android:scheme="tetonova" />
+            </intent-filter>
         </activity>
 
         <!-- Offline download foreground service (Media3 DownloadManager). RESTART resumes downloads

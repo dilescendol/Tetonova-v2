@@ -106,6 +106,7 @@ fun TetoNovaRoot(
     debugPlayerUrl: String? = null,
     deepLink: Uri? = null,
     openSubscriptionRequest: Int = 0,
+    openPaidPlans: Boolean = false,
 ) {
     val state = rememberAppState()
     val context = LocalContext.current
@@ -138,8 +139,8 @@ fun TetoNovaRoot(
             state.openDetail(it)
         }
     }
-    LaunchedEffect(openSubscriptionRequest) {
-        if (openSubscriptionRequest > 0) state.openSubscription()
+    LaunchedEffect(openSubscriptionRequest, openPaidPlans) {
+        if (openSubscriptionRequest > 0) state.openSubscription(showPaidPlans = openPaidPlans)
     }
 
     val effectiveDarkTheme = when (state.themeMode) {
@@ -346,6 +347,18 @@ private fun openAnnouncementUrl(context: Context, rawUrl: String, state: AppStat
     val uri = runCatching { Uri.parse(rawUrl.trim()) }.getOrNull() ?: return
     val scheme = uri.scheme?.lowercase().orEmpty()
     if (scheme !in setOf("http", "https", "tetonova")) return
+    if (scheme == "tetonova") {
+        when (uri.host) {
+            "trial" -> {
+                state.openSubscription(showPaidPlans = false)
+                return
+            }
+            "premium" -> {
+                state.openSubscription(showPaidPlans = true)
+                return
+            }
+        }
+    }
     detailArgFromDeepLink(uri)?.let {
         state.openDetail(it)
         return
@@ -399,7 +412,10 @@ private fun MainShell(state: AppState, useRail: Boolean, tv: Boolean) {
                 val contentHeightPx = with(density) { maxHeight.toPx() }
                 when {
                     isSettings -> SettingsScreen(state = state)
-                    isSubscription -> SubscriptionScreen(state = state)
+                    isSubscription -> SubscriptionScreen(
+                        state = state,
+                        showPaidPlans = (screen as Screen.Subscription).showPaidPlans,
+                    )
                     dest != null -> TabContent(state, dest)
                 }
                 if (screen is Screen.Tab && hasInstalledExtensions && showPremiumUpgrade) {
