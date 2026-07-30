@@ -197,7 +197,12 @@ fun HomeScreen(
             ) { _, sec ->
                 val live = TnData.liveSectionPosters(sec.url)
                 if (!(live?.isEmpty() == true && sec.posters.isEmpty())) {
-                    LaunchedEffect(sec.url) { TnData.ensureLiveSection(sec.url, sec.sourceId) }
+                    LaunchedEffect(sec.url, sec.sourceId, selectedSource) {
+                        while (true) {
+                            TnData.ensureLiveSection(sec.url, sec.sourceId)
+                            kotlinx.coroutines.delay(60_000L)
+                        }
+                    }
                     Column(Modifier.widthIn(max = 1180.dp).fillMaxWidth().padding(horizontal = 20.dp)) {
                         SectionHead(
                             title = sec.label,
@@ -302,7 +307,9 @@ private fun HomeScreenEager(
             } else {
                 sections.forEach { sec ->
                     // Fetch this rail live from the source's real web page.
-                    LaunchedEffect(sec.url) { TnData.ensureLiveSection(sec.url, sec.sourceId) }
+                    LaunchedEffect(sec.url, sec.sourceId, selectedSource) {
+                        TnData.ensureLiveSection(sec.url, sec.sourceId)
+                    }
                     val live = TnData.liveSectionPosters(sec.url)
                     if (live?.isEmpty() == true && sec.posters.isEmpty()) return@forEach
                     SectionHead(
@@ -838,7 +845,7 @@ fun PosterRail(
         Modifier.bleedBoth(20.dp),
         state = listState,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
-        contentPadding = PaddingValues(vertical = 2.dp),
+        contentPadding = PaddingValues(vertical = 8.dp),
     ) {
         itemsIndexed(
             items = posters,
@@ -848,6 +855,7 @@ fun PosterRail(
                 item = p,
                 modifier = Modifier.width(120.dp),
                 showProgress = showProgress,
+                showFocusOutline = false,
                 onClick = { onOpenDetail(p.toDetailArg()) },
             )
         }

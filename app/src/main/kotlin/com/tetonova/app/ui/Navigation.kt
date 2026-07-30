@@ -182,11 +182,19 @@ fun SpotItem.toDetailArg(): DetailArg {
     )
 }
 
+/** Argument bag for the manga series detail (image-based vertical — no video player). */
+data class MangaArg(val id: String, val title: String, val cover: String?)
+
+/** Argument bag for the manga reader. `chapterId` is the only thing that changes on prev/next. */
+data class ReaderArg(val chapterId: String, val mangaTitle: String)
+
 /** The current top-level screen (mirrors the prototype's view/detail/settings state). */
 sealed interface Screen {
     data class Tab(val dest: NavDest) : Screen
     data class Detail(val arg: DetailArg) : Screen
     data class Player(val arg: PlayerArg) : Screen
+    data class Manga(val arg: MangaArg) : Screen
+    data class Reader(val arg: ReaderArg) : Screen
     data object Settings : Screen
     data class Subscription(val showPaidPlans: Boolean = false) : Screen
     data class Qris(val arg: QrisArg) : Screen
@@ -253,7 +261,7 @@ class AppState {
     fun dismissPremiumPrompt() { premiumPromptVisible = false }
 
     fun openDetail(arg: DetailArg) {
-        if (TnData.isPremiumBlocked(arg.url)) { premiumPromptVisible = true; return }
+        if (TnData.isTitleBlocked(arg.url)) { premiumPromptVisible = true; return }
         // Feed the cross-user "Trending minggu ini" rail: report real content opens (those with a
         // live source URL) to the panel. Best-effort + no-op when the panel/token isn't available.
         TnData.reportOpen(arg.title, arg.url, arg.cover, arg.badge)
@@ -262,7 +270,8 @@ class AppState {
 
     fun openPlayer(arg: PlayerArg) {
         // Defense-in-depth: even if premium content somehow reached a play button, block it here.
-        if (TnData.isPremiumBlocked(arg.url)) { premiumPromptVisible = true; return }
+        // Short-drama is per-episode: only episodes past the free teaser window are blocked.
+        if (TnData.isPlayBlocked(arg.url, arg.episodeNum, arg.playlist.size)) { premiumPromptVisible = true; return }
         // Opening fresh (from Detail) records where to return; advancing within the player (auto-next
         // re-calls this with the next episode) keeps that origin and just moves the resume forward.
         if (screen !is Screen.Player) beforePlayer = screen
@@ -282,6 +291,19 @@ class AppState {
     fun closePlayer() {
         screen = beforePlayer ?: Screen.Tab(prevTab)
         beforePlayer = null
+    }
+
+    // Manga vertical (image-based). Detail opens from the Manga tab; the reader opens from detail and
+    // remembers it so closing the reader returns to the same series page (like beforePlayer).
+    private var beforeReader: Screen? = null
+    fun openManga(arg: MangaArg) { screen = Screen.Manga(arg) }
+    fun openReader(arg: ReaderArg) {
+        if (screen !is Screen.Reader) beforeReader = screen
+        screen = Screen.Reader(arg)
+    }
+    fun closeReader() {
+        screen = beforeReader ?: Screen.Tab(NavDest.MANGA)
+        beforeReader = null
     }
 
     fun openSettings() {

@@ -76,8 +76,13 @@ object LiveSource {
             ShortMaxSource.isShortMax(b) || StardustTvSource.isStardustTv(b) ||
             VeloloSource.isVelolo(b) || HappyShortSource.isHappyShort(b) ||
             DramaNovaSource.isDramaNova(b) || CubeTvSource.isCubeTv(b) ||
-            OploverzSource.isOploverz(b) || JavHeySource.isJavHey(b) || IndoMax21Source.isIndoMax21(b)
+            OploverzSource.isOploverz(b) || JavHeySource.isJavHey(b) || IndoMax21Source.isIndoMax21(b) ||
+            isKuramanimeBase(b)
     }
+
+    /** URL-only kuramanime check (its base host, e.g. `v19.kuramanime.ing`). */
+    private fun isKuramanimeBase(url: String): Boolean =
+        "kuramanime" in url.lowercase() || "kuramadrive" in url.lowercase()
 
     suspend fun list(url: String): List<LiveItem> {
         if (JavHeySource.isJavHey(url)) return runCatching { JavHeySource.listPage(url).items }.getOrDefault(emptyList())
@@ -195,6 +200,12 @@ object LiveSource {
             return if (h != null) KuramanimeSource.servers(h) else emptyList()
         }
         val html = LiveClient.getHtml(url) ?: return emptyList()
+        // Anoboy batch/streaming episode (url = "<batch page>#tnep=N"): the whole series lives on one page
+        // under per-server tabs, so resolve THIS episode's button from every tab into Blogger + yourupload
+        // servers (yourupload plays in our ExoPlayer). Falls through when it's not actually a batch grid.
+        Regex("#tnep=(\\d+)").find(url)?.groupValues?.get(1)?.toIntOrNull()?.let { epNum ->
+            LiveParser.anoboyBatchServers(html, url, epNum).let { if (it.isNotEmpty()) return it }
+        }
         if (LayarKaca21Source.isLayarKaca21(url)) {
             LayarKaca21Source.servers(html, url).let { if (it.isNotEmpty()) return it }
         }
@@ -496,7 +507,22 @@ object LiveSource {
         if (ReelShortSource.isReelShort(base)) return runCatching { ReelShortSource.search(base, query) }.getOrDefault(emptyList())
         // Oploverz search runs against its JSON API (`/api/series?q=`), not WordPress `/?s=`.
         if (OploverzSource.isOploverz(base)) return runCatching { OploverzSource.search(query) }.getOrDefault(emptyList())
-        val url = "$base/?s=" + URLEncoder.encode(query, "UTF-8")
+        // Kuramanime is a Laravel app, not WordPress — its search lives at `/anime?search=` (the generic
+        // `/?s=` just returns the homepage). Cards are server-rendered `.product__item`, so the generic
+        // parser reads them directly once CF is solved by getHtml.
+        if (isKuramanimeBase(base)) {
+            val url = "$base/anime?search=" + URLEncoder.encode(query, "UTF-8") + "&order_by=oldest"
+            val html = LiveClient.getHtml(url) ?: return emptyList()
+            return LiveParser.parseList(html, url)
+        }
+        // Otakudesu's bare `/?s=` mixes in episode-posts + pages (only 1 series card survives); its
+        // canonical search scopes to the anime CPT (`&post_type=anime`) and returns the full clean
+        // `.chivsrc > li` series grid the site's own UI shows.
+        val url = if ("otakudesu" in base.lowercase()) {
+            "$base/?s=" + URLEncoder.encode(query, "UTF-8") + "&post_type=anime"
+        } else {
+            "$base/?s=" + URLEncoder.encode(query, "UTF-8")
+        }
         val html = LiveClient.getHtml(url) ?: return emptyList()
         return normalizeNekopoiList(base, normalizeAnoboyList(base, LiveParser.parseList(html, url)))
     }

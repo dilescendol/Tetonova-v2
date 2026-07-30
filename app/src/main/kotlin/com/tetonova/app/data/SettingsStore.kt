@@ -23,6 +23,9 @@ object SettingsStore {
     fun setStr(key: String, value: String) { prefs?.edit()?.putString(key, value)?.apply() }
     fun getLong(key: String, default: Long): Long = prefs?.getLong(key, default) ?: default
     fun setLong(key: String, value: Long) { prefs?.edit()?.putLong(key, value)?.apply() }
+    fun remove(vararg keys: String) {
+        prefs?.edit()?.apply { keys.forEach(::remove) }?.apply()
+    }
 
     /**
      * Stable anonymous per-install id, generated once and persisted. Sent as the

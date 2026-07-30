@@ -6,9 +6,6 @@ import kotlin.math.roundToLong
 /** 30 days in seconds — the unit the panel uses for a "monthly" plan (`app_plans.monthly`). */
 private const val SECONDS_PER_MONTH = 2_592_000.0
 
-/** Current Violet Pay QRIS Basic payer fee: Rp1,000 + 0.7% (70 basis points). */
-private const val QRIS_ADMIN_FEE_FIXED_IDR = 1_000L
-private const val QRIS_ADMIN_FEE_BPS = 70L
 private const val BASIS_POINTS = 10_000L
 
 /** Full payer-facing price shown before an invoice is created. No separate tax is currently charged. */
@@ -19,11 +16,25 @@ data class PaymentBreakdown(
     val totalIdr: Long,
 )
 
-fun paymentBreakdown(subtotalIdr: Long): PaymentBreakdown {
+/**
+ * PRE-invoice estimate only. The fee formula (`fixed + ceil(subtotal * bps / 10000)`) comes from the
+ * panel via [TnData] so it tracks the active gateway (Violet vs Pakasir vs …) without an app rebuild;
+ * the AUTHORITATIVE fee lands on the QR screen from the checkout response (`admin_fee_idr`). Fees differ
+ * per gateway and are only exact per-transaction, so this is an estimate — label it as such in the UI.
+ */
+fun paymentBreakdown(
+    subtotalIdr: Long,
+    feeFixedIdr: Long = TnData.adminFeeFixedIdr,
+    feeBps: Long = TnData.adminFeeBps,
+    feeFloorBps: Long = TnData.adminFeeFloorBps,
+): PaymentBreakdown {
     val safeSubtotal = subtotalIdr.coerceAtLeast(0L)
-    // Round up so the disclosed total can never be lower than the gateway's whole-rupiah fee.
-    val adminFee = if (safeSubtotal == 0L) 0L else QRIS_ADMIN_FEE_FIXED_IDR +
-        (safeSubtotal * QRIS_ADMIN_FEE_BPS + BASIS_POINTS - 1L) / BASIS_POINTS
+    // fee = max(fixed + bps%, floorBps%). Round up so the disclosed total can never be lower than the
+    // gateway's whole-rupiah fee. The floor lets the estimate match gateways like Pakasir (min 1%).
+    val adminFee = if (safeSubtotal == 0L) 0L else maxOf(
+        feeFixedIdr + (safeSubtotal * feeBps + BASIS_POINTS - 1L) / BASIS_POINTS,
+        (safeSubtotal * feeFloorBps + BASIS_POINTS - 1L) / BASIS_POINTS,
+    )
     val tax = 0L
     return PaymentBreakdown(safeSubtotal, adminFee, tax, safeSubtotal + adminFee + tax)
 }

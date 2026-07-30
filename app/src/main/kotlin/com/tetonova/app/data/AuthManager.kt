@@ -55,17 +55,19 @@ object AuthManager {
             val a = FirebaseAuth.getInstance() // throws if no default FirebaseApp (no google-services.json)
             auth = a
             user = a.currentUser
+            MatureContentAccess.onAuthChanged(user?.uid)
             a.addAuthStateListener {
                 user = it.currentUser
+                MatureContentAccess.onAuthChanged(user?.uid)
                 AppPresenceManager.onAuthenticationChanged(user != null)
             }
         }.onFailure { Log.i("TnAuth", "Firebase not configured — sign-in disabled (${it.message})") }
     }
 
     /** A fresh Firebase ID token for the `Authorization: Bearer` header, or null when signed-out. */
-    suspend fun idToken(): String? {
+    suspend fun idToken(forceRefresh: Boolean = false): String? {
         val u = auth?.currentUser ?: return null
-        return runCatching { u.getIdToken(false).await().token }.getOrNull()
+        return runCatching { u.getIdToken(forceRefresh).await().token }.getOrNull()
     }
 
     /**
@@ -82,6 +84,20 @@ object AuthManager {
         return GoogleSignIn.getClient(context, gso).signInIntent
     }
 
+    /** Clear any cached Google account token before starting an interactive sign-in. */
+    suspend fun freshSignInIntent(context: Context): Intent? {
+        if (auth == null) return null
+        val webClientId = webClientId(context) ?: return null
+        val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+            .requestIdToken(webClientId)
+            .requestEmail()
+            .build()
+        val client = GoogleSignIn.getClient(context, gso)
+        runCatching { client.signOut().await() }
+            .onFailure { Log.w("TnAuth", "Could not clear cached Google token: ${it.message}") }
+        return client.signInIntent
+    }
+
     /** Exchange the sign-in result's Google ID token for a Firebase session. */
     suspend fun handleSignInResult(data: Intent?): Result<Unit> {
         val a = auth ?: return Result.failure(IllegalStateException("Firebase belum dikonfigurasi"))
@@ -90,6 +106,7 @@ object AuthManager {
             val idToken = account.idToken ?: error("Tidak ada ID token dari Google")
             a.signInWithCredential(GoogleAuthProvider.getCredential(idToken, null)).await()
             user = a.currentUser
+            MatureContentAccess.onAuthChanged(user?.uid)
             AppPresenceManager.onAuthenticationChanged(user != null)
             try { TnData.refreshUserProfile() } catch (e: Throwable) { Log.w("TnAuth", "profile refresh failed: ${e.message}") }
             LibrarySync.onSignedIn()
@@ -102,6 +119,7 @@ object AuthManager {
 
     fun signOut() {
         AppPresenceManager.onSigningOut()
+        MatureContentAccess.onAuthChanged(null)
         runCatching { auth?.signOut() }
         user = null
         LibrarySync.onSignedOut()
@@ -132,11 +150,13 @@ fun rememberGoogleSignIn(): () -> Unit {
         }
     }
     return {
-        val intent = AuthManager.signInIntent(ctx)
-        if (intent == null) {
-            android.widget.Toast.makeText(ctx, "Firebase belum dikonfigurasi", android.widget.Toast.LENGTH_LONG).show()
-        } else {
-            launcher.launch(intent)
+        scope.launch {
+            val intent = AuthManager.freshSignInIntent(ctx)
+            if (intent == null) {
+                android.widget.Toast.makeText(ctx, "Firebase belum dikonfigurasi", android.widget.Toast.LENGTH_LONG).show()
+            } else {
+                launcher.launch(intent)
+            }
         }
     }
 }

@@ -11,6 +11,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONArray
 import org.json.JSONObject
+import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.URI
 import java.net.URLDecoder
@@ -18,6 +19,7 @@ import java.nio.charset.StandardCharsets.UTF_8
 import java.security.SecureRandom
 import java.security.cert.X509Certificate
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import javax.net.ssl.SSLContext
 import javax.net.ssl.TrustManager
 import javax.net.ssl.X509TrustManager
@@ -42,13 +44,17 @@ fun main() {
     val port = (System.getenv("PORT") ?: "8090").toInt()
     val token = System.getenv("SCRAPER_TOKEN").orEmpty()
     val panel = (System.getenv("PANEL_URL") ?: "https://tetonova.biz.id").trimEnd('/')
+    val panelVersionCode = System.getenv("PANEL_VERSION_CODE")
+        ?.toIntOrNull()
+        ?.coerceAtLeast(1)
+        ?: Int.MAX_VALUE
     LiveClient.flareEndpoint = System.getenv("FLARE_ENDPOINT").orEmpty()
     LiveClient.flareToken = System.getenv("FLARE_TOKEN").orEmpty()
     // Server-only: route FlareSolverr's browser through a residential proxy (e.g. DataImpulse
     // country=ID) so geo/hard-CF solves egress from a residential IP. Blank ⇒ host's own IP.
     LiveClient.solverProxy = System.getenv("SOLVER_PROXY").orEmpty()
 
-    SourceMap.start(panel)
+    SourceMap.start(panel, panelVersionCode)
 
     val server = HttpServer.create(InetSocketAddress(port), 0)
     server.executor = Executors.newFixedThreadPool(32)
@@ -188,24 +194,65 @@ private fun isAllowedListUrl(src: Src, url: String): Boolean {
     val target = runCatching { URI(url) }.getOrNull() ?: return false
     val targetHost = target.host?.lowercase() ?: return false
     if (target.scheme?.lowercase() !in setOf("http", "https")) return false
-    val allowedHosts = buildSet {
-        runCatching { URI(src.baseUrl).host?.lowercase() }.getOrNull()?.let(::add)
-        src.homeLinks.forEach { (_, link) ->
-            runCatching { URI(link).host?.lowercase() }.getOrNull()?.let(::add)
-        }
-    }
-    return allowedHosts.any { targetHost == it || targetHost.endsWith(".$it") }
+    if (!isPublicHost(targetHost)) return false
+    return src.allowedHosts.any { targetHost == it || targetHost.endsWith(".$it") }
 }
 
-private data class Src(val baseUrl: String, val homeLinks: List<Pair<String, String>>)
+private fun hostOf(url: String): String? = runCatching { URI(url).host?.trimEnd('.')?.lowercase() }
+    .getOrNull()?.takeIf { it.isNotBlank() }
+
+private fun isPublicHost(host: String): Boolean {
+    val normalized = host.trimEnd('.').lowercase()
+    if (normalized == "localhost" || normalized.endsWith(".localhost") || normalized.endsWith(".local")) return false
+    return runCatching {
+        InetAddress.getAllByName(normalized).let { addresses ->
+            addresses.isNotEmpty() && addresses.all(::isPublicAddress)
+        }
+    }.getOrDefault(false)
+}
+
+private fun isPublicAddress(address: InetAddress): Boolean {
+    if (address.isAnyLocalAddress || address.isLoopbackAddress || address.isLinkLocalAddress ||
+        address.isSiteLocalAddress || address.isMulticastAddress
+    ) return false
+    val bytes = address.address.map { it.toInt() and 0xff }
+    if (bytes.size == 4) {
+        val (a, b) = bytes
+        if (a == 0 || a == 10 || a == 127 || a >= 224) return false
+        if (a == 100 && b in 64..127) return false
+        if (a == 169 && b == 254) return false
+        if (a == 172 && b in 16..31) return false
+        if (a == 192 && (b == 0 || b == 168)) return false
+        if (a == 198 && b in 18..19) return false
+    } else if (bytes.size == 16) {
+        if ((bytes[0] and 0xfe) == 0xfc) return false // IPv6 unique-local fc00::/7
+        if (bytes[0] == 0xfe && (bytes[1] and 0xc0) == 0x80) return false // link-local fe80::/10
+    }
+    return true
+}
+
+private data class Src(
+    val baseUrl: String,
+    val homeLinks: List<Pair<String, String>>,
+    val allowedHosts: Set<String>,
+)
 
 private object SourceMap {
     @Volatile private var map: Map<String, Src> = emptyMap()
     private val http = panelHttpClient()
+    private val redirectHttp = OkHttpClient.Builder()
+        .connectTimeout(5, TimeUnit.SECONDS)
+        .readTimeout(5, TimeUnit.SECONDS)
+        .callTimeout(10, TimeUnit.SECONDS)
+        .followRedirects(true)
+        .followSslRedirects(true)
+        .build()
     private var panelUrl: String = ""
+    private var panelVersionCode: Int = Int.MAX_VALUE
 
-    fun start(panel: String) {
+    fun start(panel: String, versionCode: Int) {
         panelUrl = panel
+        panelVersionCode = versionCode
         runCatching { refresh() }.onFailure { System.err.println("source map refresh failed: ${it.message}") }
         thread(isDaemon = true) {
             while (true) { Thread.sleep(600_000); runCatching { refresh() } }
@@ -220,7 +267,11 @@ private object SourceMap {
     }
 
     private fun refresh() {
-        val body = http.newCall(Request.Builder().url("$panelUrl/api/v1/sources").build())
+        val request = Request.Builder()
+            .url("$panelUrl/api/v1/sources")
+            .header("X-TetoNova-Version-Code", panelVersionCode.toString())
+            .build()
+        val body = http.newCall(request)
             .execute().use { it.body?.string() } ?: return
         val root = JSONObject(body)
         // Auto-pull flare creds from the panel's proxyBypass block so CF-shielded sources
@@ -236,6 +287,7 @@ private object SourceMap {
         val arr = root.optJSONArray("sources") ?: return
         val m = HashMap<String, Src>()
         val accessCodes = HashMap<String, String>()
+        var observedRedirects = 0
         for (i in 0 until arr.length()) {
             val s = arr.getJSONObject(i)
             val id = s.optString("sourceId").lowercase()
@@ -265,12 +317,45 @@ private object SourceMap {
                     if (u.isNotBlank() && seen.add(u)) links.add(l.optString("label").ifBlank { "Latest" } to u)
                 }
             }
-            m[id] = Src(base, links)
+            val configuredUrls = buildList {
+                if (base.isNotBlank()) add(base)
+                s.optString("webBaseUrl").takeIf { it.isNotBlank() }?.let(::add)
+                links.forEach { (_, url) -> add(url) }
+            }.distinct()
+            val allowedHosts = configuredUrls.mapNotNull(::hostOf).toMutableSet()
+            if (s.hasRiskFlag("rotating-domain")) {
+                configuredUrls.distinctBy { hostOf(it) }.forEach { configuredUrl ->
+                    val configuredHost = hostOf(configuredUrl) ?: return@forEach
+                    val finalHost = resolveRedirectHost(configuredUrl) ?: return@forEach
+                    if (finalHost != configuredHost) observedRedirects++
+                    allowedHosts.add(finalHost)
+                }
+            }
+            m[id] = Src(base, links, allowedHosts)
         }
         LiveSource.configureAccessCodes(accessCodes)
         map = m
-        println("source map: ${m.size} sources, flare=${LiveClient.flareEndpoint.ifBlank { "none" }}")
+        println("source map: ${m.size} sources, redirects=$observedRedirects, flare=${LiveClient.flareEndpoint.ifBlank { "none" }}")
     }
+
+    private fun JSONObject.hasRiskFlag(flag: String): Boolean {
+        val flags = optJSONObject("metadata")?.optJSONArray("riskFlags") ?: return false
+        for (i in 0 until flags.length()) {
+            if (flags.optString(i).equals(flag, ignoreCase = true)) return true
+        }
+        return false
+    }
+
+    private fun resolveRedirectHost(url: String): String? = runCatching {
+        val request = Request.Builder()
+            .url(url)
+            .header("User-Agent", "TetoNovaScraper/1.0 (redirect-alias)")
+            .get()
+            .build()
+        redirectHttp.newCall(request).execute().use { response ->
+            response.request.url.host.lowercase().takeIf(::isPublicHost)
+        }
+    }.getOrNull()
 }
 
 private fun panelHttpClient(): OkHttpClient {

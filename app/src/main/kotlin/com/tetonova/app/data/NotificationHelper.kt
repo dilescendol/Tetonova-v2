@@ -19,6 +19,22 @@ import androidx.core.content.ContextCompat
 import com.tetonova.app.R
 import com.tetonova.app.MainActivity
 
+internal enum class AnnouncementTargetKind {
+    OPEN_APP,
+    APP_DEEP_LINK,
+    WEB,
+}
+
+internal fun classifyAnnouncementTarget(rawUrl: String?): AnnouncementTargetKind {
+    val url = rawUrl?.trim().orEmpty()
+    return when {
+        url.startsWith("tetonova://", ignoreCase = true) -> AnnouncementTargetKind.APP_DEEP_LINK
+        url.startsWith("https://", ignoreCase = true) ||
+            url.startsWith("http://", ignoreCase = true) -> AnnouncementTargetKind.WEB
+        else -> AnnouncementTargetKind.OPEN_APP
+    }
+}
+
 /**
  * NotificationHelper manages notification channels and creates notifications for:
  * - Follow episode updates (new episodes from followed titles)
@@ -157,12 +173,16 @@ object NotificationHelper {
         url: String?,
     ) {
         val targetUrl = url?.trim().orEmpty()
-        val intent = Intent(context, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-            if (targetUrl.startsWith("tetonova://")) {
+        val intent = when (classifyAnnouncementTarget(targetUrl)) {
+            AnnouncementTargetKind.APP_DEEP_LINK -> Intent(context, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
                 data = Uri.parse(targetUrl)
-            } else if (targetUrl.isNotBlank()) {
-                putExtra("open_detail", targetUrl)
+            }
+            AnnouncementTargetKind.WEB -> Intent(Intent.ACTION_VIEW, Uri.parse(targetUrl)).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            }
+            AnnouncementTargetKind.OPEN_APP -> Intent(context, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
             }
         }
         val pendingIntent = PendingIntent.getActivity(

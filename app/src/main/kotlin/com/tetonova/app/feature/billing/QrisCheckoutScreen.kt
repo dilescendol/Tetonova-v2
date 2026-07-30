@@ -310,7 +310,7 @@ private fun QrisPriceBreakdown(arg: QrisArg) {
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         QrisPriceLine("Harga paket", rupiah(arg.amountIdr))
-        QrisPriceLine("Biaya admin QRIS (Rp1.000 + 0,7%)", rupiah(arg.adminFeeIdr))
+        QrisPriceLine("Biaya admin QRIS", rupiah(arg.adminFeeIdr))
         QrisPriceLine("Pajak tambahan", if (arg.taxIdr == 0L) "Tidak dikenakan" else rupiah(arg.taxIdr))
         Box(Modifier.fillMaxWidth().height(1.dp).background(c.line))
         QrisPriceLine("Total bayar", rupiah(arg.totalIdr), strong = true)

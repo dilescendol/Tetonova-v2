@@ -17,8 +17,8 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 
 /**
- * Focus-only [androidx.compose.foundation.Indication] for Android TV: draws a rounded white ring around
- * whatever element currently holds D-pad focus, so remote users can see where they are. Provided via
+ * Focus-only [androidx.compose.foundation.Indication] for Android TV: draws a two-tone ring around
+ * whatever element currently holds D-pad focus, so it stays visible on both light and accent surfaces. Provided via
  * `LocalIndication` on TV only (see TetoNovaRoot) — every plain `.clickable {}` picks it up automatically.
  * Touch devices keep the default ripple (this is never provided there), so nothing changes on phone/tablet.
  */
@@ -53,14 +53,22 @@ class TvFocusIndication(private val ringColor: Color) : IndicationNodeFactory {
         override fun ContentDrawScope.draw() {
             drawContent()
             if (focused) {
-                val w = 3.dp.toPx()
+                val outerWidth = 4.dp.toPx()
+                val innerWidth = 2.dp.toPx()
                 val r = 12.dp.toPx()
                 drawRoundRect(
-                    color = ringColor,
-                    topLeft = Offset(w / 2f, w / 2f),
-                    size = Size(size.width - w, size.height - w),
+                    color = Color.White,
+                    topLeft = Offset(outerWidth / 2f, outerWidth / 2f),
+                    size = Size(size.width - outerWidth, size.height - outerWidth),
                     cornerRadius = CornerRadius(r, r),
-                    style = Stroke(width = w),
+                    style = Stroke(width = outerWidth),
+                )
+                drawRoundRect(
+                    color = ringColor,
+                    topLeft = Offset(outerWidth / 2f, outerWidth / 2f),
+                    size = Size(size.width - outerWidth, size.height - outerWidth),
+                    cornerRadius = CornerRadius(r, r),
+                    style = Stroke(width = innerWidth),
                 )
             }
         }

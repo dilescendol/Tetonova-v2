@@ -17,14 +17,23 @@ import java.util.concurrent.TimeUnit
 @Serializable
 data class UserXp(
     val level: Int = 1,
+    val totalXp: Long = 0,
     val xpIntoLevel: Int = 0,
     val xpForNextLevel: Int = 0,
     val xpToday: Int = 0,
     val dailyCapRemaining: Int = 0,
+    val watchXpToday: Int = 0,
+    val watchCapRemaining: Int = 450,
+    val forumXpToday: Int = 0,
+    val forumCapRemaining: Int = 50,
     val streakDays: Int = 0,
     val streakFreezes: Int = 0,
     val equippedFrame: String = "",
+    val equippedFrameUrl: String? = null,
     val flags: List<String> = emptyList(),
+    // null = the user hasn't chosen a cultivation path yet → show the path-selection screen (spec §6/§7.5).
+    val cultivationPath: String? = null,
+    val originPath: String? = null,
     val realm: Realm? = null,
     val stats30d: Stats30d? = null,
     val contributor: ContributorRank? = null,
@@ -35,6 +44,9 @@ data class UserXp(
 data class Realm(
     val realmId: String = "",
     val realmDisplayId: String = "",
+    val world: String = "",
+    val star: Int? = null,
+    val phase: String? = null,
     val subStageLabel: String = "",
     val displayName: String = "",
 )
@@ -83,6 +95,7 @@ data class Heartbeat(
 data class Achievement(
     val id: String = "",
     val family: String = "",
+    val pathId: String? = null,
     val name: String = "",
     val desc: String = "",
     val icon: String = "",
@@ -91,6 +104,7 @@ data class Achievement(
     val tier: Int = 0,
     val maxTier: Int = 1,
     val unlocked: Boolean = false,
+    val legacy: Boolean = false,
 )
 
 @Serializable
@@ -163,6 +177,24 @@ class UserApi(baseUrl: String) {
         }.onFailure { Log.w("TnUserXp", "equipFrame failed: ${it.message}") }.getOrDefault(false)
     }
 
+    /** Pick or switch the cultivation path ("dou-qi" / "martial"). Returns the updated user, or null on
+     *  failure (e.g. the §6 cooldown rejects the switch → HTTP 409). */
+    suspend fun selectPath(installId: String, path: String, token: String, bearer: String? = null): UserXp? = withContext(Dispatchers.IO) {
+        if (base.isEmpty() || (token.isBlank() && bearer == null)) return@withContext null
+        runCatching {
+            val req = Request.Builder()
+                .url("$base/api/v1/users/$installId/cultivation-path")
+                .header("Content-Type", "application/json")
+                .auth(token, installId, bearer)
+                .post(JSONObject().put("path", path).toString().toRequestBody("application/json".toMediaType()))
+                .build()
+            client.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) error("HTTP ${resp.code}")
+                json.decodeFromString<UserXpResponse>(resp.body?.string().orEmpty()).user
+            }
+        }.onFailure { Log.w("TnUserXp", "selectPath failed: ${it.message}") }.getOrNull()
+    }
+
     /** Absorb this device's anonymous progress into the signed-in account (once per device). */
     suspend fun mergeCultivation(installId: String, bearer: String): Boolean = withContext(Dispatchers.IO) {
         if (base.isEmpty() || installId.isBlank() || bearer.isBlank()) return@withContext false
@@ -196,10 +228,11 @@ class UserApi(baseUrl: String) {
     }
 
     /** The cultivation realm ladder (public; no token). */
-    suspend fun fetchRealms(): List<RealmTier>? = withContext(Dispatchers.IO) {
+    suspend fun fetchRealms(path: String? = null): List<RealmTier>? = withContext(Dispatchers.IO) {
         if (base.isEmpty()) return@withContext null
         runCatching {
-            val req = Request.Builder().url("$base/api/v1/realms").get().build()
+            val selected = if (path == "martial") "martial" else "dou-qi"
+            val req = Request.Builder().url("$base/api/v1/realms?path=$selected").get().build()
             client.newCall(req).execute().use { resp ->
                 if (!resp.isSuccessful) error("HTTP ${resp.code}")
                 json.decodeFromString<RealmsResponse>(resp.body?.string().orEmpty())

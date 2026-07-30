@@ -86,6 +86,8 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
@@ -1111,6 +1113,20 @@ private fun ExoStage(
         trackSelector.setParameters(p)
     }
 
+    // On a hard error or a silent stall, drop to the next-LOWER resolution of THIS source before failing
+    // over to the next server — ok.ru's top quality often 403s/stalls while a lower one plays fine. Each
+    // drop is strictly lower so it terminates; once none is left, hand off (onError) to the next server.
+    fun dropQualityOrFailover() {
+        val lower = variants.filter { resoHeight(it.label) < resoHeight(quality.label) }
+            .maxByOrNull { resoHeight(it.label) }
+        if (lower != null) {
+            android.util.Log.w("TnPlayer", "drop ${quality.label} -> ${lower.label} (${server.name})")
+            quality = lower
+        } else {
+            onError()
+        }
+    }
+
     var playing by remember { mutableStateOf(false) }
     var buffering by remember { mutableStateOf(true) }
     var position by remember { mutableLongStateOf(0L) }
@@ -1174,7 +1190,7 @@ private fun ExoStage(
             }
             override fun onPlayerError(e: androidx.media3.common.PlaybackException) {
                 android.util.Log.e("TnPlayer", "exo error ${e.errorCodeName}: ${e.message}", e)
-                onError()
+                dropQualityOrFailover()
             }
         }
         exo.addListener(l)
@@ -1235,7 +1251,13 @@ private fun ExoStage(
                         playheadMs = position,
                         realtimeElapsedMs = android.os.SystemClock.elapsedRealtime() - sessionStartRt,
                         playbackRate = exo.playbackParameters.speed.toDouble(),
-                        isForeground = true,
+                        // Nothing pauses playback when the app is backgrounded (no lifecycle observer,
+                        // no PiP), so this loop keeps emitting beats with an advancing playhead. Reporting
+                        // a constant `true` left the server's background_half rule unreachable — a
+                        // screen-off episode earned the same XP as a watched one. Read on the main thread:
+                        // LaunchedEffect runs on the composition dispatcher.
+                        isForeground = ProcessLifecycleOwner.get().lifecycle.currentState
+                            .isAtLeast(Lifecycle.State.STARTED),
                         lastInteractionMs = lastInteractionAt,
                         episodeDurationMs = duration.coerceAtLeast(0L),
                     )
@@ -1269,13 +1291,13 @@ private fun ExoStage(
             val progressing = exo.playbackState == Player.STATE_BUFFERING || exo.bufferedPosition > 0L
             if (!progressing) {
                 android.util.Log.w("TnPlayer", "playback watchdog timeout for ${server.name} ${quality.label}")
-                onError()
+                dropQualityOrFailover()
                 return@LaunchedEffect
             }
             delay(25_000) // ~37s total for slow/large streams before giving up
             if (exo.currentPosition <= 0L && !playing) {
                 android.util.Log.w("TnPlayer", "extended playback watchdog timeout for ${server.name} ${quality.label}")
-                onError()
+                dropQualityOrFailover()
             }
         }
     }
@@ -1419,12 +1441,17 @@ private fun ExoStage(
                     val opts = listOf<Int?>(null) + trackHeights
                     Pill("Resolusi", selHeight?.let { "${it}p" } ?: "Auto", opts,
                         itemLabel = { it?.let { h -> "${h}p" } ?: "Auto" }, selected = { it == selHeight }, onOpenChange = { menuOpen = it }) { autoReso = false; applyHeight(it) }
-                } else if (serverResolutionChoices(servers, server).size > 1) {
+                } else if (serverResolutionChoices(servers, server).isNotEmpty()) {
                     Spacer(Modifier.width(8.dp))
                     ServerResolutionPill(servers, server, onPickServer, onOpenChange = { menuOpen = it })
                 } else if (preEmbedVariants(server).isNotEmpty()) {
                     Spacer(Modifier.width(8.dp))
                     PreEmbedResolutionPill(server, onPickServer, onOpenChange = { menuOpen = it })
+                } else if (resoHeight(quality.label) > 0) {
+                    // Only one stream, but a real resolution (e.g. 360p) — show it read-only so the
+                    // quality is visible instead of no pill at all.
+                    Spacer(Modifier.width(8.dp))
+                    Pill("Resolusi", quality.label, variants, { it.label }, { true }, onOpenChange = { menuOpen = it }) { }
                 }
             }
             // bottom: accent progress bar + current / total time below it
@@ -1635,7 +1662,7 @@ private fun WebStage(
             if (barVisible) {
                 TopBar(arg.title, arg.episodeLabel, onBack) {
                     SourcePill(servers, server, onPickServer, onExternal, onOpenChange = { menuOpen = it })
-                    if (serverResolutionChoices(servers, server).size > 1) {
+                    if (serverResolutionChoices(servers, server).isNotEmpty()) {
                         Spacer(Modifier.width(8.dp))
                         ServerResolutionPill(servers, server, onPickServer, onOpenChange = { menuOpen = it })
                     } else if (preEmbedVariants(server).isNotEmpty()) {
@@ -1913,7 +1940,7 @@ private fun WebPlayerStage(
                         qualityIdx = idx
                         js(player.setQuality(idx))
                     }
-                } else if (serverResolutionChoices(servers, current).size > 1) {
+                } else if (serverResolutionChoices(servers, current).isNotEmpty()) {
                     Spacer(Modifier.width(8.dp))
                     ServerResolutionPill(servers, current, onPickServer, onOpenChange = { menuOpen = it })
                 } else if (preEmbedVariants(current).isNotEmpty()) {
@@ -2060,7 +2087,9 @@ private fun SourcePill(
 private fun ServerResolutionPill(servers: List<VideoServer>, current: VideoServer, onPickServer: (VideoServer) -> Unit, onOpenChange: (Boolean) -> Unit = {}) {
     val choices = remember(servers, current) { serverResolutionChoices(servers, current) }
     val currentLabel = namedServerResolution(current) ?: choices.firstOrNull { sameSource(it.server, current) }?.label ?: "Auto"
-    if (choices.size <= 1) return
+    // Show even a single resolution (e.g. only 360p) so the user can see the quality — the dropdown just
+    // has one option then. Only bail when there's no named resolution at all.
+    if (choices.isEmpty()) return
     Pill(
         label = "Resolusi",
         value = currentLabel,

@@ -57,7 +57,8 @@ object BackupCodec {
                 dataSaver = s.getBool("data_saver", false),
                 autoNext = s.getBool("auto_next", true),
                 skipOpening = s.getBool("skip_op", false),
-                mature = s.getBool("mature", false),
+                // Account-bound 18+ consent is intentionally excluded from portable backups.
+                mature = false,
                 notifFollow = s.getBool("notif_follow", true),
                 notifForum = s.getBool("notif_forum", true),
                 pushLocal = s.getBool("push_local", false),
@@ -88,7 +89,7 @@ object BackupCodec {
             state.dataSaver = dataSaver
             state.autoNext = autoNext
             state.skipOp = skipOpening
-            state.mature = mature
+            state.mature = false
             state.notifFollow = notifFollow
             state.notifForum = notifForum
             state.pushLocal = pushLocal

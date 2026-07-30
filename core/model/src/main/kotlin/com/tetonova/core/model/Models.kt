@@ -10,6 +10,7 @@ package com.tetonova.core.model
 enum class NavDest(val id: String, val label: String, val icon: String) {
     HOME("home", "Home", "home"),
     SEARCH("search", "Search", "search"),
+    MANGA("manga", "Manga", "book"),
     FORUM("forum", "Forum", "forum"),
     EXTENSIONS("ext", "Extensions", "ext"),
     PROFILE("profile", "Profile", "user"),

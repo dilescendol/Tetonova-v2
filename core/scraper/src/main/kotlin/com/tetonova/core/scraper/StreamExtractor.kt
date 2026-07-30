@@ -166,6 +166,8 @@ object StreamExtractor {
             "voe.sx" in u || "voe-network.net" in u -> voe(u, referer)
             isDoodHost(u) -> dood(u)
             "filedon" in u -> ExtractResult(filedon(u, referer)) // presigned R2 URL → no headers
+            "yourupload" in u -> ExtractResult(yourupload(u), mapOf("Referer" to "https://www.yourupload.com/"))
+            "mp4upload.com" in u -> ExtractResult(mp4upload(u), mapOf("Referer" to "https://www.mp4upload.com/"))
             "gofile.io" in u -> gofile(u)
             "mega.nz" in u -> ExtractResult(emptyList()) // Mega embed works via WebView (token-gated)
             "pixeldrain.com" in u -> ExtractResult(listOf(StreamVariant("Auto", pixeldrainDirect(u)))) // range-served file → no headers
@@ -500,7 +502,12 @@ object StreamExtractor {
         val html = LiveClient.getHtml(embedUrl) ?: return emptyList()
         val opts = Regex("data-options=\"([^\"]+)\"").find(html)?.groupValues?.get(1) ?: return emptyList()
         val flash = JSONObject(Parser.unescapeEntities(opts, false)).optJSONObject("flashvars") ?: return emptyList()
-        val metaStr = flash.optString("metadata").takeIf { it.isNotBlank() } ?: return emptyList()
+        // Most embeds inline the metadata JSON, but some only give a `metadataUrl` that must be POSTed for
+        // it — those used to bail here with NO resolutions. Fetch it so their qualities show up too.
+        val metaStr = flash.optString("metadata").takeIf { it.isNotBlank() }
+            ?: flash.optString("metadataUrl").takeIf { it.isNotBlank() }
+                ?.let { postForOkMetadata(absoluteUrl(embedUrl, it), embedUrl) }
+            ?: return emptyList()
         val videos = JSONObject(metaStr).optJSONArray("videos") ?: return emptyList()
         val out = ArrayList<StreamVariant>()
         for (i in 0 until videos.length()) {
@@ -509,6 +516,37 @@ object StreamExtractor {
             if (url.startsWith("http")) out.add(StreamVariant(okLabel(v.optString("name")), url))
         }
         return out.asReversed() // OK.ru lists low→high; present high→low
+    }
+
+    // ---- mp4upload.com/<id> (or /embed-<id>.html): the embed page's video.js `player.src({src:"…mp4"})`
+    //      is a direct a*.mp4upload.com mp4 (token in the path). One quality per id; anoboy lists
+    //      240/360/480/720/1080 as separate ids in its Download section. Needs the mp4upload referer. ----
+    private suspend fun mp4upload(url: String): List<StreamVariant> {
+        val id = Regex("mp4upload\\.com/(?:embed-)?([A-Za-z0-9]+)").find(url)?.groupValues?.get(1) ?: return emptyList()
+        val html = fetch("https://www.mp4upload.com/embed-$id.html", "https://www.mp4upload.com/") ?: return emptyList()
+        val file = Regex("""src\s*:\s*["'](https?://[^"']+\.mp4[^"']*)["']""").find(html)?.groupValues?.get(1)
+            ?: return emptyList()
+        return listOf(StreamVariant("Auto", file))
+    }
+
+    // ---- yourupload.com/embed/<id>: jwplayer with an inline `file: '…video.mp4'` (a vidcache.net CDN
+    //      URL, token in the path). One quality per embed; anoboy exposes 240/360/480/720 as separate ids. ----
+    private suspend fun yourupload(embedUrl: String): List<StreamVariant> {
+        val html = fetch(embedUrl, "https://www.yourupload.com/") ?: return emptyList()
+        val file = Regex("""file\s*:\s*['"](https?://[^'"]+\.mp4[^'"]*)['"]""").find(html)?.groupValues?.get(1)
+            ?: return emptyList()
+        return listOf(StreamVariant("Auto", file))
+    }
+
+    /** ok.ru serves the player metadata via a POST to `metadataUrl` when it isn't inlined. */
+    private suspend fun postForOkMetadata(metadataUrl: String, referer: String): String? = withContext(Dispatchers.IO) {
+        runCatching {
+            val req = Request.Builder().url(metadataUrl)
+                .header("User-Agent", UA).header("Referer", referer)
+                .post(FormBody.Builder().build())
+                .build()
+            http.newCall(req).execute().use { it.body?.string() }
+        }.getOrNull()?.takeIf { it.trimStart().startsWith("{") }
     }
 
     private fun okLabel(name: String) = when (name) {

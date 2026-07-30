@@ -1,14 +1,9 @@
 package com.tetonova.app.feature.profile
 
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -46,28 +41,39 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import coil.compose.AsyncImage
+import coil.compose.SubcomposeAsyncImage
+import coil.compose.SubcomposeAsyncImageContent
+import com.tetonova.app.data.Achievement
 import com.tetonova.app.data.AuthManager
+import com.tetonova.app.data.MatureContentAccess
 import com.tetonova.app.data.ProfileApi
 import com.tetonova.app.data.RealmTier
 import com.tetonova.app.data.TnData
 import com.tetonova.app.data.rememberGoogleSignIn
 import com.tetonova.app.feature.library.libraryGroup
+import com.tetonova.app.ui.AchievementBadgeArtwork
 import com.tetonova.app.ui.AppState
+import com.tetonova.app.ui.CultivationPathArtwork
 import com.tetonova.app.ui.DetailArg
+import com.tetonova.app.ui.LoyaltyBadgeArtwork
 import com.tetonova.app.ui.PageScroll
 import com.tetonova.app.ui.PosterGrid
 import com.tetonova.app.ui.isTelevision
 import com.tetonova.app.ui.TnGhostButton
 import com.tetonova.app.ui.TnPrimaryButton
+import com.tetonova.app.ui.achievementArtworkRes
 import com.tetonova.app.ui.bleedEnd
 import com.tetonova.core.designsystem.GradientTile
 import com.tetonova.core.designsystem.SectionHead
@@ -80,32 +86,19 @@ import com.tetonova.core.designsystem.theme.TnRadii
 import com.tetonova.core.designsystem.theme.TnTheme
 import com.tetonova.core.designsystem.theme.gradColors
 import com.tetonova.core.designsystem.tnGradient
-import com.tetonova.core.model.BadgeItem
 import com.tetonova.core.model.RewardItem
 import com.tetonova.core.model.RewardState
 import com.tetonova.core.model.StatItem
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @Composable
 fun ProfileScreen(state: AppState) {
-    val ctx = LocalContext.current
     // Pull fresh XP/level/streak/realm + achievements when Profile opens (best-effort).
     LaunchedEffect(Unit) {
         runCatching { TnData.refreshUserXp() }
         runCatching { TnData.refreshAchievements() }
         runCatching { TnData.refreshUserProfile() }
         runCatching { TnData.refreshSubscription() }
-    }
-    // Breakthrough: a realm crossing triggers the full "Tribulasi" overlay; a plain level-up just toasts.
-    var tribulation by remember { mutableStateOf<TnData.BreakthroughEvent?>(null) }
-    val breakthrough = TnData.breakthrough
-    LaunchedEffect(breakthrough) {
-        breakthrough?.let {
-            if (it.realmChanged) tribulation = it
-            else android.widget.Toast.makeText(ctx, "⚡ Naik level — ${it.realmName}", android.widget.Toast.LENGTH_LONG).show()
-            TnData.breakthrough = null
-        }
     }
     Box(Modifier.fillMaxSize()) {
         PageScroll(topInset = true) {
@@ -123,12 +116,22 @@ fun ProfileScreen(state: AppState) {
                 sub = "Riwayat, ikutan & unduhan",
                 action = { TnGhostButton(text = "Buka Full Library", icon = "chevR", onClick = { state.openLibrary() }) },
             )
-            Library(onOpenDetail = state::openDetail)
+            Library(
+                showMature = state.mature && MatureContentAccess.isEnabled(),
+                onOpenDetail = state::openDetail,
+            )
             SectionHead(title = "Pengaturan")
             SettingsShortcut(onClick = { state.openSettings() })
             Spacer(Modifier.height(24.dp))
         }
-        tribulation?.let { TribulationOverlay(it) { tribulation = null } }
+        // First-run gate (§7.5): once XP loads and no path is chosen, overlay the path picker.
+        val xp = TnData.userXp
+        if (xp != null && xp.cultivationPath == null) {
+            PathSelectionScreen(
+                onSelect = { TnData.selectCultivationPath(it) },
+                error = TnData.pathSwitchError,
+            )
+        }
     }
 }
 
@@ -155,38 +158,6 @@ private fun SettingsShortcut(onClick: () -> Unit) {
     }
 }
 
-/** Full-screen lightning "Tribulasi" celebration shown when the user crosses into a new realm. */
-@Composable
-private fun TribulationOverlay(event: TnData.BreakthroughEvent, onDone: () -> Unit) {
-    val c = TnTheme.colors
-    val appear = remember { Animatable(0.6f) }
-    LaunchedEffect(Unit) { appear.animateTo(1f, tween(450)) }
-    LaunchedEffect(Unit) { delay(3000); onDone() }
-    val flash = rememberInfiniteTransition(label = "tribulasi")
-    val bolt by flash.animateFloat(
-        initialValue = 0.25f, targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(230), RepeatMode.Reverse), label = "bolt",
-    )
-    Box(
-        Modifier.fillMaxSize().background(Color.Black.copy(0.85f)).clickable { onDone() },
-        contentAlignment = Alignment.Center,
-    ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-            modifier = Modifier.graphicsLayer { scaleX = appear.value; scaleY = appear.value; alpha = appear.value },
-        ) {
-            Text("⚡", fontSize = 72.sp, modifier = Modifier.graphicsLayer { alpha = bolt })
-            Text("TEROBOSAN!", color = Color.White, fontWeight = FontWeight.ExtraBold, fontSize = 32.sp)
-            Box(
-                Modifier.clip(RoundedCornerShape(TnRadii.pill)).tnGradient(gradColors(0)).padding(horizontal = 16.dp, vertical = 7.dp),
-            ) { Text(event.realmName, color = Color.White, fontWeight = FontWeight.ExtraBold, fontSize = 15.sp) }
-            Text("Tribulasi dilalui · Lv.${event.level}", color = Color.White.copy(0.85f), fontSize = 13.sp)
-            Text("⚡  ⚡  ⚡", color = c.rose, fontSize = 26.sp, modifier = Modifier.graphicsLayer { alpha = bolt })
-        }
-    }
-}
-
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ProfileHero(signedIn: Boolean, onOpenSubscription: () -> Unit) {
@@ -202,11 +173,13 @@ private fun ProfileHero(signedIn: Boolean, onOpenSubscription: () -> Unit) {
     val frac = if (need > 0) (into.toFloat() / need).coerceIn(0f, 1f) else 1f
     // Equipped frame (chosen from any reached realm) overrides the current realm's frame.
     val frameRealmId = xp?.equippedFrame?.ifBlank { null } ?: realm?.realmId
-    val frameUrl = frameRealmId?.let { id -> TnData.realms.firstOrNull { it.realmId == id }?.frameUrl }
+    val frameUrl = xp?.equippedFrameUrl
+        ?: frameRealmId?.let { id -> TnData.realms.firstOrNull { it.realmId == id }?.frameUrl }
     // Editable identity (synced to the account; falls back to local cache / Google / default).
     val name = TnData.profileName
     val username = TnData.profileUsername
     val photoUrl = TnData.profilePhotoUrl
+    val loyalty = TnData.subscription?.loyalty
     var showEdit by remember { mutableStateOf(false) }
     val launchSignIn = rememberGoogleSignIn()
     Box(
@@ -226,7 +199,15 @@ private fun ProfileHero(signedIn: Boolean, onOpenSubscription: () -> Unit) {
         }
         Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                LevelRing(letter = name.take(1).uppercase().ifBlank { "?" }, level = level, frameUrl = frameUrl, photoUrl = photoUrl)
+                LevelRing(
+                    letter = name.take(1).uppercase().ifBlank { "?" },
+                    level = level,
+                    frameUrl = frameUrl,
+                    photoUrl = photoUrl,
+                    loyaltyTierId = loyalty?.tierId,
+                    loyaltyTier = loyalty?.tier ?: 0,
+                    loyaltyActive = loyalty?.active == true,
+                )
                 Column {
                     Text("Selamat datang kembali · @$username", color = Color.White.copy(0.82f), fontSize = 12.sp)
                     Text(name, color = Color.White, fontWeight = FontWeight.ExtraBold, fontSize = 24.sp)
@@ -238,8 +219,20 @@ private fun ProfileHero(signedIn: Boolean, onOpenSubscription: () -> Unit) {
                 // Live status word only (no source count); tap → Settings → Langganan to upgrade/manage.
                 val premiumEntitled = TnData.subscription?.entitled == true
                 HeroPill("sparkle", if (premiumEntitled) "Premium" else "Free", filled = premiumEntitled, onClick = onOpenSubscription)
+                if (loyalty != null && loyalty.tier > 0) {
+                    val stateLabel = if (loyalty.active) loyalty.displayName else "${loyalty.displayName} - redup"
+                    HeroPill(
+                        "trophy",
+                        stateLabel,
+                        filled = loyalty.active,
+                        onClick = onOpenSubscription,
+                        loyaltyTierId = loyalty.tierId,
+                        loyaltyTier = loyalty.tier,
+                        loyaltyActive = loyalty.active,
+                    )
+                }
                 HeroPill("flame2", if (streak > 0) "$streak hari streak" else "Mulai streak")
-                val freezes = xp?.streakFreezes ?: 0
+                val freezes = TnData.subscription?.loyalty?.pills?.inventory ?: xp?.streakFreezes ?: 0
                 if (freezes > 0) HeroPill("shield", "$freezes Pil Penjaga Qi", filled = true)
                 val contributorLabel = xp?.contributor?.label?.takeIf { it.isNotBlank() } ?: "Kontributor baru"
                 HeroPill("star", contributorLabel)
@@ -267,7 +260,15 @@ private fun ProfileHero(signedIn: Boolean, onOpenSubscription: () -> Unit) {
 }
 
 @Composable
-private fun LevelRing(letter: String, level: Int = 1, frameUrl: String? = null, photoUrl: String? = null) {
+private fun LevelRing(
+    letter: String,
+    level: Int = 1,
+    frameUrl: String? = null,
+    photoUrl: String? = null,
+    loyaltyTierId: String? = null,
+    loyaltyTier: Int = 0,
+    loyaltyActive: Boolean = false,
+) {
     val frame = TnFrames.first { it.id == "rose" }
     Box(contentAlignment = Alignment.Center) {
         Box(Modifier.size(84.dp).clip(CircleShape).background(frame.ring), contentAlignment = Alignment.Center) {
@@ -287,6 +288,15 @@ private fun LevelRing(letter: String, level: Int = 1, frameUrl: String? = null, 
         // The current realm's frame cosmetic (when uploaded) wraps the avatar; else the rose ring above.
         if (frameUrl != null) {
             AsyncImage(model = frameUrl, contentDescription = null, modifier = Modifier.size(92.dp))
+        }
+        if (loyaltyTierId != null && loyaltyTier > 0) {
+            LoyaltyBadgeArtwork(
+                tierId = loyaltyTierId,
+                tier = loyaltyTier,
+                active = loyaltyActive,
+                modifier = Modifier.align(Alignment.BottomEnd).size(38.dp),
+                contentDescription = "Badge loyalty",
+            )
         }
         Box(
             Modifier.align(Alignment.BottomCenter).graphicsLayer(translationY = 10f)
@@ -422,14 +432,32 @@ private fun tnFieldColors() = OutlinedTextFieldDefaults.colors(
 )
 
 @Composable
-private fun HeroPill(icon: String, label: String, modifier: Modifier = Modifier, filled: Boolean = false, onClick: (() -> Unit)? = null) {
+private fun HeroPill(
+    icon: String,
+    label: String,
+    modifier: Modifier = Modifier,
+    filled: Boolean = false,
+    onClick: (() -> Unit)? = null,
+    loyaltyTierId: String? = null,
+    loyaltyTier: Int = 0,
+    loyaltyActive: Boolean = false,
+) {
     Row(
         modifier.clip(RoundedCornerShape(TnRadii.pill)).background(Color.White.copy(0.15f))
             .then(if (onClick != null) Modifier.clickable { onClick() } else Modifier)
             .padding(horizontal = 12.dp, vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp),
     ) {
-        TnIcon(icon, size = 14.dp, tint = Color.White, filled = filled)
+        if (loyaltyTierId != null && loyaltyTier > 0) {
+            LoyaltyBadgeArtwork(
+                tierId = loyaltyTierId,
+                tier = loyaltyTier,
+                active = loyaltyActive,
+                modifier = Modifier.size(22.dp),
+            )
+        } else {
+            TnIcon(icon, size = 14.dp, tint = Color.White, filled = filled)
+        }
         Text(label, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
     }
 }
@@ -504,20 +532,25 @@ private fun RewardTrack() {
     }
     val xp = TnData.userXp
     val level = xp?.level ?: 1
+    val pathId = xp?.cultivationPath
     val equippedId = xp?.equippedFrame?.ifBlank { null } ?: xp?.realm?.realmId
     val listState = rememberLazyListState()
     val currentIdx = ladder.indexOfFirst { level in it.minLevel..it.maxLevel }.coerceAtLeast(0)
     // Auto-scroll the path to the cultivator's current realm.
     LaunchedEffect(currentIdx, ladder.size) { runCatching { listState.animateScrollToItem(currentIdx) } }
-    LazyRow(state = listState, modifier = Modifier.bleedEnd(20.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        items(ladder.size) { i ->
+    LazyRow(
+        state = listState,
+        modifier = Modifier.bleedEnd(20.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        items(ladder.size, key = { ladder[it].realmId }) { i ->
             val r = ladder[i]
             val state = when {
                 level in r.minLevel..r.maxLevel -> RewardState.NEXT      // current realm
                 level > r.maxLevel -> RewardState.CLAIMED                 // passed
                 else -> RewardState.LOCKED                                // not yet reached
             }
-            RealmNode(r, state, grad = i % 8, equipped = r.realmId == equippedId, onClick = {
+            RealmNode(r, state, pathId = pathId, equipped = r.realmId == equippedId, onClick = {
                 if (state != RewardState.LOCKED) TnData.equipFrame(r.realmId) // wear a reached realm's frame
             })
         }
@@ -525,23 +558,67 @@ private fun RewardTrack() {
 }
 
 @Composable
-private fun RealmNode(r: RealmTier, state: RewardState, grad: Int, equipped: Boolean, onClick: () -> Unit) {
+private fun RealmNode(r: RealmTier, state: RewardState, pathId: String?, equipped: Boolean, onClick: () -> Unit) {
     val c = TnTheme.colors
     val locked = state == RewardState.LOCKED
+    var focused by remember(r.realmId) { mutableStateOf(false) }
+    val restingBorderWidth = if (equipped) 2.dp else 1.dp
+    val restingBorderColor = if (equipped) c.rose else c.line
     Column(
-        Modifier.width(120.dp).clip(RoundedCornerShape(TnRadii.md)).background(c.surface)
-            .border(if (equipped) 2.dp else 1.dp, if (equipped) c.rose else c.line, RoundedCornerShape(TnRadii.md))
-            .then(if (!locked) Modifier.clickable { onClick() } else Modifier)
+        Modifier.width(120.dp)
+            .graphicsLayer {
+                scaleX = if (focused) 1.04f else 1f
+                scaleY = if (focused) 1.04f else 1f
+            }
+            .clip(RoundedCornerShape(TnRadii.md)).background(c.surface)
+            .border(if (focused) 4.dp else restingBorderWidth, if (focused) Color.White else restingBorderColor, RoundedCornerShape(TnRadii.md))
+            .border(if (focused) 2.dp else 0.dp, if (focused) c.rose else Color.Transparent, RoundedCornerShape(TnRadii.md))
+            .onFocusChanged { focused = it.isFocused }
+            .then(if (!locked) Modifier.clickable { onClick() } else Modifier.focusable())
             .padding(14.dp),
         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         Box(
-            Modifier.size(46.dp).clip(RoundedCornerShape(TnRadii.sm)).then(if (locked) Modifier.background(c.surface3) else Modifier.tnGradient(gradColors(grad))),
+            Modifier.size(50.dp).clip(RoundedCornerShape(TnRadii.sm)).background(c.surface3),
             contentAlignment = Alignment.Center,
         ) {
-            // The realm's badge emblem (cosmetic) when uploaded; else a gradient tile + sparkle/lock icon.
-            if (r.badgeUrl != null && !locked) AsyncImage(model = r.badgeUrl, contentDescription = null, modifier = Modifier.size(34.dp))
-            else TnIcon(if (locked) "lock" else "sparkle", size = 23.dp, tint = if (locked) c.faint else Color.White)
+            // Uploaded cosmetics win; bundled path seals keep the ladder intentional offline.
+            if (r.badgeUrl != null && !locked) {
+                SubcomposeAsyncImage(
+                    model = r.badgeUrl,
+                    contentDescription = r.displayId,
+                    modifier = Modifier.size(43.dp),
+                    loading = {
+                        CultivationPathArtwork(
+                            pathId = pathId,
+                            realmId = r.realmId,
+                            modifier = Modifier.size(43.dp),
+                        )
+                    },
+                    error = {
+                        CultivationPathArtwork(
+                            pathId = pathId,
+                            realmId = r.realmId,
+                            modifier = Modifier.size(43.dp),
+                        )
+                    },
+                    success = { SubcomposeAsyncImageContent() },
+                )
+            } else {
+                CultivationPathArtwork(
+                    pathId = pathId,
+                    realmId = r.realmId,
+                    locked = locked,
+                    modifier = Modifier.size(43.dp),
+                    contentDescription = r.displayId,
+                )
+                if (locked) {
+                    Box(
+                        Modifier.align(Alignment.BottomEnd).size(18.dp).clip(CircleShape).background(c.surface),
+                        contentAlignment = Alignment.Center,
+                    ) { TnIcon("lock", size = 11.dp, tint = c.muted) }
+                }
+            }
         }
         Text("Lv.${r.minLevel}", color = c.muted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
         Text(r.displayId, color = c.ink, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
@@ -587,39 +664,104 @@ private fun BadgeWall() {
     val ach = TnData.achievements
     // Hidden + still-locked achievements show as "???"; everything else binds live.
     // No achievements loaded yet → empty (no fabricated badges).
-    val items = if (ach.isEmpty()) emptyList() else ach.map { a ->
-        BadgeItem(
-            name = if (a.hidden && !a.unlocked) "???" else a.name,
-            desc = if (a.hidden && !a.unlocked) "Rahasia" else a.desc,
-            icon = a.icon, grad = a.grad, locked = !a.unlocked,
-        )
-    }
     LazyRow(
         modifier = Modifier.bleedEnd(20.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
+        contentPadding = PaddingValues(vertical = 6.dp),
     ) {
-        items(items.size) { i -> BadgeTile(items[i], Modifier.width(120.dp)) }
+        items(ach.size, key = { ach[it].id }) { i ->
+            AchievementTile(ach[i], Modifier.width(144.dp).height(196.dp))
+        }
     }
 }
 
 @Composable
-private fun BadgeTile(b: BadgeItem, modifier: Modifier) {
+private fun AchievementTile(a: Achievement, modifier: Modifier) {
     val c = TnTheme.colors
+    val unlocked = a.unlocked
+    val hidden = a.hidden && !unlocked
+    val name = if (hidden) "???" else a.name
+    val desc = if (hidden) "Rahasia" else a.desc
+    val customArtwork = achievementArtworkRes(a.id) != null
+    var focused by remember(a.id) { mutableStateOf(false) }
     Column(
-        modifier.clip(RoundedCornerShape(TnRadii.md)).background(c.surface).border(1.dp, c.line, RoundedCornerShape(TnRadii.md)).padding(14.dp),
+        modifier
+            .graphicsLayer {
+                scaleX = if (focused) 1.04f else 1f
+                scaleY = if (focused) 1.04f else 1f
+            }
+            .clip(RoundedCornerShape(TnRadii.md)).background(c.surface)
+            .border(if (focused) 4.dp else 1.dp, if (focused) Color.White else c.line, RoundedCornerShape(TnRadii.md))
+            .border(if (focused) 2.dp else 0.dp, if (focused) c.rose else Color.Transparent, RoundedCornerShape(TnRadii.md))
+            .onFocusChanged { focused = it.isFocused }
+            .focusable()
+            .padding(14.dp),
         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         Box(
-            Modifier.size(54.dp).clip(CircleShape).then(if (b.locked) Modifier.background(c.surface3) else Modifier.tnGradient(gradColors(b.grad))),
+            Modifier.size(68.dp).clip(CircleShape).background(c.surface3),
             contentAlignment = Alignment.Center,
-        ) { TnIcon(if (b.locked) "lock" else b.icon, size = 26.dp, tint = if (b.locked) c.faint else Color.White) }
-        Text(b.name, color = c.ink, fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1)
-        Text(b.desc, color = c.muted, fontSize = 10.sp, maxLines = 1)
+        ) {
+            if (customArtwork) {
+                AchievementBadgeArtwork(
+                    achievementId = a.id,
+                    unlocked = unlocked,
+                    modifier = Modifier.size(64.dp),
+                    contentDescription = if (hidden) null else a.name,
+                )
+            } else {
+                Box(
+                    Modifier.size(54.dp).clip(CircleShape)
+                        .then(if (unlocked) Modifier.tnGradient(gradColors(a.grad)) else Modifier.background(c.surface3)),
+                    contentAlignment = Alignment.Center,
+                ) { TnIcon(if (unlocked) a.icon else "lock", size = 26.dp, tint = if (unlocked) Color.White else c.faint) }
+            }
+            if (!unlocked && customArtwork) {
+                Box(
+                    Modifier.align(Alignment.BottomEnd).size(21.dp).clip(CircleShape).background(c.surface),
+                    contentAlignment = Alignment.Center,
+                ) { TnIcon("lock", size = 12.dp, tint = c.muted) }
+            }
+        }
+        Box(Modifier.fillMaxWidth().height(34.dp), contentAlignment = Alignment.Center) {
+            Text(
+                name,
+                color = c.ink,
+                fontSize = 12.sp,
+                lineHeight = 14.sp,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+        Box(Modifier.fillMaxWidth().height(28.dp), contentAlignment = Alignment.TopCenter) {
+            Text(
+                desc,
+                color = c.muted,
+                fontSize = 10.sp,
+                lineHeight = 12.sp,
+                textAlign = TextAlign.Center,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+        Box(Modifier.fillMaxWidth().height(20.dp), contentAlignment = Alignment.Center) {
+            if (a.legacy) {
+                Box(Modifier.clip(RoundedCornerShape(TnRadii.pill)).background(c.surface3).padding(horizontal = 8.dp, vertical = 3.dp)) {
+                    Text("Warisan", color = c.muted, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                }
+            } else if (a.maxTier > 1) {
+                Text("Tahap ${a.tier}/${a.maxTier}", color = if (unlocked) c.rose else c.muted, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+            }
+        }
     }
 }
 
 @Composable
-private fun Library(onOpenDetail: (DetailArg) -> Unit) {
+private fun Library(showMature: Boolean, onOpenDetail: (DetailArg) -> Unit) {
     val c = TnTheme.colors
     var tab by remember { mutableStateOf("history") }
     val tabs = listOf(
@@ -632,7 +774,7 @@ private fun Library(onOpenDetail: (DetailArg) -> Unit) {
     val cfg = LocalConfiguration.current
     val ctx = LocalContext.current
     val limit = if (cfg.screenWidthDp >= 600 || isTelevision(ctx)) 10 else 4
-    val data = libraryGroup(tab).take(limit)
+    val data = libraryGroup(tab, showMature).take(limit)
     Column {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             tabs.forEach { (id, label, icon) ->

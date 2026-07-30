@@ -168,9 +168,67 @@ object LiveParser {
      * Redirector `data-video` paths (`/uploads/adsbatch720.php?…`, `/uploads/yup…`) are made absolute so
      * the WebView player can follow them; direct embeds (krakenfiles) pass through unchanged.
      */
+    /**
+     * Servers for episode [episodeNum] of an anoboy batch/streaming page: take that episode's button from
+     * EACH server tab (div.satu/dua/…) and resolve its redirector into a picker entry — Blogger (WebView)
+     * plus yourupload (extracts to our ExoPlayer with a 240/360/480/720 Resolusi picker). The dead
+     * acbatch/zippyshare tabs are dropped. Empty when the page isn't a batch grid (caller falls back).
+     */
+    fun anoboyBatchServers(html: String, pageUrl: String, episodeNum: Int): List<VideoServer> {
+        val doc = Jsoup.parse(html, pageUrl)
+        val out = LinkedHashMap<String, VideoServer>()
+        listOf("satu", "dua", "tiga", "empat", "lima", "enam").forEach { cls ->
+            val button = doc.select("div.$cls a[data-video]")
+                .firstOrNull { anoboyBatchEpisodeNumber(it.text()) == episodeNum } ?: return@forEach
+            val raw = button.attr("data-video").lowercase()
+            if ("acbatch" in raw || "zippyshare" in raw || "/zipy/" in raw) return@forEach // dead hosts
+            val variants = anoboyVariantsFor(button)
+                .distinctBy { it.label.lowercase() }
+                .sortedWith(compareByDescending { resoRank(it.label) })
+            if (variants.isEmpty()) return@forEach
+            val name = anoboyServerName(anoboyHostLabel(variants.first().embedUrl))
+            out.putIfAbsent(name.lowercase(), VideoServer(name, variants.first().embedUrl, variants))
+        }
+        return out.values.toList()
+    }
+
+    /** Server display name from a resolved embed host (Blogger / yourupload / other). */
+    private fun anoboyHostLabel(url: String): String = when {
+        "blogger.com" in url || "blogspot" in url -> "Blogger"
+        "yourupload" in url -> "Yup"
+        else -> runCatching { java.net.URI(url).host.orEmpty().removePrefix("www.").substringBefore('.') }
+            .getOrDefault("Server")
+    }
+
     fun parseAnoboyServers(html: String, pageUrl: String): List<VideoServer> {
         val doc = Jsoup.parse(html, pageUrl)
         val out = LinkedHashMap<String, VideoServer>()
+        // Redirector "Pilih Resolusi" page (yupbatch/adsbatch → <a class="link" href="…/embed/…">240</a>):
+        // fold its links into one server whose variants are the resolutions.
+        // New-format episode pages only inline a Blogger (Btube) embed for STREAMING, but the Download
+        // section lists mp4upload per resolution (240/360/480/720/1080) — mp4upload extracts to a direct
+        // mp4 that plays in our ExoPlayer, so surface it as a server "M4U" and PREFER it over Blogger's
+        // WebView. Each host is a <span class="ud"> (name in .udj, links in <a class="udl" href>).
+        doc.select("span.ud").forEach { grp ->
+            val host = grp.selectFirst(".udj")?.text().orEmpty()
+            if (!host.contains("m4u", true) && !host.contains("mp4upload", true)) return@forEach
+            val variants = grp.select("a.udl[href]").mapNotNull { a ->
+                val href = a.absUrl("href").takeIf { "mp4upload.com/" in it } ?: return@mapNotNull null
+                ServerVariant(anoboyReso(a.text()), href)
+            }.distinctBy { it.embedUrl }.sortedWith(compareByDescending { resoRank(it.label) })
+            if (variants.isNotEmpty()) out.putIfAbsent("m4u", VideoServer("M4U", variants.first().embedUrl, variants))
+        }
+        doc.select("a.link[href]").mapNotNull { a ->
+            val href = a.absUrl("href").ifBlank { a.attr("href") }.takeIf { it.startsWith("http") } ?: return@mapNotNull null
+            // Only the redirector's resolution links (video embeds), not any stray class="link" anchor.
+            if (!Regex("/embed/|video\\.g|yourupload|blogger", RegexOption.IGNORE_CASE).containsMatchIn(href)) return@mapNotNull null
+            ServerVariant(anoboyReso(a.text()), href)
+        }.distinctBy { it.embedUrl }.sortedWith(compareByDescending { resoRank(it.label) }).let { links ->
+            if (links.isNotEmpty()) {
+                val name = anoboyServerName(anoboyHostLabel(links.first().embedUrl))
+                out.putIfAbsent(name.lowercase(), VideoServer(name, links.first().embedUrl, links))
+            }
+        }
         doc.select("div.vmiror").forEach { box ->
             val label = box.ownText().substringBefore('|').trim()
             val name = anoboyServerName(label)
@@ -401,6 +459,7 @@ object LiveParser {
             ".nk-episodes-area .nk-post-card", // nekopoi homepage latest episodes
             ".nk-hentai-grid li", // nekopoi homepage series grid
             ".animeseries",       // nontonanimeid homepage grid
+            "a.as-anime-card",    // nontonanimeid SEARCH grid (as- theme: anchor IS the card, title in h3.as-anime-title)
             "a:has(div.amv)",     // anoboy homepage grid (anchor-wrapped)
             "article[itemtype*=Movie]", // LK21 / Nonton Drama category grids
             ".chivsrc > li",      // otakudesu search
@@ -1146,13 +1205,20 @@ object LiveParser {
         val isAnoboy = base.contains("anoboy", ignoreCase = true)
         if (!isAnoboy && doc.select("a#allvideo[data-video]").isEmpty()) return emptyList()
 
-        // Streaming/batch pages carry the real episode grid as data-video buttons labeled "EP NN"/OVA,
-        // each server repeating the full 1..N list. Pick one server group so we list each episode once.
-        val grouped = listOf("satu", "dua", "tiga", "empat", "lima", "enam")
+        // Streaming/batch pages carry the real episode grid as data-video buttons, each server tab
+        // (div.satu/dua/…) repeating the full 1..N list. Pick the tab whose redirector is actually
+        // PLAYABLE — Blogger ("adsbatch", plays in WebView) or yourupload — NOT acbatch/zippyshare, which
+        // are dead link-lists. Trinity Seven's "EP NN" acbatch tab used to win (only it carried the "EP"
+        // keyword) so every episode resolved to "no source"; rank by redirector, and count bare trailing
+        // numbers ("BT-HD 01", "Yup 01") too since inside a tab every button is an episode.
+        val groups = listOf("satu", "dua", "tiga", "empat", "lima", "enam")
             .map { cls -> doc.select("div.$cls a[data-video]").toList() }
-        val anchors = grouped.firstOrNull { group ->
-            group.count { anoboyEpisodeNumber(it.text()) != null || anoboySpecialLabel(it.text()) != null } >= 2
-        } ?: doc.select("a#allvideo[data-video], a[data-video]").toList().takeIf { group ->
+            .filter { it.isNotEmpty() }
+        val batchGroup = groups
+            .filter { g -> g.count { anoboyBatchEpisodeNumber(it.text()) != null || anoboySpecialLabel(it.text()) != null } >= 2 }
+            .maxWithOrNull(compareBy({ anoboyGroupRank(it) }, { it.size }))
+        val fromGroup = batchGroup != null
+        val anchors = batchGroup ?: doc.select("a#allvideo[data-video], a[data-video]").toList().takeIf { group ->
             group.count { anoboyEpisodeNumber(it.text()) != null || anoboySpecialLabel(it.text()) != null } >= 2
         }
 
@@ -1161,7 +1227,8 @@ object LiveParser {
             val raw = anchors.mapNotNull { a ->
                 val text = a.text().replace(Regex("\\s+"), " ").trim()
                 val special = anoboySpecialLabel(text)
-                val num = if (special == null) anoboyEpisodeNumber(text) else null
+                val num = if (special != null) null
+                    else if (fromGroup) anoboyBatchEpisodeNumber(text) else anoboyEpisodeNumber(text)
                 if (num == null && special == null) return@mapNotNull null
                 val url = a.attr("abs:data-video").ifBlank { a.absUrl("data-video") }.ifBlank { a.attr("data-video") }
                     .trim()
@@ -1170,9 +1237,14 @@ object LiveParser {
                 Raw(num, special, url)
             }
             if (raw.isNotEmpty()) {
+                // Batch page: point each numbered episode at the PAGE + `#tnep=N` marker so servers() can
+                // offer every server tab (Blogger + yourupload) for that episode, not just one tab's
+                // redirector — that's what lets yourupload play in our ExoPlayer while Blogger stays as a
+                // WebView fallback. Specials keep their direct redirector (matched by label, not number).
+                val batchBase = base.substringBefore('#').trimEnd('/')
                 val normal = raw.filter { it.num != null }
                     .distinctBy { it.num }
-                    .map { LiveEpisode(it.num!!, "Episode ${it.num}", it.url) }
+                    .map { LiveEpisode(it.num!!, "Episode ${it.num}", if (fromGroup) "$batchBase#tnep=${it.num}" else it.url) }
                     .sortedBy { it.num }
                 val maxNormal = normal.maxOfOrNull { it.num } ?: 0
                 val specials = raw.filter { it.special != null }
@@ -1201,6 +1273,24 @@ object LiveParser {
     private fun anoboyEpisodeNumber(label: String): Int? =
         Regex("\\b(?:EP|Episode)\\s*0*(\\d{1,4})\\b", RegexOption.IGNORE_CASE)
             .find(label)?.groupValues?.get(1)?.toIntOrNull()
+
+    /** Episode number for a batch server-tab button. Buttons under a tab are always episodes, so a bare
+     *  trailing number ("BT-HD 01", "Yup 01") counts too — not just the "EP NN" the flat fallback needs. */
+    private fun anoboyBatchEpisodeNumber(label: String): Int? =
+        anoboyEpisodeNumber(label)
+            ?: Regex("(?:^|[\\s-])0*(\\d{1,4})\\s*$").find(label.trim())?.groupValues?.get(1)?.toIntOrNull()
+
+    /** Play-priority of a batch server tab by its redirector so episodes never point at a dead link-list:
+     *  Blogger ("adsbatch", plays in WebView) > yourupload ("yupbatch") > acbatch / zippyshare (dead). */
+    private fun anoboyGroupRank(anchors: List<Element>): Int {
+        val v = anchors.joinToString(" ") { it.attr("data-video").lowercase() }
+        return when {
+            "adsbatch" in v -> 3
+            "yupbatch" in v || "yup/data" in v -> 2
+            "acbatch" in v || "zippyshare" in v || "/zipy/" in v -> 0
+            else -> 1
+        }
+    }
 
     private fun anoboySpecialLabel(label: String): String? {
         val match = Regex("\\b(OVA|ONA|Special|SP)\\s*0*(\\d*)\\b", RegexOption.IGNORE_CASE).find(label) ?: return null

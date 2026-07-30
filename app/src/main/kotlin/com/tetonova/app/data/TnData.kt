@@ -118,6 +118,7 @@ object TnData {
     private const val PANEL_CACHE_BASE = "panel_sources_last_good_base"
     private const val PANEL_CACHE_JSON = "panel_sources_last_good_json"
     private const val HOME_CACHE_WAIT_MS = 2_500L
+    private const val HOME_SECTION_TTL_MS = 5 * 60_000L
     // Upper bound only: the `finally` in startLiveSearch turns loading off earlier once ALL sources
     // finish, so fast searches stay instant. This cap just gives slow short-drama JSON APIs room to land.
     private const val SEARCH_SETTLE_TIMEOUT_MS = 25_000L
@@ -149,6 +150,10 @@ object TnData {
     var announcement by mutableStateOf<Announcement?>(null)
         private set
 
+    /** Minimum supported APK build published by the panel. */
+    var appUpdateConfig by mutableStateOf(AppUpdateConfig())
+        private set
+
     /** Telemetry ingest token from the panel â€” reused to auth the in-app problem report. */
     var telemetryToken: String = ""
         private set
@@ -166,6 +171,27 @@ object TnData {
         private set
 
     fun trialDurationMs(): Long = trialDurationSeconds.coerceIn(0L, 31_536_000L) * 1000L
+
+    /** Fraction of a short-drama's episodes free to non-subscribers — the 10–15% teaser policy. Panel-
+     *  tunable; defaults to 0.12 (mid of the range) until the panel publishes a value. */
+    var shortDramaFreePercent by mutableStateOf(0.12)
+        private set
+
+    /** Leading free (unlocked) episode count for a short-drama with [total] episodes — always ≥1, ≤total.
+     *  The single source of truth for the teaser window, shared by the play-gate and the Detail lock UI. */
+    fun freeEpisodeCount(total: Int): Int =
+        if (total <= 0) 1 else kotlin.math.ceil(total * shortDramaFreePercent).toInt().coerceIn(1, total)
+
+    /** Payer-facing QRIS admin-fee formula published by the panel (tracks the active gateway). Defaults to
+     *  the historical Violet fee (Rp1.000 + 0,7%) until the panel publishes a value. Used only for the
+     *  PRE-invoice estimate; the real fee comes from the checkout response (`admin_fee_idr`). */
+    var adminFeeFixedIdr by mutableStateOf(1_000L)
+        private set
+    var adminFeeBps by mutableStateOf(70L)
+        private set
+    /** Minimum fee floor in basis points (0 = none) — see [PaymentConfig.adminFeeFloorBps]. */
+    var adminFeeFloorBps by mutableStateOf(0L)
+        private set
 
     /** Top search terms (last 7 days, cross-user) from the panel; chips on Search. Empty until fetched. */
     var popularSearches by mutableStateOf<List<String>>(emptyList())
@@ -252,11 +278,24 @@ object TnData {
     /** The cultivation realm ladder for the "Jalan Kultivasi" track (empty until fetched). */
     var realms by mutableStateOf<List<RealmTier>>(emptyList())
         private set
+    private var realmsPath: String? = null
 
-    /** One-shot level-up event for the breakthrough toast; the UI reads it then clears it to null. */
-    var breakthrough by mutableStateOf<BreakthroughEvent?>(null)
+    private suspend fun refreshCultivationRealms(path: String? = userXp?.cultivationPath, force: Boolean = false) {
+        val selected = if (path == "martial") "martial" else "dou-qi"
+        if (!force && realms.isNotEmpty() && realmsPath == selected) return
+        UserApi(panelBase).fetchRealms(selected)?.takeIf { it.isNotEmpty() }?.let {
+            realms = it
+            realmsPath = selected
+        }
+    }
 
-    data class BreakthroughEvent(val level: Int, val realmName: String, val realmChanged: Boolean)
+    /** Pending level-up result. It stays queued while the player is open, then the root UI consumes it. */
+    internal var breakthrough by mutableStateOf<CultivationLevelUpEvent?>(null)
+        private set
+
+    internal fun consumeBreakthrough(event: CultivationLevelUpEvent) {
+        if (breakthrough == event) breakthrough = null
+    }
 
     /** Cultivation achievements (Pencapaian); server evaluates + persists unlocks on fetch. */
     var achievements by mutableStateOf<List<Achievement>>(emptyList())
@@ -283,6 +322,30 @@ object TnData {
         }
     }
 
+    /** Non-null while a path pick/switch failed (e.g. the §6 cooldown rejected it); cleared on success. */
+    var pathSwitchError by mutableStateOf<String?>(null)
+        private set
+
+    /** Pick or switch the cultivation path ("dou-qi" / "martial"). Works for anonymous installs too;
+     *  updates the cached realm on success, else surfaces [pathSwitchError]. */
+    fun selectCultivationPath(path: String) {
+        if (panelBase.isBlank()) return
+        liveScope.launch {
+            val b = cultivationBearer()
+            if (telemetryToken.isBlank() && b == null) return@launch
+            val updated = UserApi(panelBase).selectPath(installId, path, telemetryToken, b)
+            if (updated != null) {
+                userXp = updated
+                refreshCultivationRealms(updated.cultivationPath, force = true)
+                refreshUserXp()
+                pathSwitchError = null
+            } else {
+                pathSwitchError = "Ganti jalur belum tersedia atau gagal."
+                refreshUserXp()
+            }
+        }
+    }
+
     /** On sign-in: absorb this device's anonymous progress into the account once, then refresh. */
     suspend fun onSignedIn() {
         if (panelBase.isBlank()) return
@@ -301,6 +364,8 @@ object TnData {
         LiveSource.configurePremiumProxy("", "")
         subscription = null
         userXp = null
+        realms = emptyList()
+        realmsPath = null
         achievements = emptyList()
         panelVersion++
     }
@@ -325,8 +390,8 @@ object TnData {
             primeHomeSections()
         }
         refreshTrending()
-        if (realms.isEmpty()) UserApi(panelBase).fetchRealms()?.takeIf { it.isNotEmpty() }?.let { realms = it }
         refreshUserXp()
+        refreshCultivationRealms()
         refreshSubscription() // no-op when signed-out; fills the Langganan hero + premium gating at cold start
     }
 
@@ -342,8 +407,15 @@ object TnData {
         }
         if (resp.supportMe != null) supportMe = resp.supportMe
         resp.announcement?.let { announcement = it }
+        resp.appConfig?.let { appUpdateConfig = it }
         resp.telemetry?.ingestToken?.takeIf { it.isNotBlank() }?.let { telemetryToken = it }
         resp.trial?.durationSeconds?.let { trialDurationSeconds = it.coerceIn(0L, 31_536_000L) }
+        resp.trial?.shortDramaFreePercent?.takeIf { it > 0.0 }?.let { shortDramaFreePercent = it.coerceIn(0.01, 1.0) }
+        resp.payment?.let {
+            adminFeeFixedIdr = it.adminFeeFixedIdr.coerceAtLeast(0L)
+            adminFeeBps = it.adminFeeBps.coerceIn(0L, 10_000L)
+            adminFeeFloorBps = it.adminFeeFloorBps.coerceIn(0L, 10_000L)
+        }
         resp.releaseNotes?.let { releaseNotes = it }
         resp.helpCenter?.let { helpCenter = it }
     }
@@ -1149,9 +1221,15 @@ object TnData {
         val xp = UserApi(panelBase).fetchXp(installId, telemetryToken, b) ?: return
         val prev = userXp
         userXp = xp
+        val selectedPath = if (xp.cultivationPath == "martial") "martial" else "dou-qi"
+        if (realmsPath != selectedPath || realms.isEmpty()) {
+            refreshCultivationRealms(xp.cultivationPath, force = true)
+        }
         if (prev != null && xp.level > prev.level) {
-            breakthrough = BreakthroughEvent(
-                level = xp.level,
+            breakthrough = mergeCultivationLevelUpEvent(
+                pending = breakthrough,
+                previousLevel = prev.level,
+                newLevel = xp.level,
                 realmName = xp.realm?.displayName ?: "Level ${xp.level}",
                 realmChanged = xp.realm?.realmId != prev.realm?.realmId,
             )
@@ -1340,6 +1418,10 @@ object TnData {
         return slugId(fuzzy ?: host.ifBlank { "web" }, 120)
     }
 
+    /** Saved library rows stay independent from extension install state, but still obey the 18+ gate. */
+    fun isMatureLibraryItem(item: PosterItem): Boolean =
+        LibraryContentPolicy.isMature(item, item.url?.let(::sourceForUrl))
+
     /** Stable, sanitized per-episode id for a watch URL (host + last path segment). */
     fun episodeIdForUrl(url: String): String {
         val host = hostOf(url) ?: "web"
@@ -1385,7 +1467,7 @@ object TnData {
     private val hasLiveSources: Boolean get() = activeSources().isNotEmpty()
 
     /** 18+ visibility — the same key AppState.mature persists to. Off by default. */
-    private fun matureVisible(): Boolean = SettingsStore.getBool("mature", false)
+    private fun matureVisible(): Boolean = MatureContentAccess.isEnabled()
 
     private fun isMatureSource(src: SourceOverride): Boolean = sourceAllowsAdult(src, null)
 
@@ -1415,17 +1497,31 @@ object TnData {
      * active subscription/trial. Entitled users (and the case where there are no premium sources) see
      * everything as before.
      */
-    private fun premiumLocked(src: SourceOverride): Boolean = src.premium && !isEntitledToPremium()
+    private fun premiumLocked(src: SourceOverride): Boolean =
+        src.premium && !isEntitledToPremium() && !isShortCategory(src.category)
 
-    /** True when [url] belongs to a premium source AND the user is NOT entitled. The play-time gate that
-     *  blocks premium content (→ subscribe prompt) no matter how the URL was reached (search, deep link,
-     *  a stale cache row) — the UI-hiding in [browsableSources] can leak, this is the hard stop. */
-    fun isPremiumBlocked(url: String?): Boolean {
-        if (url.isNullOrBlank()) return false
-        if (isEntitledToPremium()) return false
-        // Blocked if the panel source is premium OR it's a short-drama URL — by policy every short-drama
-        // source is premium, so gate on the category too in case a row's `premium` flag is mis-set.
-        return sourceForUrl(url)?.premium == true || isShortSource(url)
+    /** Short-drama by category token — the browse-visibility exempt: short-drama titles show for everyone
+     *  (the 10–15% teaser lets non-subscribers sample), unlike other premium sources which stay hidden. */
+    private fun isShortCategory(category: String?): Boolean {
+        val c = category.orEmpty().lowercase(Locale.ROOT)
+        return "short" in c || "reel" in c || "micro" in c || "dramabos" in c
+    }
+
+    /** Whole-title gate for opening Detail — non-short premium content stays fully blocked. Short-drama is
+     *  exempt: everyone may open the title; its per-episode teaser is enforced by [isPlayBlocked] at play
+     *  time (the server 402 on locked episodes is the real gate). */
+    fun isTitleBlocked(url: String?): Boolean {
+        if (url.isNullOrBlank() || isEntitledToPremium()) return false
+        if (isShortSource(url)) return false
+        return sourceForUrl(url)?.premium == true
+    }
+
+    /** Play-time gate. Short-drama: only episodes past the free teaser window are locked (num > free
+     *  count of [totalEpisodes]). Other premium sources: fully locked. Entitled users are never blocked. */
+    fun isPlayBlocked(url: String?, episodeNum: Int?, totalEpisodes: Int): Boolean {
+        if (url.isNullOrBlank() || isEntitledToPremium()) return false
+        if (isShortSource(url)) return (episodeNum ?: 1) > freeEpisodeCount(totalEpisodes)
+        return sourceForUrl(url)?.premium == true
     }
 
     /** Installed, mature-gated sources the user is allowed to browse right now (premium hidden when not
@@ -1565,6 +1661,7 @@ object TnData {
     private val liveSectionSources = mutableStateMapOf<String, String>()
     private val liveNextUrls = mutableStateMapOf<String, String>()
     private val liveLoadingMore = mutableStateMapOf<String, Boolean>()
+    private val liveSectionFetchedAt = Collections.synchronizedMap(HashMap<String, Long>())
     private val liveRequested = Collections.synchronizedSet(HashSet<String>())
     private val prefetchedPages = Collections.synchronizedMap(HashMap<String, LivePage>())
     private val prefetchingPages = Collections.synchronizedSet(HashSet<String>())
@@ -1587,20 +1684,29 @@ object TnData {
         }
     }
 
-    /**
-     * Kick off (once) a fill of [url]'s Home rail. Proxy-enabled sources are fetched per configured
-     * section URL so one slow/empty rail (e.g. Film) cannot make the whole source look "done".
-     */
+    /** Refresh stale Home rails while retaining the previous posters until the new response lands. */
     fun ensureLiveSection(url: String, sourceId: String) {
         if (url.isBlank()) return
+        val fetchedAt = liveSectionFetchedAt[url] ?: 0L
+        val fresh = liveSections.containsKey(url) &&
+            android.os.SystemClock.elapsedRealtime() - fetchedAt < HOME_SECTION_TTL_MS
+        if (fresh) return
         if (!liveRequested.add(url)) return
         val src = sourceById(sourceId)
         val customOploverzCatalog = "oploverz" in "$sourceId $url".lowercase(Locale.ROOT)
-        if (src != null && src.proxyEnabled && !src.proxyPaths?.catalog.isNullOrBlank() && !customOploverzCatalog) {
-            liveScope.launch { sectionFetchGate.withPermit { fillSectionCached(url, src) } }
-            return
+        liveScope.launch {
+            try {
+                sectionFetchGate.withPermit {
+                    if (src != null && src.proxyEnabled && !src.proxyPaths?.catalog.isNullOrBlank() && !customOploverzCatalog) {
+                        fillSectionCached(url, src)
+                    } else {
+                        fillSectionLive(url, sourceId)
+                    }
+                }
+            } finally {
+                liveRequested.remove(url)
+            }
         }
-        liveScope.launch { sectionFetchGate.withPermit { fillSectionLive(url, sourceId) } }
     }
 
     private suspend fun fillSectionCached(url: String, src: SourceOverride) {
@@ -1611,9 +1717,11 @@ object TnData {
             val keys = linkedSetOf(url, section?.url.orEmpty()).filter { it.isNotBlank() }
             val next = section?.nextUrl?.takeIf { it.isNotBlank() }
                 ?: nextKnownCatalogPageUrl(url, src.sourceId, hasItems = true)
+            val fetchedAt = android.os.SystemClock.elapsedRealtime()
             keys.forEach { key ->
                 liveSections[key] = posters
                 liveSectionSources[key] = src.sourceId
+                liveSectionFetchedAt[key] = fetchedAt
                 next?.let { liveNextUrls[key] = it } ?: liveNextUrls.remove(key)
             }
             android.util.Log.i(
@@ -1623,7 +1731,6 @@ object TnData {
             prefetchNextPage(src, src.sourceId, next)
         } else {
             fillSectionFallback(url, src.sourceId, src)
-            liveRequested.remove(url)
             liveNextUrls.remove(url)
         }
     }
@@ -1693,6 +1800,7 @@ object TnData {
             val posters = items.take(20).map { enrichPosterCover(liveToPoster(it, sourceId), src) }
             liveSections[url] = posters
             liveSectionSources[url] = sourceId
+            liveSectionFetchedAt[url] = android.os.SystemClock.elapsedRealtime()
         } else {
             fillSectionFallback(url, sourceId, src)
         }
@@ -1704,7 +1812,6 @@ object TnData {
             "seed live source=$sourceId items=${items.size} next=${next ?: "none"} url=$url",
         )
         prefetchNextPage(src, sourceId, next)
-        if (items.isEmpty()) liveRequested.remove(url)
     }
 
     private suspend fun fillSectionFallback(url: String, sourceId: String, src: SourceOverride?) {
@@ -1715,10 +1822,12 @@ object TnData {
             android.util.Log.w("TnHome", "$sourceId: live section empty for $url; suppressing bundled compat fallback")
             liveSections[url] = emptyList()
             liveSectionSources[url] = sourceId
+            liveSectionFetchedAt[url] = android.os.SystemClock.elapsedRealtime()
             return
         }
         liveSections[url] = fallback
         liveSectionSources[url] = sourceId
+        liveSectionFetchedAt[url] = android.os.SystemClock.elapsedRealtime()
     }
 
     private fun shouldSuppressCompatFallback(url: String, sourceId: String, fallback: List<PosterItem>): Boolean {
@@ -1850,14 +1959,7 @@ object TnData {
     }.getOrNull()
 
     private fun sourceAllowsAdult(src: SourceOverride?, badge: String?): Boolean {
-        val haystack = listOf(
-            src?.sourceId,
-            src?.displayName,
-            src?.category,
-            badge,
-        ).joinToString(" ").lowercase(Locale.ROOT)
-        return "nekopoi" in haystack || "javhey" in haystack || "indomax21" in haystack ||
-            "hentai" in haystack || "adult" in haystack || "mature" in haystack
+        return LibraryContentPolicy.sourceAllowsMature(src, badge)
     }
 
     private fun liveCategoryBadge(category: String?): String {

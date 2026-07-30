@@ -35,6 +35,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.border
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
@@ -49,6 +50,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
@@ -57,9 +59,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key as eventKey
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -77,6 +86,9 @@ import com.tetonova.app.feature.forum.ForumScreen
 import com.tetonova.app.feature.home.HomeScreen
 import com.tetonova.app.feature.landing.LandingScreen
 import com.tetonova.app.feature.library.FullLibraryScreen
+import com.tetonova.app.feature.manga.MangaDetailScreen
+import com.tetonova.app.feature.manga.MangaTab
+import com.tetonova.app.feature.manga.ReaderScreen
 import com.tetonova.app.feature.player.PlayerScreen
 import com.tetonova.app.feature.profile.ProfileScreen
 import com.tetonova.app.feature.search.SearchScreen
@@ -85,9 +97,13 @@ import com.tetonova.app.feature.settings.ReleaseNotesScreen
 import com.tetonova.app.feature.settings.ReportScreen
 import com.tetonova.app.feature.settings.SettingsScreen
 import com.tetonova.app.feature.settings.SubscriptionScreen
+import com.tetonova.app.BuildConfig
 import com.tetonova.app.data.Announcement
+import com.tetonova.app.data.CultivationLevelUpEvent
+import com.tetonova.app.data.MatureContentAccess
 import com.tetonova.app.data.SettingsStore
 import com.tetonova.app.data.TnData
+import com.tetonova.app.data.isMandatoryUpdateRequired
 import com.tetonova.core.designsystem.TnIcon
 import com.tetonova.core.designsystem.theme.TetoNovaTheme
 import com.tetonova.core.designsystem.theme.TnTheme
@@ -113,8 +129,16 @@ fun TetoNovaRoot(
     val isTv = remember { isTelevision(context) }
     val useRail = isTv || windowSizeClass.widthSizeClass != WindowWidthSizeClass.Compact
     val announcement = TnData.announcement
+    val appUpdateConfig = TnData.appUpdateConfig
+    val mandatoryUpdate = isMandatoryUpdateRequired(
+        currentVersionCode = BuildConfig.VERSION_CODE,
+        minimumVersionCode = appUpdateConfig.minimumVersionCode,
+    )
     var dismissedAnnouncementId by remember {
         mutableStateOf(SettingsStore.getStr(DISMISSED_ANNOUNCEMENT_KEY, ""))
+    }
+    var announcementSnoozedUntil by remember {
+        mutableLongStateOf(SettingsStore.getLong(ANNOUNCEMENT_SNOOZED_UNTIL_KEY, 0L))
     }
 
     // One-shot merge of control-panel source overrides. No-ops when no panel URL is configured
@@ -150,6 +174,14 @@ fun TetoNovaRoot(
     }
     TetoNovaTheme(darkTheme = effectiveDarkTheme, accent = state.accentColor) {
         val c = TnTheme.colors
+        var levelUpNotice by remember { mutableStateOf<CultivationLevelUpEvent?>(null) }
+        val pendingLevelUp = TnData.breakthrough
+        LaunchedEffect(pendingLevelUp, state.screen, levelUpNotice) {
+            if (pendingLevelUp != null && state.screen !is Screen.Player && levelUpNotice == null) {
+                levelUpNotice = pendingLevelUp
+                TnData.consumeBreakthrough(pendingLevelUp)
+            }
+        }
         SystemBarsEffect(darkTheme = effectiveDarkTheme)
         // Retain the tab shell's UI state (Home scroll position, etc.) while Detail is on top, so
         // returning lands back on the exact rail/extension the user left — not scrolled to the top.
@@ -158,13 +190,28 @@ fun TetoNovaRoot(
             .fillMaxSize()
             .background(c.bg)
             .let { if (state.screen is Screen.Player) it else it.windowInsetsPadding(WindowInsets.statusBars) }
-        // TV: swap the default (touch) ripple for a rose focus ring so D-pad users can see where they are —
+        // TV: swap the default ripple for a white + rose focus ring so it remains visible even when
+        // the focused component already uses the active accent color.
         // every plain `.clickable {}` in the app picks this up. Phone/tablet keep the ripple untouched.
         // Rose (the app accent) reads on both the dark hero and the light episode list; white vanished there.
         val tvIndication = remember(c.rose) { TvFocusIndication(c.rose) }
         val focusIndication = if (isTv) tvIndication else LocalIndication.current
         CompositionLocalProvider(LocalIndication provides focusIndication) {
         Box(rootModifier) {
+            if (mandatoryUpdate) {
+                MandatoryUpdateScreen(
+                    config = appUpdateConfig,
+                    currentVersionName = BuildConfig.VERSION_NAME,
+                    currentVersionCode = BuildConfig.VERSION_CODE,
+                    isTv = isTv,
+                    onUpdate = {
+                        openRequiredUpdateUrl(
+                            context,
+                            appUpdateConfig.updatePageUrl.ifBlank { appUpdateConfig.updateUrl },
+                        )
+                    },
+                )
+            } else {
             if (!state.signedIn) {
                 LandingScreen(wide = useRail)
             } else when (val scr = state.screen) {
@@ -193,6 +240,16 @@ fun TetoNovaRoot(
                         )
                     }
                 }
+                is Screen.Manga -> {
+                    BackHandler { state.back() }
+                    MangaDetailScreen(arg = scr.arg, onBack = { state.back() }, onOpenReader = state::openReader)
+                }
+                is Screen.Reader -> {
+                    BackHandler { state.closeReader() }
+                    key(scr.arg.chapterId) {
+                        ReaderScreen(arg = scr.arg, onBack = { state.closeReader() }, onOpenReader = state::openReader)
+                    }
+                }
                 is Screen.Report -> {
                     BackHandler { state.openSettings() }
                     ReportScreen(onBack = { state.openSettings() })
@@ -211,7 +268,11 @@ fun TetoNovaRoot(
                 }
                 is Screen.Library -> {
                     BackHandler { state.back() }
-                    FullLibraryScreen(onBack = { state.back() }, onOpenDetail = state::openDetail)
+                    FullLibraryScreen(
+                        showMature = state.mature && MatureContentAccess.isEnabled(),
+                        onBack = { state.back() },
+                        onOpenDetail = state::openDetail,
+                    )
                 }
                 else -> shellState.SaveableStateProvider("tab-shell") {
                     MainShell(state = state, useRail = useRail, tv = isTv)
@@ -219,16 +280,34 @@ fun TetoNovaRoot(
             }
 
             val announcementId = announcement?.dismissalId().orEmpty()
+            LaunchedEffect(announcementId, dismissedAnnouncementId, announcementSnoozedUntil) {
+                if (announcementId == dismissedAnnouncementId) {
+                    val remaining = announcementSnoozedUntil - System.currentTimeMillis()
+                    if (remaining > 0L) delay(remaining)
+                    if (announcementSnoozedUntil > 0L) {
+                        announcementSnoozedUntil = 0L
+                        SettingsStore.setLong(ANNOUNCEMENT_SNOOZED_UNTIL_KEY, 0L)
+                    }
+                }
+            }
+            val announcementSnoozed = isAnnouncementSnoozed(
+                announcementId = announcementId,
+                dismissedAnnouncementId = dismissedAnnouncementId,
+                snoozedUntilMs = announcementSnoozedUntil,
+                nowMs = System.currentTimeMillis(),
+            )
             if (
                 state.signedIn &&
                 announcement?.enabled == true &&
                 (announcement.title.isNotBlank() || announcement.message.isNotBlank()) &&
-                announcementId != dismissedAnnouncementId &&
+                !announcementSnoozed &&
+                levelUpNotice == null &&
                 state.screen !is Screen.Player &&
                 state.screen !is Screen.Qris
             ) {
                 EntryAnnouncementBanner(
                     announcement = announcement,
+                    isTv = isTv,
                     modifier = Modifier
                         .align(Alignment.TopCenter)
                         .padding(
@@ -240,13 +319,20 @@ fun TetoNovaRoot(
                         .fillMaxWidth(),
                     onOpen = { openAnnouncementUrl(context, it, state) },
                     onDismiss = {
+                        val snoozedUntil = System.currentTimeMillis() + ANNOUNCEMENT_SNOOZE_MS
                         dismissedAnnouncementId = announcementId
+                        announcementSnoozedUntil = snoozedUntil
                         SettingsStore.setStr(DISMISSED_ANNOUNCEMENT_KEY, announcementId)
+                        SettingsStore.setLong(ANNOUNCEMENT_SNOOZED_UNTIL_KEY, snoozedUntil)
                     },
                 )
             }
+            levelUpNotice?.let { event ->
+                CultivationLevelUpNotice(event = event, onDismiss = { levelUpNotice = null })
+            }
+            }
         }
-        if (state.premiumPromptVisible) {
+        if (state.premiumPromptVisible && !mandatoryUpdate) {
             PremiumPrompt(
                 onSubscribe = { state.dismissPremiumPrompt(); state.openSubscription() },
                 onDismiss = { state.dismissPremiumPrompt() },
@@ -256,11 +342,32 @@ fun TetoNovaRoot(
     }
 }
 
+private const val DEFAULT_UPDATE_URL = "https://tetonova.biz.id/#download"
+
+private fun openRequiredUpdateUrl(context: Context, rawUrl: String) {
+    val uri = runCatching { Uri.parse(rawUrl.ifBlank { DEFAULT_UPDATE_URL }) }.getOrNull() ?: return
+    if (uri.scheme?.lowercase() !in setOf("http", "https")) return
+    runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, uri)) }
+}
+
 private const val DISMISSED_ANNOUNCEMENT_KEY = "dismissed_announcement_id"
+private const val ANNOUNCEMENT_SNOOZED_UNTIL_KEY = "announcement_snoozed_until"
+internal const val ANNOUNCEMENT_SNOOZE_MS = 6L * 60L * 60L * 1000L
+
+internal fun isAnnouncementSnoozed(
+    announcementId: String,
+    dismissedAnnouncementId: String,
+    snoozedUntilMs: Long,
+    nowMs: Long,
+): Boolean =
+    announcementId.isNotBlank() &&
+        announcementId == dismissedAnnouncementId &&
+        nowMs < snoozedUntilMs
 
 @Composable
 private fun EntryAnnouncementBanner(
     announcement: Announcement,
+    isTv: Boolean,
     modifier: Modifier = Modifier,
     onOpen: (String) -> Unit,
     onDismiss: () -> Unit,
@@ -281,14 +388,24 @@ private fun EntryAnnouncementBanner(
         else -> Color(0xFFEAF3FF)
     }
     val shape = RoundedCornerShape(18.dp)
-    val clickableModifier = if (announcement.ctaUrl.isNotBlank()) {
+    val clickableModifier = if (announcement.ctaUrl.isNotBlank() && !isTv) {
         Modifier.clickable { onOpen(announcement.ctaUrl) }
     } else {
         Modifier
     }
+    val closeFocusRequester = remember { FocusRequester() }
+    var closeFocused by remember { mutableStateOf(false) }
+
+    LaunchedEffect(isTv, announcement.dismissalId(), announcement.dismissible) {
+        if (isTv && announcement.dismissible) {
+            delay(100)
+            runCatching { closeFocusRequester.requestFocus() }
+        }
+    }
 
     Row(
         modifier
+            .focusGroup()
             .clip(shape)
             .background(background)
             .border(1.dp, accent.copy(alpha = 0.45f), shape)
@@ -320,11 +437,20 @@ private fun EntryAnnouncementBanner(
                 Text(announcement.message, color = c.ink2, fontSize = 13.sp, lineHeight = 18.sp)
             }
             if (announcement.ctaUrl.isNotBlank()) {
+                val ctaModifier = if (isTv) {
+                    Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable { onOpen(announcement.ctaUrl) }
+                        .padding(horizontal = 6.dp, vertical = 4.dp)
+                } else {
+                    Modifier
+                }
                 Text(
                     (announcement.ctaLabel.ifBlank { "Buka" }) + "  ›",
                     color = accent,
                     fontWeight = FontWeight.Bold,
                     fontSize = 12.sp,
+                    modifier = ctaModifier,
                 )
             }
         }
@@ -334,7 +460,23 @@ private fun EntryAnnouncementBanner(
                 Modifier
                     .size(36.dp)
                     .clip(RoundedCornerShape(12.dp))
-                    .clickable(onClick = onDismiss),
+                    .border(if (closeFocused) 4.dp else 0.dp, Color.White, RoundedCornerShape(12.dp))
+                    .border(if (closeFocused) 2.dp else 0.dp, accent, RoundedCornerShape(12.dp))
+                    .focusRequester(closeFocusRequester)
+                    .onFocusChanged { closeFocused = it.isFocused }
+                    .clickable(onClick = onDismiss)
+                    .onPreviewKeyEvent { event ->
+                        if (
+                            isTv &&
+                            event.type == KeyEventType.KeyDown &&
+                            event.eventKey in setOf(Key.DirectionCenter, Key.Enter, Key.NumPadEnter)
+                        ) {
+                            onDismiss()
+                            true
+                        } else {
+                            false
+                        }
+                    },
                 contentAlignment = Alignment.Center,
             ) {
                 Text("×", color = c.ink2, fontSize = 24.sp, fontWeight = FontWeight.Medium)
@@ -532,6 +674,7 @@ private fun TabContent(state: AppState, dest: NavDest) {
             onToggleDataSaver = { state.dataSaver = !state.dataSaver },
         )
         NavDest.SEARCH -> SearchScreen(onOpenDetail = state::openDetail)
+        NavDest.MANGA -> MangaTab(onOpenManga = state::openManga)
         NavDest.FORUM -> ForumScreen()
         NavDest.EXTENSIONS -> ExtensionsScreen()
         NavDest.PROFILE -> ProfileScreen(state = state)
@@ -581,7 +724,7 @@ private fun NavRail(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(3.dp),
         ) {
-            NavDest.entries.forEach { d ->
+            navTabs.forEach { d ->
                 NavRailItem(
                     icon = d.icon,
                     label = d.label,
@@ -666,6 +809,10 @@ private fun NavRailItem(
     }
 }
 
+// Tabs shown in the nav bar/rail. Manga is built but not shipped in this release — the screens still
+// compile (TabContent/Screen.Manga stay), it's just unreachable. Drop the filter to bring it back.
+private val navTabs = NavDest.entries.filter { it != NavDest.MANGA }
+
 @Composable
 private fun BottomBar(current: NavDest?, animated: Boolean, onSelect: (NavDest) -> Unit) {
     val c = TnTheme.colors
@@ -690,11 +837,11 @@ private fun BottomBar(current: NavDest?, animated: Boolean, onSelect: (NavDest) 
             contentAlignment = Alignment.Center,
         ) {
             val gap = 2.dp
-            val count = NavDest.entries.size
+            val count = navTabs.size
             val availableItemWidth = (maxWidth - gap * (count - 1)) / count
             val itemWidth = if (availableItemWidth < 66.dp) availableItemWidth else 66.dp
             val trackWidth = itemWidth * count + gap * (count - 1)
-            val selectedIndex = NavDest.entries.indexOf(current).coerceAtLeast(0)
+            val selectedIndex = navTabs.indexOf(current).coerceAtLeast(0)
             val targetOffset = (itemWidth + gap) * selectedIndex
             val movingOffset by animateDpAsState(
                 targetValue = targetOffset,
@@ -719,7 +866,7 @@ private fun BottomBar(current: NavDest?, animated: Boolean, onSelect: (NavDest) 
                     horizontalArrangement = Arrangement.spacedBy(gap),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    NavDest.entries.forEach { d ->
+                    navTabs.forEach { d ->
                         BarItem(
                             icon = d.icon,
                             label = d.label,
@@ -809,7 +956,7 @@ fun BrandDot(size: Dp, modifier: Modifier = Modifier) {
     }
 }
 
-/** Shown when a non-entitled user taps premium content (see AppState.isPremiumBlocked gate). */
+/** Shown when a non-entitled user taps premium content (see TnData.isTitleBlocked / isPlayBlocked gates). */
 @Composable
 private fun PremiumPrompt(onSubscribe: () -> Unit, onDismiss: () -> Unit) {
     AlertDialog(

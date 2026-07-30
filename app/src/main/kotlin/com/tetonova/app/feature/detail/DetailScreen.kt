@@ -335,6 +335,10 @@ fun DetailScreen(arg: DetailArg, resumeEpisode: Int?, onBack: () -> Unit, onOpen
     val single = remember(d) { d.isSingleVideo() }
     // Episode list handed to the player so it can auto-advance (carries badge/malId for OP/ED skip).
     val playlist = remember(eps) { eps.map { EpRef(it.num, episodeLabel(it), it.url) } }
+    // Short-drama teaser: the first ~10–15% of episodes are free; the rest are locked for non-subscribers.
+    // freeUntil = highest free episode number (Int.MAX_VALUE = nothing locked). Reactive on entitlement.
+    val shortDrama = TnData.isShortSource(d.url) || eps.firstOrNull()?.url?.let { TnData.isShortSource(it) } == true
+    val freeUntil = if (shortDrama && !TnData.isEntitledToPremium()) TnData.freeEpisodeCount(eps.size) else Int.MAX_VALUE
     // Resume on the episode last played (returning from the player) when it exists in this list;
     // otherwise the progress-derived position, else the first episode.
     var current by remember(d) {
@@ -403,7 +407,7 @@ fun DetailScreen(arg: DetailArg, resumeEpisode: Int?, onBack: () -> Unit, onOpen
                         DetailTab("Detail", tab == "info") { tab = "info" }
                     }
                     Spacer(Modifier.height(18.dp))
-                    if (!single && tab == "ep") EpisodeTab(eps, current, sortAsc, wide, liveLoading, { sortAsc = !sortAsc }, { current = it },
+                    if (!single && tab == "ep") EpisodeTab(eps, current, sortAsc, wide, liveLoading, freeUntil, { sortAsc = !sortAsc }, { current = it },
                         { ep -> current = ep.num; watch(PlayerArg(d.title, ep.url, episodeLabel(ep), ep.num,
                             badge = d.badge, malId = d.malId, playlist = playlist,
                             vertical = TnData.isShortSource(ep.url))) }, onOpenDetail, d.title, d.url, d.cover, d.badge)
@@ -573,7 +577,7 @@ private fun DetailTab(label: String, on: Boolean, onClick: () -> Unit) {
 
 @Composable
 private fun EpisodeTab(
-    eps: List<Episode>, current: Int, sortAsc: Boolean, wide: Boolean, liveLoading: Boolean,
+    eps: List<Episode>, current: Int, sortAsc: Boolean, wide: Boolean, liveLoading: Boolean, freeUntil: Int,
     onSort: () -> Unit, onSelect: (Int) -> Unit, onPlayEpisode: (Episode) -> Unit,
     onOpenDetail: (DetailArg) -> Unit, currentTitle: String, detailUrl: String?, cover: String?, badge: String,
 ) {
@@ -661,7 +665,7 @@ private fun EpisodeTab(
             Spacer(Modifier.height(14.dp))
             shown.chunked(columns).forEach { row ->
                 Row(Modifier.fillMaxWidth().padding(bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    row.forEach { ep -> EpCard(ep, ep.num == current, cover, currentTitle, badge, Modifier.weight(1f)) { onPlayEpisode(ep) } }
+                    row.forEach { ep -> EpCard(ep, ep.num == current, ep.num > freeUntil, cover, currentTitle, badge, Modifier.weight(1f)) { onPlayEpisode(ep) } }
                     if (row.size < columns) repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
                 }
             }
@@ -716,7 +720,7 @@ private fun EpisodeEmpty(loading: Boolean) {
 
 /** Compact horizontal episode card: landscape thumbnail left + text right (tablet design). */
 @Composable
-private fun EpCard(ep: Episode, isCurrent: Boolean, seriesCover: String?, seriesTitle: String, badge: String, modifier: Modifier, onClick: () -> Unit) {
+private fun EpCard(ep: Episode, isCurrent: Boolean, locked: Boolean, seriesCover: String?, seriesTitle: String, badge: String, modifier: Modifier, onClick: () -> Unit) {
     val c = TnTheme.colors
     // Watched percent from the resume store (live online/offline history) — falls back to the seed value.
     val watched = (ep.url?.let { WatchProgressStore.percent(it) } ?: 0).takeIf { it > 0 } ?: ep.progress
@@ -738,8 +742,13 @@ private fun EpCard(ep: Episode, isCurrent: Boolean, seriesCover: String?, series
             Box(Modifier.align(Alignment.BottomEnd).padding(6.dp).clip(RoundedCornerShape(6.dp)).background(Color.Black.copy(0.6f)).padding(horizontal = 6.dp, vertical = 2.dp)) {
                 Text(ep.dur, color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold)
             }
-            Box(Modifier.align(Alignment.Center).size(30.dp).clip(CircleShape).background(Color.Black.copy(0.45f)), contentAlignment = Alignment.Center) {
-                TnIcon("play", size = 14.dp, tint = Color.White, filled = true)
+            Box(Modifier.align(Alignment.Center).size(30.dp).clip(CircleShape).background(Color.Black.copy(if (locked) 0.6f else 0.45f)), contentAlignment = Alignment.Center) {
+                if (locked) TnIcon("lock", size = 14.dp, tint = Color.White)
+                else TnIcon("play", size = 14.dp, tint = Color.White, filled = true)
+            }
+            // Premium teaser badge so a locked episode reads as "subscribe to continue", not "broken".
+            if (locked) Box(Modifier.align(Alignment.TopEnd).padding(6.dp).clip(RoundedCornerShape(TnRadii.pill)).background(c.rose).padding(horizontal = 7.dp, vertical = 2.dp)) {
+                Text("Premium", color = Color.White, fontSize = 8.sp, fontWeight = FontWeight.ExtraBold)
             }
             if (watched > 0) {
                 Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().height(3.dp).background(Color.White.copy(0.25f))) {

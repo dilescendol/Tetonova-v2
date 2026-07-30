@@ -37,8 +37,8 @@ android {
         applicationId = "com.tetonova.app"
         minSdk = 28
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 4
+        versionName = "0.1.2"
 
         // App hanya berbahasa Indonesia + Inggris. Buang string locale lain yang
         // dibawa Compose/Material3 dari resources.arsc. Default strings.xml app

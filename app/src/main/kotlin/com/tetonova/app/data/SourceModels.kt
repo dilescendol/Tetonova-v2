@@ -18,14 +18,43 @@ data class SourcesResponse(
     val proxyBypass: ProxyBypass? = null,
     val telemetry: Telemetry? = null,
     val trial: TrialConfig? = null,
+    val payment: PaymentConfig? = null,
+    val appConfig: AppUpdateConfig? = null,
     val releaseNotes: ReleaseNotes? = null,
     val helpCenter: HelpCenter? = null,
+)
+
+/** Remote version policy. The server publishes the already-resolved minimum build after grace rules. */
+@Serializable
+data class AppUpdateConfig(
+    val latestVersionCode: Int = 0,
+    val latestVersionName: String = "",
+    val minimumVersionCode: Int = 0,
+    val minimumVersionName: String = "",
+    val updatePageUrl: String = "",
+    val apkDownloadUrl: String = "",
+    /** Legacy alias kept so APKs built before the URL split still open the update page. */
+    val updateUrl: String = "",
+    val updateMessage: String = "",
+)
+
+/** Payer-facing QRIS admin-fee formula published by the panel, so the pre-invoice estimate tracks the
+ *  active gateway without an app rebuild. `fee = fixed + ceil(subtotal * bps / 10000)`. */
+@Serializable
+data class PaymentConfig(
+    @SerialName("admin_fee_fixed_idr") val adminFeeFixedIdr: Long = 1000L,
+    @SerialName("admin_fee_bps") val adminFeeBps: Long = 70L,
+    /** Minimum fee as basis points of the subtotal, so `fee = max(fixed + bps%, floorBps%)`. Lets the
+     *  estimate match gateways with a percentage floor (Pakasir = max(Rp310 + 0,7%, 1%)). 0 = no floor. */
+    @SerialName("admin_fee_floor_bps") val adminFeeFloorBps: Long = 0L,
 )
 
 /** Premium trial config published by the panel and mirrored by the server claim endpoint. */
 @Serializable
 data class TrialConfig(
     @SerialName("duration_seconds") val durationSeconds: Long = 0L,
+    /** Fraction (0–1) of a short-drama's episodes free to non-subscribers. 0 = unset → app default. */
+    @SerialName("short_drama_free_percent") val shortDramaFreePercent: Double = 0.0,
 )
 
 /**

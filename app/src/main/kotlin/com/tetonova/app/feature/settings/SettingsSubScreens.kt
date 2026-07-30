@@ -7,6 +7,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -34,11 +36,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tetonova.app.data.AuthManager
+import com.tetonova.app.data.ContentReportReason
 import com.tetonova.app.data.ReportApi
 import com.tetonova.app.data.TnData
 import com.tetonova.app.ui.PageScroll
 import com.tetonova.app.ui.TnPrimaryButton
 import com.tetonova.core.designsystem.TnCard
+import com.tetonova.core.designsystem.TnChip
 import com.tetonova.core.designsystem.TnIcon
 import com.tetonova.core.designsystem.theme.TnRadii
 import com.tetonova.core.designsystem.theme.TnTheme
@@ -69,16 +73,19 @@ private fun SubScreenHeader(title: String, subtitle: String, icon: String, onBac
     Spacer(Modifier.height(16.dp))
 }
 
-/** In-app "Lapor konten bermasalah" — collects a free-text description + optional contact. */
+/** In-app report form with a required reason and optional supporting detail. */
 @Composable
+@OptIn(ExperimentalLayoutApi::class)
 fun ReportScreen(onBack: () -> Unit) {
     val c = TnTheme.colors
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
-    var message by remember { mutableStateOf("") }
+    var selectedReason by remember { mutableStateOf<ContentReportReason?>(null) }
+    var details by remember { mutableStateOf("") }
     var sending by remember { mutableStateOf(false) }
     val contact = TnData.profileContact
-    val canSend = message.isNotBlank() && !sending
+    val detailsRequired = selectedReason == ContentReportReason.OTHER
+    val canSend = selectedReason != null && (!detailsRequired || details.isNotBlank()) && !sending
 
     LaunchedEffect(AuthManager.signedIn) {
         if (AuthManager.signedIn) TnData.refreshUserProfile()
@@ -93,14 +100,47 @@ fun ReportScreen(onBack: () -> Unit) {
         )
         TnCard(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(14.dp)) {
-                Text("Jelaskan masalahnya", color = c.ink, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                Text("Apa masalahnya?", color = c.ink, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                Spacer(Modifier.height(8.dp))
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(7.dp),
+                    verticalArrangement = Arrangement.spacedBy(7.dp),
+                ) {
+                    ContentReportReason.entries.forEach { reason ->
+                        TnChip(
+                            text = reason.label,
+                            selected = selectedReason == reason,
+                            onClick = { selectedReason = reason },
+                        )
+                    }
+                }
+                Spacer(Modifier.height(18.dp))
+                Text(
+                    if (detailsRequired) "Detail masalah (wajib)" else "Detail tambahan (opsional)",
+                    color = c.ink,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp,
+                )
                 Spacer(Modifier.height(8.dp))
                 OutlinedTextField(
-                    value = message,
-                    onValueChange = { message = it },
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 140.dp),
+                    value = details,
+                    onValueChange = { if (it.length <= 2000) details = it },
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp),
                     colors = tnFieldColors(),
                 )
+                Spacer(Modifier.height(12.dp))
+                Row(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(TnRadii.sm)).background(c.roseTint).padding(10.dp),
+                    verticalAlignment = Alignment.Top,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    TnIcon("info", size = 16.dp, tint = c.rose)
+                    Text(
+                        "Laporan ditinjau satu arah oleh admin dan tidak menyediakan balasan langsung.",
+                        color = c.ink2,
+                        fontSize = 12.sp,
+                    )
+                }
                 Spacer(Modifier.height(18.dp))
                 TnPrimaryButton(
                     text = if (sending) "Mengirim…" else "Kirim laporan",
@@ -108,12 +148,13 @@ fun ReportScreen(onBack: () -> Unit) {
                     modifier = Modifier.fillMaxWidth().then(if (canSend) Modifier else Modifier.alpha(0.5f)),
                     onClick = {
                         if (canSend) {
+                            val reason = selectedReason ?: return@TnPrimaryButton
                             sending = true
                             scope.launch {
-                                val res = ReportApi.submit(message.trim(), contact)
+                                val res = ReportApi.submit(reason, details, contact)
                                 sending = false
                                 if (res.isSuccess) {
-                                    Toast.makeText(ctx, "Laporan terkirim — makasih!", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(ctx, "Laporan berhasil dikirim.", Toast.LENGTH_SHORT).show()
                                     onBack()
                                 } else {
                                     Toast.makeText(ctx, "Gagal kirim, coba lagi nanti.", Toast.LENGTH_SHORT).show()

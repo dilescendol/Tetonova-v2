@@ -37,20 +37,32 @@ object OploverzSource {
     /** Any oploverz domain (they rotate) shares the "oploverz" token — the dispatch signal in [LiveSource]. */
     fun isOploverz(url: String): Boolean = "oploverz" in url.lowercase()
 
-    /** "Rilis Terbaru": the latest-episodes feed (first 2 pages ≈ 20), one card per series. */
+    /** "Rilis Terbaru": the latest-EPISODES feed (first 2 pages ≈ 20), deduped to one card per series
+     *  (newest episode wins — the feed is newest-first). `/api/series` is a generic series listing
+     *  (alphabetical/popular), NOT the release order the site's "Rilis Terbaru" box shows. */
     suspend fun latest(): List<LiveItem> = coroutineScope {
-        val pages = listOf(1, 2).map { p -> async { getJson("$API/series?page=$p") } }.awaitAll()
+        val pages = listOf(1, 2).map { p -> async { getJson("$API/episodes?page=$p") } }.awaitAll()
         val seen = HashSet<String>()
         pages.filterNotNull()
             .flatMap { it.optJSONArray("data").objects() }
-            .mapNotNull { seriesToItem(it) }
+            .mapNotNull { episodeToItem(it) }
             .filter { seen.add(it.url) }
     }
 
+    /**
+     * Paginated "Rilis Terbaru". Page 1 is the latest-episodes feed (deduped per series — the site's
+     * box). The episodes feed collapses to a handful of ongoing series, so page 2+ would keep repeating
+     * them and load-more would stall ("mentok"); from page 2 on we walk the `/api/series` catalog
+     * instead (distinct series per page), which paginates cleanly to the last page.
+     */
     suspend fun latestPage(frontUrl: String): LivePage {
         val page = Regex("[?&]page=(\\d+)").find(frontUrl)?.groupValues?.get(1)?.toIntOrNull() ?: 1
-        val json = getJson("$API/series?page=$page") ?: return LivePage(emptyList())
-        val items = json.optJSONArray("data").objects().mapNotNull { seriesToItem(it) }.distinctBy { it.url }
+        val items = if (page <= 1) {
+            latest()
+        } else {
+            val json = getJson("$API/series?page=${page - 1}") ?: return LivePage(emptyList())
+            json.optJSONArray("data").objects().mapNotNull { seriesToItem(it) }.distinctBy { it.url }
+        }
         val next = if (items.isNotEmpty()) withPage(frontUrl, page + 1) else null
         return LivePage(items, next)
     }

@@ -3,6 +3,7 @@ package com.tetonova.core.designsystem
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -42,6 +43,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import com.tetonova.core.designsystem.theme.RoseGradientColors
 import com.tetonova.core.designsystem.theme.TnRadii
 import com.tetonova.core.designsystem.theme.TnTheme
@@ -190,20 +192,36 @@ fun Poster(
     item: PosterItem,
     modifier: Modifier = Modifier,
     showProgress: Boolean = false,
+    showFocusOutline: Boolean = true,
     onClick: () -> Unit = {},
 ) {
     val c = TnTheme.colors
     var focused by remember { mutableStateOf(false) }
+    val interactionSource = remember { MutableInteractionSource() }
+    val focusedScale = if (showFocusOutline) 1.04f else 1.06f
     Column(
         modifier
+            .zIndex(if (focused) 1f else 0f)
             .graphicsLayer {
-                scaleX = if (focused) 1.04f else 1f
-                scaleY = if (focused) 1.04f else 1f
+                scaleX = if (focused) focusedScale else 1f
+                scaleY = if (focused) focusedScale else 1f
             }
-            .border(3.dp, if (focused) c.rose else Color.Transparent, RoundedCornerShape(TnRadii.md))
+            .then(
+                if (showFocusOutline) {
+                    Modifier.border(3.dp, if (focused) c.rose else Color.Transparent, RoundedCornerShape(TnRadii.md))
+                } else {
+                    Modifier
+                },
+            )
             .padding(3.dp)
             .onFocusChanged { focused = it.isFocused }
-            .clickable { onClick() },
+            .then(
+                if (showFocusOutline) {
+                    Modifier.clickable { onClick() }
+                } else {
+                    Modifier.clickable(interactionSource = interactionSource, indication = null) { onClick() }
+                },
+            ),
     ) {
         Box(Modifier.fillMaxWidth().aspectRatio(2f / 3f).clip(RoundedCornerShape(TnRadii.md))) {
             Art(item.art, item.title.substringBefore(' '), Modifier.fillMaxSize(), coverTitle = item.title, coverUrl = item.cover)

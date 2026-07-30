@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tetonova.app.data.FollowedStore
 import com.tetonova.app.data.HistoryStore
+import com.tetonova.app.data.TnData
 import com.tetonova.app.data.download.DlItem
 import com.tetonova.app.data.download.DownloadCenter
 import com.tetonova.app.ui.DetailArg
@@ -47,11 +48,20 @@ import com.tetonova.core.model.PosterItem
  * and the Full Library screen so they never diverge. No static catalog slices: real history, follows,
  * and downloads. All three are snapshot-backed, so reading them from Compose updates the UI live.
  */
-fun libraryGroup(tab: String): List<PosterItem> = when (tab) {
-    "followed" -> FollowedStore.items
-    "downloads" -> DownloadCenter.items.map { it.toPosterItem() }
-    else -> HistoryStore.items // "history"
+fun libraryGroup(tab: String, showMature: Boolean): List<PosterItem> {
+    val savedItems = when (tab) {
+        "followed" -> FollowedStore.items
+        "downloads" -> DownloadCenter.items.map { it.toPosterItem() }
+        else -> HistoryStore.items // "history"
+    }
+    return filterLibraryItems(savedItems, showMature, TnData::isMatureLibraryItem)
 }
+
+internal fun filterLibraryItems(
+    items: List<PosterItem>,
+    showMature: Boolean,
+    isMature: (PosterItem) -> Boolean,
+): List<PosterItem> = if (showMature) items else items.filterNot(isMature)
 
 /** A finished/queued download rendered as a catalog poster (cover, progress, source URL for Detail). */
 internal fun DlItem.toPosterItem(): PosterItem = PosterItem(
@@ -73,7 +83,7 @@ private fun artOf(s: String): Int { var h = 0; for (c in s) h = h * 31 + c.code;
  * Opened from the Profile lane's "Buka Full Library" button.
  */
 @Composable
-fun FullLibraryScreen(onBack: () -> Unit, onOpenDetail: (DetailArg) -> Unit) {
+fun FullLibraryScreen(showMature: Boolean, onBack: () -> Unit, onOpenDetail: (DetailArg) -> Unit) {
     val c = TnTheme.colors
     PageScroll(topInset = true) {
         Row(
@@ -95,13 +105,13 @@ fun FullLibraryScreen(onBack: () -> Unit, onOpenDetail: (DetailArg) -> Unit) {
         }
 
         // Section: History
-        LibrarySection("History", "Riwayat tontonan", libraryGroup("history"), onOpenDetail = onOpenDetail)
+        LibrarySection("History", "Riwayat tontonan", libraryGroup("history", showMature), onOpenDetail = onOpenDetail)
 
         // Section: Followed
-        LibrarySection("Followed", "Judul diikuti", libraryGroup("followed"), onOpenDetail = onOpenDetail)
+        LibrarySection("Followed", "Judul diikuti", libraryGroup("followed", showMature), onOpenDetail = onOpenDetail)
 
         // Section: Downloads
-        LibrarySection("Downloads", "Tersimpan offline", libraryGroup("downloads"), onOpenDetail = onOpenDetail)
+        LibrarySection("Downloads", "Tersimpan offline", libraryGroup("downloads", showMature), onOpenDetail = onOpenDetail)
 
         Spacer(Modifier.height(24.dp))
     }

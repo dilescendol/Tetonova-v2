@@ -38,10 +38,31 @@ data class SubscriptionState(
     @SerialName("current_expiry") val currentExpiry: String? = null,
     @SerialName("trial_used_at") val trialUsedAt: String? = null,
     val now: String? = null,
+    val loyalty: LoyaltyState = LoyaltyState(),
 ) {
     /** Entitled = paid-active or trial-active. The single gate Home/Search/premium read. */
     val entitled: Boolean get() = status == "active" || status == "trial"
 }
+
+@Serializable
+data class LoyaltyState(
+    @SerialName("paid_seconds") val paidSeconds: Long = 0L,
+    @SerialName("paid_months") val paidMonths: Int = 0,
+    val tier: Int = 0,
+    @SerialName("tier_id") val tierId: String = "none",
+    @SerialName("display_name") val displayName: String = "",
+    val active: Boolean = false,
+    @SerialName("visual_state") val visualState: String = "none",
+    @SerialName("next_pill_grant_at") val nextPillGrantAt: String? = null,
+    val pills: LoyaltyPills = LoyaltyPills(),
+)
+
+@Serializable
+data class LoyaltyPills(
+    val inventory: Int = 0,
+    @SerialName("inventory_cap") val inventoryCap: Int = 5,
+    @SerialName("per_30_days") val per30Days: Int = 2,
+)
 
 /** One row in the account's payment history (`GET /api/v1/me/payments`). */
 @Serializable

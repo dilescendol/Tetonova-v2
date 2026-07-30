@@ -21,6 +21,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -30,13 +35,16 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.tetonova.app.BuildConfig
 import com.tetonova.app.data.AuthManager
 import com.tetonova.app.data.AutoBackup
 import com.tetonova.app.data.BackupCodec
@@ -44,6 +52,8 @@ import com.tetonova.app.data.BillingApi
 import com.tetonova.app.data.FcmRegistration
 import com.tetonova.app.data.FcmTokenHolder
 import com.tetonova.app.data.LibrarySync
+import com.tetonova.app.data.MatureAgeResult
+import com.tetonova.app.data.MatureContentAccess
 import com.tetonova.app.data.PaymentRow
 import com.tetonova.app.data.PaymentBreakdown
 import com.tetonova.app.data.PlanView
@@ -52,9 +62,12 @@ import com.tetonova.app.data.TrialPhase
 import com.tetonova.app.data.TrialStore
 import com.tetonova.app.data.planViews
 import com.tetonova.app.data.paymentBreakdown
+import com.tetonova.app.data.formatMatureBirthDateInput
 import com.tetonova.app.data.rememberGoogleSignIn
 import com.tetonova.app.data.rupiah
+import com.tetonova.app.data.validateMatureBirthDate
 import com.tetonova.app.ui.AppState
+import com.tetonova.app.ui.LoyaltyBadgeArtwork
 import com.tetonova.app.ui.QrisArg
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.window.Dialog
@@ -85,7 +98,7 @@ fun SettingsScreen(state: AppState) {
     val c = TnTheme.colors
     PageScroll(topInset = true) {
         // header
-        Text("TetoNova · v0.1.0", color = c.muted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+        Text("TetoNova - v${BuildConfig.VERSION_NAME}", color = c.muted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
         Text("Pengaturan", color = c.ink, fontWeight = FontWeight.ExtraBold, fontSize = 30.sp)
 
         SectionCard("Tampilan", "Tema, warna aksen, dan kepadatan UI", "palette") { AppearanceSection(state) }
@@ -217,11 +230,152 @@ private fun PlaybackSection(state: AppState) {
 
 @Composable
 private fun ContentSection(state: AppState) {
-    // Persist the flag, then bump ext state so the Extensions catalog + Home/Search re-filter mature
-    // sources instantly (matureVisible() reads the same persisted key).
-    SettingRow("eyeOff", "Konten Dewasa (18+)", "Tampilkan atau sembunyikan judul bertanda 18+.") { TnToggle(state.mature) { state.mature = it; com.tetonova.app.data.TnData.onMatureChanged() } }
+    val signIn = rememberGoogleSignIn()
+    val scope = rememberCoroutineScope()
+    val authUid = AuthManager.user?.uid
+    var showAgeGate by remember { mutableStateOf(false) }
+    var openGateAfterSignIn by remember { mutableStateOf(false) }
+
+    LaunchedEffect(authUid) {
+        val enabled = MatureContentAccess.isEnabled(authUid)
+        if (state.mature != enabled) {
+            state.mature = enabled
+            TnData.onMatureChanged()
+        }
+        if (authUid != null && openGateAfterSignIn) {
+            openGateAfterSignIn = false
+            showAgeGate = true
+        }
+    }
+
+    SettingRow(
+        "eyeOff",
+        "Konten Sensitif (18+)",
+        if (authUid == null) "Masuk dan verifikasi usia untuk menampilkan konten sensitif."
+        else "Persetujuan terikat ke akun, perangkat, dan versi kebijakan.",
+    ) {
+        TnToggle(state.mature && MatureContentAccess.isEnabled(authUid)) { enable ->
+            if (enable) {
+                if (authUid == null) {
+                    openGateAfterSignIn = true
+                    signIn()
+                } else {
+                    showAgeGate = true
+                }
+            } else {
+                state.mature = false
+                TnData.onMatureChanged()
+                scope.launch { MatureContentAccess.revoke() }
+            }
+        }
+    }
     Divider()
     SettingRow("flag", "Lapor konten bermasalah", "Cara cepat lapor judul / source yang error.") { TnGhostButton(text = "Lapor sekarang", onClick = { state.openReport() }) }
+
+    if (showAgeGate) {
+        MatureConsentDialog(
+            onDismiss = { showAgeGate = false },
+            onEnabled = {
+                state.mature = true
+                TnData.onMatureChanged()
+                showAgeGate = false
+            },
+        )
+    }
+}
+
+@Composable
+private fun MatureConsentDialog(onDismiss: () -> Unit, onEnabled: () -> Unit) {
+    val c = TnTheme.colors
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var birthDate by remember { mutableStateOf("") }
+    var consented by remember { mutableStateOf(false) }
+    var loading by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    Dialog(onDismissRequest = { if (!loading) onDismiss() }) {
+        Column(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(TnRadii.lg)).background(c.surface).padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(13.dp),
+        ) {
+            Text("Verifikasi Konten Sensitif (18+)", color = c.ink, fontWeight = FontWeight.ExtraBold, fontSize = 19.sp)
+            OutlinedTextField(
+                value = birthDate,
+                onValueChange = {
+                    birthDate = formatMatureBirthDateInput(it)
+                    error = null
+                },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("Tanggal lahir") },
+                placeholder = { Text("DD/MM/YYYY") },
+                singleLine = true,
+                isError = error != null,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = c.ink,
+                    unfocusedTextColor = c.ink,
+                    cursorColor = c.rose,
+                    focusedBorderColor = c.rose,
+                    unfocusedBorderColor = c.line,
+                    focusedContainerColor = c.surface,
+                    unfocusedContainerColor = c.surface,
+                ),
+            )
+            error?.let { Text(it, color = c.rose, fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+            Row(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(TnRadii.md)).background(c.surface2)
+                    .clickable(enabled = !loading) { consented = !consented }.padding(10.dp),
+                verticalAlignment = Alignment.Top,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Checkbox(
+                    checked = consented,
+                    onCheckedChange = { if (!loading) consented = it },
+                    colors = CheckboxDefaults.colors(checkedColor = c.rose, checkmarkColor = Color.White, uncheckedColor = c.line2),
+                )
+                Text(
+                    "Saya menyatakan berusia minimal 18 tahun dan memilih membuka konten sensitif pada akun serta perangkat ini.",
+                    color = c.ink2,
+                    fontSize = 12.sp,
+                    modifier = Modifier.padding(top = 10.dp),
+                )
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                TnGhostButton(
+                    text = "Batal",
+                    modifier = Modifier.weight(1f).height(48.dp),
+                    onClick = { if (!loading) onDismiss() },
+                )
+                com.tetonova.app.ui.TnPrimaryButton(
+                    text = if (loading) "Memverifikasi..." else "Setuju & buka",
+                    icon = "check",
+                    modifier = Modifier.weight(1f).height(48.dp).then(if (consented && !loading) Modifier else Modifier.alpha(0.5f)),
+                    onClick = {
+                        if (!consented || loading) return@TnPrimaryButton
+                        error = when (validateMatureBirthDate(birthDate)) {
+                            MatureAgeResult.INVALID -> "Tanggal lahir tidak valid."
+                            MatureAgeResult.UNDERAGE -> "Fitur ini hanya tersedia untuk pengguna berusia 18 tahun ke atas."
+                            MatureAgeResult.VALID -> null
+                        }
+                        if (error == null) {
+                            loading = true
+                            scope.launch {
+                                val result = MatureContentAccess.accept()
+                                loading = false
+                                if (result.isSuccess) {
+                                    Toast.makeText(ctx, "Konten sensitif diaktifkan.", Toast.LENGTH_SHORT).show()
+                                    onEnabled()
+                                } else {
+                                    error = "Persetujuan gagal dicatat. Periksa koneksi lalu coba lagi."
+                                }
+                            }
+                        }
+                    },
+                )
+            }
+        }
+    }
 }
 
 @Composable
@@ -327,7 +481,7 @@ private fun backupDate(): String = java.text.SimpleDateFormat("yyyyMMdd-HHmm", j
 
 @Composable
 private fun AboutSection(state: AppState) {
-    SettingRow("info", "Versi aplikasi", "TetoNova 0.1.0 · build 240608") { TnGhostButton(text = "Catatan rilis", onClick = { state.openReleaseNotes() }) }
+    SettingRow("info", "Versi aplikasi", "TetoNova ${BuildConfig.VERSION_NAME} - build ${BuildConfig.VERSION_CODE}") { TnGhostButton(text = "Catatan rilis", onClick = { state.openReleaseNotes() }) }
     Divider()
     SettingRow("help", "Pusat bantuan", "FAQ, panduan source, dan kontak.") { TnGhostButton(text = "Buka", icon = "chevR", onClick = { state.openHelp() }) }
 }
@@ -590,6 +744,45 @@ private fun SubscriptionPanel(state: AppState, forcePaidPlans: Boolean = false) 
             }
         }
         // perks — first chip is the live premium-source count (when known)
+        val loyalty = sub?.loyalty
+        if (loyalty != null && loyalty.tier > 0) {
+            val badgeTint = if (loyalty.active) c.rose else c.muted
+            Row(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(TnRadii.md))
+                    .background(if (loyalty.active) c.roseSoft else c.surface3)
+                    .padding(14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                LoyaltyBadgeArtwork(
+                    tierId = loyalty.tierId,
+                    tier = loyalty.tier,
+                    active = loyalty.active,
+                    modifier = Modifier.size(62.dp),
+                    contentDescription = loyalty.displayName,
+                )
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text(loyalty.displayName, color = c.ink, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp)
+                    Text(
+                        "Loyalty ${loyalty.paidMonths} bulan - ${if (loyalty.active) "aura aktif" else "badge redup"}",
+                        color = c.muted,
+                        fontSize = 11.sp,
+                    )
+                    val nextPill = parseIsoMs(loyalty.nextPillGrantAt)?.let { fmtDate(it) }
+                    Text(
+                        if (nextPill != null) "Pil berikutnya $nextPill" else "2 Pil per 30 hari aktif - maks. 5 tersimpan",
+                        color = c.muted,
+                        fontSize = 10.sp,
+                    )
+                }
+                Text(
+                    "${loyalty.pills.inventory}/${loyalty.pills.inventoryCap} Pil",
+                    color = badgeTint,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                )
+            }
+        }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             PerkChip("layers", if (premiumCount > 0) "$premiumCount+ source" else "Multi-source", Modifier.weight(1f))
             PERKS.forEach { (icon, label) -> PerkChip(icon, label, Modifier.weight(1f)) }
@@ -678,7 +871,7 @@ private fun PaymentBreakdownView(breakdown: PaymentBreakdown, originalPriceIdr: 
             PriceLine("Harga normal", rupiah(it), struck = true)
         }
         PriceLine(if (originalPriceIdr != null && originalPriceIdr > breakdown.subtotalIdr) "Harga promo" else "Harga paket", rupiah(breakdown.subtotalIdr))
-        PriceLine("Biaya admin QRIS (Rp1.000 + 0,7%)", rupiah(breakdown.adminFeeIdr))
+        PriceLine("Biaya admin QRIS (estimasi)", rupiah(breakdown.adminFeeIdr))
         PriceLine("Pajak tambahan", if (breakdown.taxIdr == 0L) "Tidak dikenakan" else rupiah(breakdown.taxIdr))
         Box(Modifier.fillMaxWidth().height(1.dp).background(c.line))
         PriceLine("Total bayar", rupiah(breakdown.totalIdr), strong = true)
