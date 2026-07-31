@@ -431,8 +431,16 @@ private fun ServerPlayer(
     LaunchedEffect(server, retryExtract) {
         // 1) static extractor (ok.ru/dailymotion/rumble/filemoon) → 2) WebView sniffer → 3) WebView embed.
         val res = runCatching { StreamExtractor.extract(server, referer) }.getOrDefault(ExtractResult(emptyList()))
-        android.util.Log.i("TnPlayer", "extract '${server.name}' (${server.embedUrl.take(64)}) → ${res.variants.size} variants ${res.variants.map { it.label }}${if (res.variants.isEmpty()) " → sniff" else ""}")
-        phase = if (res.variants.isNotEmpty()) Phase.Exo(res.variants, res.headers, res.subtitles) else Phase.Sniffing
+        val next = if (res.variants.isNotEmpty()) "" else if (res.gone) " → GONE, skip sniff" else " → sniff"
+        android.util.Log.i("TnPlayer", "extract '${server.name}' (${server.embedUrl.take(64)}) → ${res.variants.size} variants ${res.variants.map { it.label }}$next")
+        when {
+            res.variants.isNotEmpty() -> phase = Phase.Exo(res.variants, res.headers, res.subtitles)
+            // The host said the file is deleted/missing. A sniff can only sit there until it times out,
+            // so fail over immediately — with several dead mirrors that is the difference between a
+            // couple of seconds and a minute of spinner before the next server gets a turn.
+            res.gone -> if (!onServerFailed()) phase = Phase.Dead
+            else -> phase = Phase.Sniffing
+        }
     }
     // Hydrax's URL is browser-bound: the iframe plays it, while ExoPlayer can get a 403 for the same
     // token. Keep that source in its working WebView instead of treating a direct-playback failure as

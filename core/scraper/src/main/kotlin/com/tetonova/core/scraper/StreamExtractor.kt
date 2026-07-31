@@ -27,7 +27,25 @@ data class ExtractResult(
     val variants: List<StreamVariant>,
     val headers: Map<String, String> = emptyMap(),
     val subtitles: List<SubtitleTrack> = emptyList(),
+    /**
+     * The host positively told us the file is gone (deleted / never existed), as opposed to us merely
+     * failing to parse it. Only set from an explicit upstream signal — never from "we found nothing",
+     * because that is the normal case for the many hosts that only play inside their own WebView.
+     * The player uses it to skip the sniff, which can only time out on a file that does not exist.
+     */
+    val gone: Boolean = false,
 )
+
+/**
+ * Explicit "this file is gone" markers from an embed host's error page. Deliberately narrow: a false
+ * positive here skips a WebView sniff that might have worked, so only unambiguous phrases belong.
+ */
+private val GONE_MARKERS = Regex(
+    """(?i)\b(file (?:was )?(?:deleted|not found)|video (?:not found|has been (?:deleted|removed))|"""
+        + """no longer available|not found\s*!|deleted by (?:the )?(?:owner|user)|file (?:is )?expired)\b"""
+)
+
+internal fun looksGone(html: String): Boolean = GONE_MARKERS.containsMatchIn(html)
 
 /**
  * Resolves an embed host's iframe URL into direct stream variants so they play in the app's own
@@ -155,10 +173,10 @@ object StreamExtractor {
             "ok.ru" in u || "odnoklassniki" in u -> ExtractResult(okru(u), originHeaders(u))
             // Dailymotion verifies the embedder: fetch metadata AS the real embedder (anixcafe) to get a
             // valid token, then play the manifest with the dailymotion.com referer (mimics the iframe).
-            "dailymotion" in u -> ExtractResult(
-                dailymotion(u, referer),
-                mapOf("Referer" to "https://www.dailymotion.com/", "Origin" to "https://www.dailymotion.com"),
-            )
+            "dailymotion" in u -> dailymotion(u, referer).let {
+                it.copy(headers = if (it.variants.isEmpty()) emptyMap()
+                    else mapOf("Referer" to "https://www.dailymotion.com/", "Origin" to "https://www.dailymotion.com"))
+            }
             "rumble.com" in u -> ExtractResult(rumble(u), originHeaders(u))
             "embedpyrox" in u || "pyrox" in u -> pyrox(u, referer)
             isByseHost(u) -> byse(u, referer)
@@ -181,7 +199,7 @@ object StreamExtractor {
             "blogger.com" in u || "blogspot.com" in u -> ExtractResult(emptyList()) // Blogger WIZ is JS-only, no static stream → WebView
             "4meplayer" in u -> ExtractResult(emptyList()) // JWPlayer with betting ads → WebView with controls
             "videoplayer.vip" in u -> ExtractResult(emptyList()) // JWPlayer → WebPlayerStage (already handled in PlayerScreen)
-            else -> generic(u, referer).let { ExtractResult(it, if (it.isEmpty()) emptyMap() else originHeaders(u)) }
+            else -> generic(u, referer).let { it.copy(headers = if (it.variants.isEmpty()) emptyMap() else originHeaders(u)) }
         }
         System.out.println("[StreamExtractor] extractEmbed result: ${result.variants.size} variants")
         result
@@ -555,19 +573,32 @@ object StreamExtractor {
     }
 
     // ---- Dailymotion: metadata API → qualities.auto[] HLS master (ExoPlayer adapts) ----
-    private suspend fun dailymotion(embedUrl: String, referer: String): List<StreamVariant> {
+    private suspend fun dailymotion(embedUrl: String, referer: String): ExtractResult {
         val id = Regex("[?&]video=([^&]+)").find(embedUrl)?.groupValues?.get(1)
             ?: Regex("dailymotion\\.com/(?:embed/)?video/([^_?&/]+)").find(embedUrl)?.groupValues?.get(1)
-            ?: return emptyList()
+            ?: return ExtractResult(emptyList())
         // Fetch metadata AS the embedder (anixcafe) so Dailymotion authorizes a playable token.
-        val json = fetch("https://www.dailymotion.com/player/metadata/video/$id", referer.ifBlank { "https://www.dailymotion.com/" }) ?: return emptyList()
-        val q = JSONObject(json).optJSONObject("qualities") ?: return emptyList()
-        val auto = q.optJSONArray("auto") ?: return emptyList()
+        val json = fetch("https://www.dailymotion.com/player/metadata/video/$id", referer.ifBlank { "https://www.dailymotion.com/" })
+            ?: return ExtractResult(emptyList())
+        val root = JSONObject(json)
+        // Dailymotion answers 200 even for a dead video and puts the real status in `error`. Two shapes
+        // seen in the wild: a takedown (`code` DM005, `status_code` 410) and a hard miss (`code` "404",
+        // `error_data.reason` object_not_found). Both mean no stream will ever appear, so report it as
+        // gone rather than letting the player burn a sniff on it. Other errors (geo-block, password)
+        // are NOT terminal — leave those to the sniff.
+        root.optJSONObject("error")?.let { err ->
+            val status = err.optInt("status_code", err.optString("code").toIntOrNull() ?: 0)
+            val reason = err.optJSONObject("error_data")?.optString("reason").orEmpty()
+            if (status == 404 || status == 410 || reason == "object_not_found") {
+                return ExtractResult(emptyList(), gone = true)
+            }
+        }
+        val auto = root.optJSONObject("qualities")?.optJSONArray("auto") ?: return ExtractResult(emptyList())
         for (i in 0 until auto.length()) {
             val url = auto.getJSONObject(i).optString("url")
-            if (url.contains("m3u8")) return listOf(StreamVariant("Auto", url))
+            if (url.contains("m3u8")) return ExtractResult(listOf(StreamVariant("Auto", url)))
         }
-        return emptyList()
+        return ExtractResult(emptyList())
     }
 
     // ---- DoodStream family: GET /pass_md5/<id>/<token> (with the embed's cookies) → CDN base URL,
@@ -590,7 +621,11 @@ object StreamExtractor {
         }.getOrNull()
 
         val html = get(embedUrl, "$origin/", false) ?: return@withContext ExtractResult(emptyList())
-        val pass = Regex("/pass_md5/[^\"'\\s]+").find(html)?.value ?: return@withContext ExtractResult(emptyList())
+        // A deleted dood file still serves a 200 embed page — it just has no /pass_md5 and says so in
+        // the body (the d0o0d → playmogo migration keeps that shape). Distinguish "gone" from "we could
+        // not parse it" so the player doesn't sniff a file that isn't there.
+        val pass = Regex("/pass_md5/[^\"'\\s]+").find(html)?.value
+            ?: return@withContext ExtractResult(emptyList(), gone = looksGone(html))
         val token = pass.substringAfterLast('/')
         val base = get("$origin$pass", embedUrl, true)?.trim()?.takeIf { it.startsWith("http") }
             ?: return@withContext ExtractResult(emptyList())
@@ -618,12 +653,17 @@ object StreamExtractor {
     }
 
     // ---- Generic Filemoon-family: unpack packed JS → m3u8 (filelions/streamwish/odvidhide/short.ink/…) ----
-    private suspend fun generic(embedUrl: String, referer: String): List<StreamVariant> {
+    private suspend fun generic(embedUrl: String, referer: String): ExtractResult {
         // Direct first (with the embedder referer many hosts require); if that host is Internet-Positif
         // blocked the direct fetch fails → fall back to the flare-capable client (odvidhide etc.).
-        val html = fetch(embedUrl, referer.ifBlank { embedUrl }) ?: LiveClient.getHtml(embedUrl) ?: return emptyList()
-        val m3u8 = findStream(html) ?: return emptyList()
-        return listOf(StreamVariant("Auto", m3u8))
+        val html = fetch(embedUrl, referer.ifBlank { embedUrl }) ?: LiveClient.getHtml(embedUrl)
+            ?: return ExtractResult(emptyList())
+        val m3u8 = findStream(html)
+            // No stream found: this is either a host we simply can't parse (→ let the sniff try) or a
+            // file-host error page saying the file is gone (→ nothing to sniff). Only the latter is
+            // reported as gone, on an explicit phrase — see GONE_MARKERS.
+            ?: return ExtractResult(emptyList(), gone = looksGone(html))
+        return ExtractResult(listOf(StreamVariant("Auto", m3u8)))
     }
 
     // ---- pixeldrain: the share URL (/u/<id>) maps to the direct file endpoint (/api/file/<id>),
