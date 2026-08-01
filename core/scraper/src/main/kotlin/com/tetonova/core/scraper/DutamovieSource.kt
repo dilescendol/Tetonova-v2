@@ -12,9 +12,16 @@ import java.net.URLEncoder
 /** Native adapter for DutaMovie's Muvipro/WordPress catalog and per-page player mirrors. */
 object DutamovieSource {
 
-    const val DEFAULT_BASE = "https://restaurantesabadell.com"
+    // Current entry point. DutaMovie moved off restaurantesabadell.com (that origin now answers
+    // Cloudflare 522) onto a bare IP. Let's Encrypt issues IP-SAN certificates now, so this validates
+    // normally — no TLS opt-out needed. Panel-configured base URLs still win at runtime; this is the
+    // built-in fallback.
+    const val DEFAULT_BASE = "https://204.3.234.75"
 
     private val knownHosts = listOf(
+        // A bare IP has no domain to match on, so `isDutamovie()` would reject it without this entry
+        // and the URL never reaches this scraper.
+        "204.3.234.75",
         "restaurantesabadell.com",
         "bdmoviesonline.com",
         "ppspublishers.com",
