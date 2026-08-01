@@ -1,6 +1,6 @@
 {
   "id": "bilitv-compat",
-  "name": "Bilitv",
+  "name": "BiliTV",
   "version": "1.0.0",
   "contentTypes": [
     "SERIES"
@@ -13,9 +13,18 @@
     "SUBTITLES"
   ],
   "entry": "compat/bilitv/catalog.json",
-  "upstreamUrl": "https://bilitv.dramabos.my.id",
-  "apiBaseUrl": "https://bilitv.dramabos.my.id/api/v1",
-  "webBaseUrl": "https://bilitv.dramabos.my.id",
-  "healthProbeUrl": "https://bilitv.dramabos.my.id/api.html",
-  "category": "Dracin/Drakor"
+  "upstreamUrl": "https://bilitv.goodbos.online",
+  "apiBaseUrl": "https://bilitv.goodbos.online",
+  "webBaseUrl": "https://bilitv.goodbos.online",
+  "healthProbeUrl": "https://bilitv.goodbos.online/api.html",
+  "accessCode": "A49C5D6FED6BD029B18F525D8A8B0F5E",
+  "category": "Short Series",
+  "homeLinks": {
+    "showAll": [
+      { "label": "Terbaru", "url": "https://bilitv.goodbos.online/api/home?page=1&limit=20&lang=id" }
+    ],
+    "showOnClick": [
+      { "label": "Terbaru", "url": "https://bilitv.goodbos.online/api/home?page=1&limit=20&lang=id" }
+    ]
+  }
 }

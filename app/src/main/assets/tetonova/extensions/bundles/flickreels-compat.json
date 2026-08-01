@@ -13,9 +13,19 @@
     "SUBTITLES"
   ],
   "entry": "compat/flickreels/catalog.json",
-  "upstreamUrl": "https://flickreels.dramabos.my.id",
-  "apiBaseUrl": "https://flickreels.dramabos.my.id/api/v1",
-  "webBaseUrl": "https://flickreels.dramabos.my.id",
-  "healthProbeUrl": "https://flickreels.dramabos.my.id/api/v1/latest?lang=in",
-  "category": "Dracin/Drakor"
+  "upstreamUrl": "https://flickreels.goodbos.online",
+  "apiBaseUrl": "https://flickreels.goodbos.online",
+  "webBaseUrl": "https://flickreels.goodbos.online",
+  "healthProbeUrl": "https://flickreels.goodbos.online/api.html",
+  "accessCode": "A49C5D6FED6BD029B18F525D8A8B0F5E",
+  "category": "Short Series",
+  "homeLinks": {
+    "showAll": [
+      { "label": "Rekomendasi", "url": "https://flickreels.goodbos.online/api/home?lang=6&page=1" }
+    ],
+    "showOnClick": [
+      { "label": "Rekomendasi", "url": "https://flickreels.goodbos.online/api/home?lang=6&page=1" },
+      { "label": "Trending", "url": "https://flickreels.goodbos.online/trending?lang=6" }
+    ]
+  }
 }

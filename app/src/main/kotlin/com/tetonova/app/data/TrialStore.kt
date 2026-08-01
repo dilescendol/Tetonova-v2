@@ -4,7 +4,7 @@ package com.tetonova.app.data
 enum class TrialPhase { AVAILABLE, ACTIVE, EXPIRED }
 
 /**
- * Satu-satunya sumber kebenaran soal trial Premium 1 jam (sekali pakai).
+ * Satu-satunya sumber kebenaran soal trial Premium sekali pakai.
  *
  * Semua baca/tulis trial lewat sini — UI tidak menyentuh [SettingsStore] langsung — supaya nanti
  * tinggal mengganti isi method ini dengan jalur server (POST /api/v1/me/trial/claim, GET
@@ -16,7 +16,7 @@ enum class TrialPhase { AVAILABLE, ACTIVE, EXPIRED }
  */
 object TrialStore {
     // Satu knob durasi — gampang diubah / nanti dipindah ke remote config (panel: trial.duration_seconds).
-    const val DURATION_MS = 60L * 60L * 1000L   // 1 jam
+    const val DEFAULT_DURATION_MS = 60L * 60L * 1000L
 
     private const val KEY_USED_AT = "trial_used_at"
     private const val KEY_EXPIRES_AT = "trial_expires_at"
@@ -27,10 +27,11 @@ object TrialStore {
     fun remainingMs(now: Long = System.currentTimeMillis()): Long = (expiresAt() - now).coerceAtLeast(0L)
 
     /** true kalau berhasil klaim; false kalau sudah pernah dipakai (non-repeatable). */
-    fun claim(now: Long = System.currentTimeMillis()): Boolean {
+    fun claim(durationMs: Long = DEFAULT_DURATION_MS, now: Long = System.currentTimeMillis()): Boolean {
         if (isUsed()) return false
+        if (durationMs <= 0L) return false
         SettingsStore.setLong(KEY_USED_AT, now)
-        SettingsStore.setLong(KEY_EXPIRES_AT, now + DURATION_MS)
+        SettingsStore.setLong(KEY_EXPIRES_AT, now + durationMs)
         return true
     }
 

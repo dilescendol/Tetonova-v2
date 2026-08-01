@@ -1,0 +1,12 @@
+{
+  "id": "idlix-compat",
+  "name": "Idlix",
+  "version": "1.0.0",
+  "contentTypes": ["MOVIE", "SERIES"],
+  "capabilities": ["HOME", "SEARCH", "DETAIL", "PLAYBACK", "SUBTITLES"],
+  "entry": "compat/idlix/catalog.json",
+  "upstreamUrl": "https://z2.idlixku.com",
+  "apiBaseUrl": "https://z2.idlixku.com",
+  "webBaseUrl": "https://z2.idlixku.com",
+  "category": "Movie"
+}

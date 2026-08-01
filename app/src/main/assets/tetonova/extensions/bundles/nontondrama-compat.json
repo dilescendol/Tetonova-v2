@@ -1,0 +1,18 @@
+{
+  "id": "nontondrama-compat",
+  "name": "Nonton Drama",
+  "version": "1.0.0",
+  "contentTypes": [
+    "SERIES"
+  ],
+  "capabilities": [
+    "HOME",
+    "SEARCH",
+    "DETAIL",
+    "PLAYBACK",
+    "SUBTITLES"
+  ],
+  "entry": "compat/nontondrama/catalog.json",
+  "upstreamUrl": "https://tv4.nontondrama.my/",
+  "category": "Dracin/Drakor"
+}

@@ -1,0 +1,10 @@
+{
+  "id": "ngefilm-compat",
+  "name": "Ngefilm",
+  "version": "1.0.0",
+  "contentTypes": ["MOVIE", "SERIES"],
+  "capabilities": ["HOME", "SEARCH", "DETAIL", "PLAYBACK", "SUBTITLES"],
+  "entry": "compat/ngefilm/catalog.json",
+  "upstreamUrl": "https://new38.ngefilm.site/",
+  "category": "Movie"
+}

@@ -1,0 +1,12 @@
+{
+  "id": "indomax21-compat",
+  "name": "IndoMax21",
+  "version": "1.0.0",
+  "contentTypes": ["NSFW", "MOVIE", "SERIES", "ANIME"],
+  "capabilities": ["HOME", "SEARCH", "DETAIL", "PLAYBACK", "SUBTITLES"],
+  "entry": "compat/indomax21/catalog.json",
+  "upstreamUrl": "https://onperfect.com",
+  "apiBaseUrl": "https://onperfect.com",
+  "webBaseUrl": "https://onperfect.com",
+  "category": "Adult"
+}

@@ -34,8 +34,8 @@ fun PageScroll(
     Column(
         modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .let { if (topInset) it.windowInsetsPadding(WindowInsets.statusBars) else it },
+            .let { if (topInset) it.windowInsetsPadding(WindowInsets.statusBars) else it }
+            .verticalScroll(rememberScrollState()),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Column(

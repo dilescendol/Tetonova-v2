@@ -3,6 +3,7 @@ package com.tetonova.core.designsystem
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,6 +21,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -28,6 +32,9 @@ import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontFamily
 import coil.compose.AsyncImage
@@ -36,6 +43,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import com.tetonova.core.designsystem.theme.RoseGradientColors
 import com.tetonova.core.designsystem.theme.TnRadii
 import com.tetonova.core.designsystem.theme.TnTheme
@@ -63,7 +71,14 @@ fun coverForTitle(title: String?): String? {
  * otherwise the stylized gradient placeholder (components.jsx → Art).
  */
 @Composable
-fun Art(art: Int, label: String, modifier: Modifier = Modifier, coverTitle: String? = null, coverUrl: String? = null) {
+fun Art(
+    art: Int,
+    label: String,
+    modifier: Modifier = Modifier,
+    coverTitle: String? = null,
+    coverUrl: String? = null,
+    roundedCorners: Boolean = true,
+) {
     // Real scraped cover (from the source site) wins; then a bundled asset cover; otherwise resolve
     // by title (Jikan/MAL) via CoverProvider. Stays a gradient placeholder until a match comes back
     // — never blocks rendering.
@@ -75,7 +90,7 @@ fun Art(art: Int, label: String, modifier: Modifier = Modifier, coverTitle: Stri
     }
     Box(
         modifier
-            .clip(RoundedCornerShape(TnRadii.md))
+            .clip(if (roundedCorners) RoundedCornerShape(TnRadii.md) else RectangleShape)
             .tnGradient(gradColors(art))
             .drawWithContent {
                 drawContent()
@@ -177,10 +192,37 @@ fun Poster(
     item: PosterItem,
     modifier: Modifier = Modifier,
     showProgress: Boolean = false,
+    showFocusOutline: Boolean = true,
     onClick: () -> Unit = {},
 ) {
     val c = TnTheme.colors
-    Column(modifier.clickable { onClick() }) {
+    var focused by remember { mutableStateOf(false) }
+    val interactionSource = remember { MutableInteractionSource() }
+    val focusedScale = if (showFocusOutline) 1.04f else 1.06f
+    Column(
+        modifier
+            .zIndex(if (focused) 1f else 0f)
+            .graphicsLayer {
+                scaleX = if (focused) focusedScale else 1f
+                scaleY = if (focused) focusedScale else 1f
+            }
+            .then(
+                if (showFocusOutline) {
+                    Modifier.border(3.dp, if (focused) c.rose else Color.Transparent, RoundedCornerShape(TnRadii.md))
+                } else {
+                    Modifier
+                },
+            )
+            .padding(3.dp)
+            .onFocusChanged { focused = it.isFocused }
+            .then(
+                if (showFocusOutline) {
+                    Modifier.clickable { onClick() }
+                } else {
+                    Modifier.clickable(interactionSource = interactionSource, indication = null) { onClick() }
+                },
+            ),
+    ) {
         Box(Modifier.fillMaxWidth().aspectRatio(2f / 3f).clip(RoundedCornerShape(TnRadii.md))) {
             Art(item.art, item.title.substringBefore(' '), Modifier.fillMaxSize(), coverTitle = item.title, coverUrl = item.cover)
             item.badge?.let { b ->
@@ -211,13 +253,6 @@ fun Poster(
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.padding(top = 8.dp),
         )
-        Text(
-            item.sub,
-            color = c.muted,
-            style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
     }
 }
 
@@ -241,13 +276,15 @@ fun TnChip(
     onClick: () -> Unit = {},
 ) {
     val c = TnTheme.colors
+    var focused by remember { mutableStateOf(false) }
     val bg = if (selected) c.rose else c.surface
     val fg = if (selected) Color.White else c.ink2
     Row(
         modifier
             .clip(RoundedCornerShape(TnRadii.pill))
             .background(bg)
-            .border(1.dp, if (selected) c.rose else c.line, RoundedCornerShape(TnRadii.pill))
+            .border(if (focused) 3.dp else 1.dp, if (focused) c.rose else if (selected) c.rose else c.line, RoundedCornerShape(TnRadii.pill))
+            .onFocusChanged { focused = it.isFocused }
             .clickable { onClick() }
             .padding(horizontal = 16.dp, vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically,

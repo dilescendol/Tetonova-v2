@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- API 31+: keep the large offline-download cache out of cloud backup and device-to-device transfer. -->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="external" path="tn-downloads/" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="external" path="tn-downloads/" />
+    </device-transfer>
+</data-extraction-rules>

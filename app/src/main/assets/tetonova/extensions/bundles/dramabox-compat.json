@@ -13,10 +13,20 @@
     "SUBTITLES"
   ],
   "entry": "compat/dramabox/catalog.json",
-  "upstreamUrl": "https://dramabox.dramabos.my.id",
-  "apiBaseUrl": "https://dramabox.dramabos.my.id/api/v1",
-  "webBaseUrl": "https://dramabox.dramabos.my.id",
-  "healthProbeUrl": "https://dramabox.dramabos.my.id/api/v1/latest?lang=in",
+  "upstreamUrl": "https://dramabox.goodbos.online",
+  "apiBaseUrl": "https://dramabox.goodbos.online/api/v1",
+  "webBaseUrl": "https://dramabox.goodbos.online",
+  "healthProbeUrl": "https://dramabox.goodbos.online/api.html",
   "accessCode": "A49C5D6FED6BD029B18F525D8A8B0F5E",
-  "category": "Dracin/Drakor"
+  "category": "Short Series",
+  "homeLinks": {
+    "showAll": [
+      { "label": "Rekomendasi", "url": "https://dramabox.goodbos.online/api/v1/homepage?lang=in" }
+    ],
+    "showOnClick": [
+      { "label": "Rekomendasi", "url": "https://dramabox.goodbos.online/api/v1/homepage?lang=in" },
+      { "label": "For You", "url": "https://dramabox.goodbos.online/api/v1/foryou?lang=in" },
+      { "label": "Dubbed", "url": "https://dramabox.goodbos.online/api/v1/dubbed?classify=terpopuler&lang=in" }
+    ]
+  }
 }

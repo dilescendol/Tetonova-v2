@@ -31,7 +31,7 @@ object OmdbResolver {
 
     @Volatile var apiKey: String = ""
 
-    private val client = OkHttpClient.Builder()
+    private val client = TnHttp.client.newBuilder()
         .connectTimeout(8, TimeUnit.SECONDS)
         .readTimeout(8, TimeUnit.SECONDS)
         .build()

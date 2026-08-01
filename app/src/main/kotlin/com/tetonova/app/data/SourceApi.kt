@@ -19,9 +19,9 @@ class SourceApi(private val baseUrl: String) {
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
     // Generous timeouts: the LDPlayer emulator's NAT'd network is slow to first-byte, and an 8s budget
     // was timing out → the app silently ran panel-less (no live Home, no live search).
-    private val client = OkHttpClient.Builder()
-        .connectTimeout(20, TimeUnit.SECONDS)
-        .readTimeout(20, TimeUnit.SECONDS)
+    private val client = TnHttp.client.newBuilder()
+        .connectTimeout(8, TimeUnit.SECONDS)
+        .readTimeout(12, TimeUnit.SECONDS)
         .build()
 
     /** Fetch the sources feed, retrying a few times so a transient network hiccup on a cold start
@@ -29,7 +29,7 @@ class SourceApi(private val baseUrl: String) {
     suspend fun fetch(): SourcesResponse? = withContext(Dispatchers.IO) {
         val base = baseUrl.trim().trimEnd('/')
         if (base.isEmpty()) return@withContext null
-        repeat(3) { attempt ->
+        repeat(2) { attempt ->
             val r = runCatching {
                 val req = Request.Builder().url("$base/api/v1/sources").get().build()
                 client.newCall(req).execute().use { resp ->
@@ -39,8 +39,8 @@ class SourceApi(private val baseUrl: String) {
                 }
             }
             r.getOrNull()?.let { return@withContext it }
-            Log.w("TnPanel", "panel fetch attempt ${attempt + 1}/3 failed: ${r.exceptionOrNull()?.javaClass?.simpleName}: ${r.exceptionOrNull()?.message}")
-            if (attempt < 2) delay(2000)
+            Log.w("TnPanel", "panel fetch attempt ${attempt + 1}/2 failed: ${r.exceptionOrNull()?.javaClass?.simpleName}: ${r.exceptionOrNull()?.message}")
+            if (attempt < 1) delay(1200)
         }
         null
     }

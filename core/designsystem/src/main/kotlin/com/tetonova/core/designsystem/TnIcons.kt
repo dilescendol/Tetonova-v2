@@ -23,6 +23,7 @@ private val ICON_PATHS: Map<String, String> = mapOf(
     "home" to "M3 10.2 12 3l9 7.2V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z",
     "search" to "M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16zM21 21l-4.3-4.3",
     "forum" to "M21 15a2 2 0 0 1-2 2H8l-5 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z",
+    "book" to "M4 4h7a2 2 0 0 1 2 2v14a2 2 0 0 0-2-2H4zM20 4h-7a2 2 0 0 0-2 2v14a2 2 0 0 1 2-2h7z",
     "download" to "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3",
     "ext" to "M4 5a2 2 0 0 1 2-2h4v6H4zM14 3h4a2 2 0 0 1 2 2v4h-6zM4 14h6v6H6a2 2 0 0 1-2-2zM14 14h6v4a2 2 0 0 1-2 2h-4z",
     "user" to "M20 21v-1a6 6 0 0 0-12 0v1M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z",

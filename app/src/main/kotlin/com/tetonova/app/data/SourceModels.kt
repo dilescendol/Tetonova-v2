@@ -1,5 +1,6 @@
 package com.tetonova.app.data
 
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 /**
@@ -13,10 +14,47 @@ data class SourcesResponse(
     val count: Int = 0,
     val sources: List<SourceOverride> = emptyList(),
     val supportMe: SupportMe? = null,
+    val announcement: Announcement? = null,
     val proxyBypass: ProxyBypass? = null,
     val telemetry: Telemetry? = null,
+    val trial: TrialConfig? = null,
+    val payment: PaymentConfig? = null,
+    val appConfig: AppUpdateConfig? = null,
     val releaseNotes: ReleaseNotes? = null,
     val helpCenter: HelpCenter? = null,
+)
+
+/** Remote version policy. The server publishes the already-resolved minimum build after grace rules. */
+@Serializable
+data class AppUpdateConfig(
+    val latestVersionCode: Int = 0,
+    val latestVersionName: String = "",
+    val minimumVersionCode: Int = 0,
+    val minimumVersionName: String = "",
+    val updatePageUrl: String = "",
+    val apkDownloadUrl: String = "",
+    /** Legacy alias kept so APKs built before the URL split still open the update page. */
+    val updateUrl: String = "",
+    val updateMessage: String = "",
+)
+
+/** Payer-facing QRIS admin-fee formula published by the panel, so the pre-invoice estimate tracks the
+ *  active gateway without an app rebuild. `fee = fixed + ceil(subtotal * bps / 10000)`. */
+@Serializable
+data class PaymentConfig(
+    @SerialName("admin_fee_fixed_idr") val adminFeeFixedIdr: Long = 1000L,
+    @SerialName("admin_fee_bps") val adminFeeBps: Long = 70L,
+    /** Minimum fee as basis points of the subtotal, so `fee = max(fixed + bps%, floorBps%)`. Lets the
+     *  estimate match gateways with a percentage floor (Pakasir = max(Rp310 + 0,7%, 1%)). 0 = no floor. */
+    @SerialName("admin_fee_floor_bps") val adminFeeFloorBps: Long = 0L,
+)
+
+/** Premium trial config published by the panel and mirrored by the server claim endpoint. */
+@Serializable
+data class TrialConfig(
+    @SerialName("duration_seconds") val durationSeconds: Long = 0L,
+    /** Fraction (0–1) of a short-drama's episodes free to non-subscribers. 0 = unset → app default. */
+    @SerialName("short_drama_free_percent") val shortDramaFreePercent: Double = 0.0,
 )
 
 /**
@@ -68,6 +106,28 @@ data class SupportMe(
     val buttonLabel: String = "",
 )
 
+/** Global banner shown after the user enters the app. */
+@Serializable
+data class Announcement(
+    val id: String = "",
+    val enabled: Boolean = false,
+    val title: String = "",
+    val message: String = "",
+    val severity: String = "info",
+    val ctaLabel: String = "",
+    val ctaUrl: String = "",
+    val dismissible: Boolean = true,
+) {
+    /** Backward-compatible identity for panels that predate the server-side id. */
+    fun dismissalId(): String = id.ifBlank {
+        listOf(title, message, severity, ctaLabel, ctaUrl, dismissible.toString())
+            .joinToString("\u001f")
+            .hashCode()
+            .toUInt()
+            .toString(16)
+    }
+}
+
 @Serializable
 data class SourceOverride(
     val sourceId: String,
@@ -78,7 +138,26 @@ data class SourceOverride(
     val category: String? = null,
     val accessCode: String? = null,
     val lastProbeStatus: String? = null,
+    /** True when this source is a paid/premium source (served via the dramabuzz API provider). Drives
+     *  the live "N source" count and is gated behind the subscription paywall. */
+    val premium: Boolean = false,
     val homeLinks: HomeLinks? = null,
+    /** True when the panel caches this source server-side (scrape-once). The app then reads Home/
+     *  search/detail from [proxyPaths] instead of scraping on-device, falling back to live on a miss. */
+    val proxyEnabled: Boolean = false,
+    val proxyPaths: ProxyPaths? = null,
+)
+
+/**
+ * Panel cache endpoints for a source (relative to the panel base). `{id}` in [detail]/[playback] is
+ * replaced with the URL-encoded source URL. Served from the `source_catalog_cache` table (CDN-frontable).
+ */
+@Serializable
+data class ProxyPaths(
+    val catalog: String = "",
+    val detail: String = "",
+    val playback: String = "",
+    val search: String = "",
 )
 
 /** Home-section links published per source by the panel (custom label + real web URL). */

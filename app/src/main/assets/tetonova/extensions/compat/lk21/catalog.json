@@ -1,0 +1,18 @@
+{
+  "items": [
+    {
+      "id": "lk21-ikka",
+      "title": "Ikka",
+      "tagline": "Fallback movie tile for the LK21 lane",
+      "overview": "Seed entry for LK21 so the lane stays browseable while live parsing hydrates real movie shelves.",
+      "contentType": "MOVIE",
+      "yearLabel": "2026",
+      "genres": ["Movie", "Crime", "Drama"],
+      "releaseHint": "Movie page ready",
+      "durationMinutes": 140,
+      "qualities": ["480p", "720p", "1080p"],
+      "subtitleLanguages": ["ID"],
+      "sourceNote": "Live parsing replaces this fallback when LK21 is reachable."
+    }
+  ]
+}

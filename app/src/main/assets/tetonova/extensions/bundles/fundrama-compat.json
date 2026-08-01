@@ -13,9 +13,18 @@
     "SUBTITLES"
   ],
   "entry": "compat/fundrama/catalog.json",
-  "upstreamUrl": "https://drakula.dramabos.my.id/fundrama",
-  "apiBaseUrl": "https://drakula.dramabos.my.id/fundrama/api/v1",
-  "webBaseUrl": "https://drakula.dramabos.my.id/fundrama",
-  "healthProbeUrl": "https://drakula.dramabos.my.id/fundrama-api.html",
-  "category": "Dracin/Drakor"
+  "upstreamUrl": "https://drakula.goodbos.online/fundrama",
+  "apiBaseUrl": "https://drakula.goodbos.online/fundrama",
+  "webBaseUrl": "https://drakula.goodbos.online/fundrama",
+  "healthProbeUrl": "https://drakula.goodbos.online/fundrama-api.html",
+  "accessCode": "A49C5D6FED6BD029B18F525D8A8B0F5E",
+  "category": "Short Series",
+  "homeLinks": {
+    "showAll": [
+      { "label": "Terbaru", "url": "https://drakula.goodbos.online/api/fundrama/dramas?lang=id&page=1&limit=20" }
+    ],
+    "showOnClick": [
+      { "label": "Terbaru", "url": "https://drakula.goodbos.online/api/fundrama/dramas?lang=id&page=1&limit=20" }
+    ]
+  }
 }

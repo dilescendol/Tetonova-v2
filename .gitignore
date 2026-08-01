@@ -47,3 +47,10 @@ keystore.properties
 # OS files
 .DS_Store
 Thumbs.db
+app/google-services.json
+core/scraper/src/test/resources/melolo_enc.mp4
+
+# Verification screenshots + scratch captured during dev (root-level only;
+# app/src/main/res/**/*.png assets are still tracked)
+/*.png
+/tmp/

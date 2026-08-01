@@ -1,0 +1,12 @@
+{
+  "id": "dutamovie-compat",
+  "name": "DutaMovie",
+  "version": "1.0.0",
+  "contentTypes": ["MOVIE", "SERIES"],
+  "capabilities": ["HOME", "SEARCH", "DETAIL", "PLAYBACK", "SUBTITLES"],
+  "entry": "compat/dutamovie/catalog.json",
+  "upstreamUrl": "https://restaurantesabadell.com",
+  "apiBaseUrl": "https://restaurantesabadell.com",
+  "webBaseUrl": "https://restaurantesabadell.com",
+  "category": "Movie"
+}

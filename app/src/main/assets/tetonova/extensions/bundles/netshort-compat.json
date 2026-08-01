@@ -13,9 +13,20 @@
     "SUBTITLES"
   ],
   "entry": "compat/netshort/catalog.json",
-  "upstreamUrl": "https://netshort.dramabos.my.id",
-  "apiBaseUrl": "https://netshort.dramabos.my.id/api/v1",
-  "webBaseUrl": "https://netshort.dramabos.my.id",
-  "healthProbeUrl": "https://netshort.dramabos.my.id/api.html",
-  "category": "Dracin/Drakor"
+  "upstreamUrl": "https://netshort.goodbos.online",
+  "apiBaseUrl": "https://netshort.goodbos.online",
+  "webBaseUrl": "https://netshort.goodbos.online",
+  "healthProbeUrl": "https://netshort.goodbos.online/api.html",
+  "accessCode": "A49C5D6FED6BD029B18F525D8A8B0F5E",
+  "category": "Short Series",
+  "homeLinks": {
+    "showAll": [
+      { "label": "Terbaru", "url": "https://netshort.goodbos.online/api/home/1?lang=in" }
+    ],
+    "showOnClick": [
+      { "label": "Terbaru", "url": "https://netshort.goodbos.online/api/home/1?lang=in" },
+      { "label": "Populer", "url": "https://netshort.goodbos.online/api/list/1?lang=in" },
+      { "label": "Banner", "url": "https://netshort.goodbos.online/api/banner?lang=in" }
+    ]
+  }
 }

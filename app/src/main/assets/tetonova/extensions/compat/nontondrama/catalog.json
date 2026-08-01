@@ -1,0 +1,17 @@
+{
+  "items": [
+    {
+      "id": "nontondrama-avatar",
+      "title": "Avatar: The Last Airbender",
+      "tagline": "Fallback series tile for the Nonton Drama lane",
+      "overview": "Seed entry for Nonton Drama so seasonal series browsing stays available while live parsing hydrates the source.",
+      "contentType": "SERIES",
+      "yearLabel": "2024",
+      "genres": ["Series", "Action", "Adventure"],
+      "releaseHint": "Season 2 available",
+      "qualities": ["480p", "720p", "1080p"],
+      "subtitleLanguages": ["ID"],
+      "sourceNote": "Live parsing reads the upstream season list when Nonton Drama is reachable."
+    }
+  ]
+}

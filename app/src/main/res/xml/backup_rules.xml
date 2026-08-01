@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Auto Backup (API ≤ 30): keep the large offline-download cache out of cloud backup. -->
+<full-backup-content>
+    <exclude domain="external" path="tn-downloads/" />
+</full-backup-content>

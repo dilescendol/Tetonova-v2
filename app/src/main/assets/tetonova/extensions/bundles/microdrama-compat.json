@@ -13,9 +13,18 @@
     "SUBTITLES"
   ],
   "entry": "compat/microdrama/catalog.json",
-  "upstreamUrl": "https://drakula.dramabos.my.id/microdrama",
-  "apiBaseUrl": "https://drakula.dramabos.my.id/microdrama/api/v1",
-  "webBaseUrl": "https://drakula.dramabos.my.id/microdrama",
-  "healthProbeUrl": "https://drakula.dramabos.my.id/microdrama-api.html",
-  "category": "Dracin/Drakor"
+  "upstreamUrl": "https://drakula.goodbos.online/microdrama",
+  "apiBaseUrl": "https://drakula.goodbos.online/microdrama",
+  "webBaseUrl": "https://drakula.goodbos.online/microdrama",
+  "healthProbeUrl": "https://drakula.goodbos.online/microdrama-api.html",
+  "accessCode": "A49C5D6FED6BD029B18F525D8A8B0F5E",
+  "category": "Short Series",
+  "homeLinks": {
+    "showAll": [
+      { "label": "Terbaru", "url": "https://drakula.goodbos.online/api/microdrama/list?lang=id&page=1&limit=20" }
+    ],
+    "showOnClick": [
+      { "label": "Terbaru", "url": "https://drakula.goodbos.online/api/microdrama/list?lang=id&page=1&limit=20" }
+    ]
+  }
 }

@@ -13,9 +13,21 @@
     "SUBTITLES"
   ],
   "entry": "compat/idrama/catalog.json",
-  "upstreamUrl": "https://idrama.dramabos.my.id",
-  "apiBaseUrl": "https://idrama.dramabos.my.id/api/v1",
-  "webBaseUrl": "https://idrama.dramabos.my.id",
-  "healthProbeUrl": "https://idrama.dramabos.my.id/api.html",
-  "category": "Dracin/Drakor"
+  "upstreamUrl": "https://idrama.goodbos.online",
+  "apiBaseUrl": "https://idrama.goodbos.online",
+  "webBaseUrl": "https://idrama.goodbos.online",
+  "healthProbeUrl": "https://idrama.goodbos.online/api.html",
+  "accessCode": "A49C5D6FED6BD029B18F525D8A8B0F5E",
+  "category": "Short Series",
+  "homeLinks": {
+    "showAll": [
+      { "label": "Terbaru", "url": "https://idrama.goodbos.online/tab/channel_7e89a1a2?lang=id" }
+    ],
+    "showOnClick": [
+      { "label": "Terbaru", "url": "https://idrama.goodbos.online/tab/channel_7e89a1a2?lang=id" },
+      { "label": "Populer", "url": "https://idrama.goodbos.online/tab/channel_022dd4f1?lang=id&section=section_bccf2ae7,section_b5c35a7c" },
+      { "label": "Sedang Tren", "url": "https://idrama.goodbos.online/tab/channel_f4904f0b?lang=id&section=section_d557ba94" },
+      { "label": "Hits Terbaru", "url": "https://idrama.goodbos.online/tab/channel_a57c8658?lang=id&section=section_37f1f85e" }
+    ]
+  }
 }

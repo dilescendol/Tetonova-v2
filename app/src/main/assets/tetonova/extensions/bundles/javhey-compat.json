@@ -1,0 +1,12 @@
+{
+  "id": "javhey-compat",
+  "name": "JavHey",
+  "version": "1.0.0",
+  "contentTypes": ["NSFW", "MOVIE"],
+  "capabilities": ["HOME", "SEARCH", "DETAIL", "PLAYBACK"],
+  "entry": "compat/javhey/catalog.json",
+  "upstreamUrl": "https://javhey.com",
+  "apiBaseUrl": "https://javhey.com",
+  "webBaseUrl": "https://javhey.com",
+  "category": "Adult"
+}

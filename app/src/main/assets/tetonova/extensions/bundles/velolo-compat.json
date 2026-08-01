@@ -1,0 +1,31 @@
+{
+  "id": "velolo-compat",
+  "name": "Velolo",
+  "version": "1.0.0",
+  "contentTypes": [
+    "SERIES"
+  ],
+  "capabilities": [
+    "HOME",
+    "SEARCH",
+    "DETAIL",
+    "PLAYBACK",
+    "SUBTITLES"
+  ],
+  "entry": "compat/velolo/catalog.json",
+  "upstreamUrl": "https://velolo.goodbos.online",
+  "apiBaseUrl": "https://velolo.goodbos.online",
+  "webBaseUrl": "https://velolo.goodbos.online",
+  "healthProbeUrl": "https://velolo.goodbos.online/api.html",
+  "accessCode": "A49C5D6FED6BD029B18F525D8A8B0F5E",
+  "category": "Short Series",
+  "homeLinks": {
+    "showAll": [
+      { "label": "Baru", "url": "https://velolo.goodbos.online/new?lang=id&page=1&page_size=18" }
+    ],
+    "showOnClick": [
+      { "label": "Baru", "url": "https://velolo.goodbos.online/new?lang=id&page=1&page_size=18" },
+      { "label": "Hot", "url": "https://velolo.goodbos.online/hot?lang=id" }
+    ]
+  }
+}

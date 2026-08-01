@@ -13,9 +13,21 @@
     "SUBTITLES"
   ],
   "entry": "compat/goodshort/catalog.json",
-  "upstreamUrl": "https://goodshort.dramabos.my.id",
-  "apiBaseUrl": "https://goodshort.dramabos.my.id/api/v1",
-  "webBaseUrl": "https://goodshort.dramabos.my.id",
-  "healthProbeUrl": "https://goodshort.dramabos.my.id/api.html",
-  "category": "Dracin/Drakor"
+  "upstreamUrl": "https://goodshort.goodbos.online",
+  "apiBaseUrl": "https://goodshort.goodbos.online",
+  "webBaseUrl": "https://goodshort.goodbos.online",
+  "healthProbeUrl": "https://goodshort.goodbos.online/api.html",
+  "accessCode": "A49C5D6FED6BD029B18F525D8A8B0F5E",
+  "category": "Short Series",
+  "homeLinks": {
+    "showAll": [
+      { "label": "Terbaru", "url": "https://goodshort.goodbos.online/home?lang=in&channel=563&page=1&size=20" }
+    ],
+    "showOnClick": [
+      { "label": "Tren", "url": "https://goodshort.goodbos.online/home?lang=in&channel=-1&page=1&size=20" },
+      { "label": "Terbaru", "url": "https://goodshort.goodbos.online/home?lang=in&channel=563&page=1&size=20" },
+      { "label": "Anime", "url": "https://goodshort.goodbos.online/home?lang=in&channel=656&page=1&size=20" },
+      { "label": "Dubing", "url": "https://goodshort.goodbos.online/home?lang=in&channel=567&page=1&size=20" }
+    ]
+  }
 }

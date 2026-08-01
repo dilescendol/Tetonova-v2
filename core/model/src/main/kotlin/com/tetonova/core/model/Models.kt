@@ -10,8 +10,8 @@ package com.tetonova.core.model
 enum class NavDest(val id: String, val label: String, val icon: String) {
     HOME("home", "Home", "home"),
     SEARCH("search", "Search", "search"),
+    MANGA("manga", "Manga", "book"),
     FORUM("forum", "Forum", "forum"),
-    DOWNLOADS("downloads", "Downloads", "download"),
     EXTENSIONS("ext", "Extensions", "ext"),
     PROFILE("profile", "Profile", "user"),
 }
@@ -53,7 +53,18 @@ data class QuickChip(val title: String, val value: String, val icon: String, val
 
 /** Extensions screen. */
 data class ExtCategory(val id: String, val label: String, val count: Int)
-data class ExtItem(val name: String, val source: String, val live: Boolean)
+data class ExtItem(
+    val name: String,
+    val source: String,
+    val live: Boolean,
+    val premium: Boolean = false,
+    val locked: Boolean = false,
+    val iconUrl: String = "",
+    /** Panel sourceId — the key the Extensions screen toggles install state on. */
+    val sourceId: String = "",
+    /** Whether this source is currently installed (debug: default true, release: default false). */
+    val installed: Boolean = false,
+)
 
 /** Forum. */
 data class ForumCategory(val id: String, val label: String, val icon: String? = null)
@@ -75,6 +86,8 @@ data class ForumThread(
     val thumb: Boolean = false,
     /** Real comments posted on this thread (the forum has no backend; this is the source of truth). */
     val comments: List<ForumReply> = emptyList(),
+    /** Author's cultivation realm (server-derived from level) — the forum level marker. */
+    val realm: String? = null,
 )
 data class ForumReply(
     val id: Int,
@@ -84,6 +97,8 @@ data class ForumReply(
     val votes: Int,
     val text: String,
     val nested: Boolean,
+    /** Author's cultivation realm (server-derived) — shown beside the comment author. */
+    val realm: String? = null,
 )
 
 /** Profile. */
@@ -101,8 +116,17 @@ data class Episode(
     val desc: String,
     val progress: Int,
     val art: Int,
+    /** Season number when the source stacks multiple seasons on one series page (PusatFilm `/tv/`);
+     *  null for single-season/anime sources. Drives the Detail season-accordion grouping. */
+    val season: Int? = null,
+    /** Episode number within [season] (source-relative). Falls back to [num] for display when the
+     *  list is a flat single sequence. */
+    val epInSeason: Int? = null,
     /** Upstream watch page for this episode (live sources) — opened by "Tonton". */
     val url: String? = null,
+    /** Per-episode thumbnail scraped from the source list (when present); else the UI falls back
+     *  to the series cover. */
+    val thumb: String? = null,
 )
 data class CastMember(val name: String, val role: String, val grad: Int)
 data class InfoRow(val key: String, val value: String)

@@ -1,0 +1,19 @@
+{
+  "id": "lk21-compat",
+  "name": "LK21",
+  "version": "1.0.0",
+  "contentTypes": [
+    "MOVIE",
+    "SERIES"
+  ],
+  "capabilities": [
+    "HOME",
+    "SEARCH",
+    "DETAIL",
+    "PLAYBACK",
+    "SUBTITLES"
+  ],
+  "entry": "compat/lk21/catalog.json",
+  "upstreamUrl": "https://tv11.lk21official.cc/",
+  "category": "Movie"
+}

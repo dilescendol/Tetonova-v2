@@ -14,6 +14,6 @@
     "SUBTITLES"
   ],
   "entry": "compat/pusatfilm/catalog.json",
-  "upstreamUrl": "https://v3.pusatfilm21info.com/",
+  "upstreamUrl": "https://v3.pusatfilm21info.net/",
   "category": "Movie"
 }

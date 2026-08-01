@@ -13,9 +13,19 @@
     "SUBTITLES"
   ],
   "entry": "compat/reelife/catalog.json",
-  "upstreamUrl": "https://reelife.dramabos.my.id",
-  "apiBaseUrl": "https://reelife.dramabos.my.id/api/v1",
-  "webBaseUrl": "https://reelife.dramabos.my.id",
-  "healthProbeUrl": "https://reelife.dramabos.my.id/api.html",
-  "category": "Dracin/Drakor"
+  "upstreamUrl": "https://reelife.goodbos.online",
+  "apiBaseUrl": "https://reelife.goodbos.online",
+  "webBaseUrl": "https://reelife.goodbos.online",
+  "healthProbeUrl": "https://reelife.goodbos.online/api.html",
+  "accessCode": "A49C5D6FED6BD029B18F525D8A8B0F5E",
+  "category": "Short Series",
+  "homeLinks": {
+    "showAll": [
+      { "label": "Terbaru", "url": "https://reelife.goodbos.online/api/v1/home?page=1&lang=in" }
+    ],
+    "showOnClick": [
+      { "label": "Terbaru", "url": "https://reelife.goodbos.online/api/v1/home?page=1&lang=in" },
+      { "label": "Sedang Tren", "url": "https://reelife.goodbos.online/api/v1/rank?type=trending&lang=in" }
+    ]
+  }
 }
